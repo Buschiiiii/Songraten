@@ -35,6 +35,9 @@ geschnitten. 4 ms Rampen an den Kanten gegen Knackser. Siehe `assets/audio.js`.
 
 ## Datenpipeline — läuft nur beim Bauen, nie zur Laufzeit
 
+(Einzige Ausnahme: der Playlist-Modus fragt die iTunes-Suche im Browser ab,
+siehe unten.)
+
 1. `tools/fetch_catalogs.py <sekunden>` lädt je Künstler **eine** Anfrage
    (`attribute=artistTerm&limit=200`) und legt sie in `catalogs/` ab.
    Apple drosselt nach einigen tausend Anfragen mit 403 — deshalb das
@@ -59,6 +62,35 @@ Grenzwerte der Stufen, Songs pro Stufe und die Künstleranzahl stehen oben in
 Unter 130 Mio. wird es unfair statt schwer. Der Pool je Stufe wird mit festem
 Seed gemischt, nicht nach Streams sortiert — sonst füllt sich jede Stufe nur
 vom oberen Rand ihres Bereichs.
+
+## Playlist-Modus
+
+Direkt bei Spotify, Apple Music oder YouTube nachfragen geht nicht: alle drei
+wollen OAuth mit registrierter App und Login, also einen Server. Deshalb der
+Umweg über einen Export. Eingelesen werden CSV, TSV, TXT, M3U und JSON — Exportify
+(Spotify), TuneMyMusic, Soundiiz, „Playlist exportieren" in der Musik-App und
+Google Takeout decken damit alles Übliche ab, notfalls tut es eine eingefügte
+Liste „Titel – Künstler".
+
+`assets/playlist.js` erkennt Trennzeichen und Spalten selbst (Aliasliste für
+Titel/Künstler/Album). Ohne erkennbare Kopfzeile werden die ersten zwei Spalten
+genommen; bei Freitextzeilen ist unklar, welche Hälfte der Titel ist, deshalb
+wird beim Bewerten **beide Reihenfolgen** geprüft (`loose`).
+
+Danach wird jeder Titel über die iTunes-Suche aufgelöst — die **einzige**
+Stelle, an der zur Laufzeit gesucht wird. Sequentiell mit 90 ms Pause, weil
+Apple sonst 403 schickt; bei 403 bricht der Lauf ab und meldet das. Treffer
+landen in `songrate:plcache` und überleben das Neuladen, Fehlschläge nicht —
+ein Titel, den Apple gerade nicht ausspuckt, wäre sonst dauerhaft verloren.
+Übernommen wird nur, was `previewUrl` hat und beim Abgleich von Titel und
+Künstler mindestens 2,5 Punkte erreicht.
+
+Im Modus selbst: keine Schwierigkeitsstufen, fünf zufällige Songs aus der
+Liste, Faktor 1,0, Vorschläge im Suchfeld nur aus der Playlist. Die
+Ausschnittlängen (0,01–15 s) bleiben. Unter fünf gefundenen Songs bleibt der
+Modus gesperrt. Künstler-IDs werden hier lokal vergeben: der komplette
+Künstlerstring plus die Einzelnamen — ein falscher Schnitt färbt hier
+höchstens einen Tipp gelb, anders als in der Pipeline.
 
 ## Spielregeln
 
@@ -101,7 +133,9 @@ kworb geprüft, plus die `NEVER_SPLIT`-Liste in `match_local.py`.
    Schriftzeichen sein: ↑ spielt ab, Enter rät, Shift+Enter überspringt,
    ←→ wechselt die Stufe (nur bei leerem Feld), Cmd+Enter würfelt neu.
 6. localStorage-Schlüssel: `songrate:settings`, `songrate:stats`,
-   `songrate:recent` (letzte 60 Songs, gegen Wiederholungen). Das Präfix bleibt
+   `songrate:recent` (letzte 60 Songs, gegen Wiederholungen),
+   `songrate:playlist` (aufgelöste Playlist), `songrate:plcache`
+   (Titel → iTunes-Treffer). Das Präfix bleibt
    `songrate:`, obwohl die Seite Songraten heißt — Umbenennen würde alle
    bereits gespeicherten Einstellungen und Statistiken verwerfen.
 
@@ -110,9 +144,14 @@ kworb geprüft, plus die `NEVER_SPLIT`-Liste in `match_local.py`.
 Es gibt keinen Browser in der Entwicklungsumgebung, aber jsdom reicht und hat
 bisher jeden Fehler gefunden: `index.html` laden, `AudioContext` mocken,
 `fetch` auf die lokale `songs.json` biegen, dann `audio.js` + `app.js`
-auswerten und die Handler direkt aufrufen. Vor jeder Auslieferung einmal
-durchspielen: Runde starten, raten, überspringen, auflösen, neue Runde,
-Stufen umschalten, Neuwürfeln.
+auswerten und die Handler direkt aufrufen. Genau das macht `tools/test_ui.js`
+(`npm i jsdom`, dann `node tools/test_ui.js`) — es spielt eine Runde in beiden
+Modi durch. Zwei Stolpersteine dabei: die drei
+Skripte in **einem** `eval` zusammenhängen (sonst sieht `app.js` weder `Audio2`
+noch `Playlist`), und `getContext` für das Konfetti-Canvas stubben. Vor jeder
+Auslieferung einmal durchspielen: Runde starten, raten, überspringen, auflösen,
+neue Runde, Stufen umschalten, Neuwürfeln, Playlist laden, im Playlist-Modus
+eine Runde beenden, zurückschalten.
 
 ## Offene Punkte
 
@@ -120,10 +159,10 @@ Stufen umschalten, Neuwürfeln.
    Releases fehlen. Geplant: GitHub Actions, das monatlich beide Scripte laufen
    lässt und die neue `songs.json` selbst committet. Vorher prüfen, ob Apple
    und kworb Anfragen aus GitHubs Rechenzentren durchlassen.
-2. **Playlist-Modus.** Eigene Playlist hochladen und nur daraus spielen. In dem
-   Modus **keine** Schwierigkeitsstufen, sondern fünf zufällige Songs. Offene
-   Frage: welches Format die Playlist hat und wie die Titel auf Apple-Previews
-   gemappt werden.
+2. **Playlist-Modus.** Steht (siehe oben). Offen bleibt: die Trefferquote der
+   iTunes-Suche ist bei Remixen und Live-Versionen mager, und bei sehr langen
+   Listen dauert das Auflösen entsprechend lang — ein Fortschrittsabbruch per
+   Knopf fehlt noch.
 
 ## Deployment
 

@@ -16,6 +16,12 @@
   --t-expert:#ef5f5f;
   --t-impossible:#a98bf5;
 
+  --t-pl1:#3ee07a;
+  --t-pl2:#4cc9e8;
+  --t-pl3:#e8c33c;
+  --t-pl4:#f0913c;
+  --t-pl5:#a98bf5;
+
   --r:14px;
   --font:system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",sans-serif;
   --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,monospace;
@@ -173,6 +179,26 @@ main{
 .seg button{padding:9px 12px;border-radius:9px;background:var(--panel-2);color:var(--muted);font-size:13px;font-weight:600;transition:.15s}
 .seg button:hover{color:var(--text)}
 .seg button.on{background:var(--green);color:#07130b}
+
+/* ---------- Playlist ---------- */
+.pl-load{display:flex;flex-direction:column;gap:6px;margin-top:10px}
+.pl-load .btn-ghost{margin-top:0}
+.pl-link{color:var(--muted);font-size:11.5px;text-decoration:underline;text-underline-offset:3px;padding:2px 0;align-self:flex-start}
+.pl-link:hover{color:var(--text)}
+.pl-paste{
+  width:100%;min-height:88px;resize:vertical;padding:9px 11px;border-radius:9px;
+  background:var(--panel-2);border:1px solid var(--line);color:var(--text);
+  font:inherit;font-size:12.5px;outline:none;
+}
+.pl-paste:focus{border-color:var(--green-dim)}
+#plStatus{color:var(--muted)}
+body.dragging::after{
+  content:"Playlist hier fallen lassen";
+  position:fixed;inset:14px;z-index:60;pointer-events:none;
+  border:2px dashed var(--green-dim);border-radius:20px;
+  display:grid;place-items:center;color:var(--green);font-weight:650;
+  background:rgba(10,11,10,.72);
+}
 
 .chips{display:flex;flex-wrap:wrap;gap:6px}
 .chip{padding:6px 12px;border-radius:999px;background:var(--panel-2);color:var(--muted);font-family:var(--mono);font-size:12.5px;transition:.15s}
