@@ -10,15 +10,20 @@ const TIERS = [
 ];
 const POINTS = { 0.01: 1000, 0.1: 850, 0.5: 700, 2: 500, 8: 300, 15: 150 };
 const RECENT_MAX = 60;
+/* Im Playlist-Modus gibt es keine Schwierigkeitsstufen, sondern fuenf
+   zufaellige Songs aus der eigenen Liste - alle mit demselben Faktor. */
+const PL_SLOTS = [1, 2, 3, 4, 5].map(n => ({ id: 'pl' + n, label: 'Song ' + n, short: String(n), mult: 1.0 }));
 
 const $ = s => document.querySelector(s);
 const el = (t, c, x) => { const n = document.createElement(t); if (c) n.className = c; if (x != null) n.textContent = x; return n; };
 
 let DB = null;            /* { artists:[], songs:[] } */
+let PL = null;            /* aufgeloeste Playlist, gleiche Form wie DB */
+let mode = 'charts';      /* 'charts' | 'playlist' */
 let byTier = {};
 let round = [];           /* 5 Songstaende */
 let active = 0;
-let settings = load('settings', { stages: [true, true, true, true, true, true], start: 'hook', volume: 0.8 });
+let settings = load('settings', { stages: [true, true, true, true, true, true], start: 'hook', volume: 0.8, mode: 'charts' });
 let stats = load('stats', { rounds: 0, solved: 0, played: 0, best: 0, byTier: {} });
 let recent = load('recent', []);
 let pick = null;          /* aktuell im Suchfeld gewaehlter Song */
@@ -34,6 +39,8 @@ const norm = s => (s || '').toLowerCase()
   .replace(/[^a-z0-9]+/g, ' ').trim();
 
 const enabledStages = () => STAGES.filter((_, i) => settings.stages[i]);
+const slots = () => (mode === 'playlist' ? PL_SLOTS : TIERS);
+const pool = () => (mode === 'playlist' && PL ? PL : DB);
 
 /* ---------------------------------------------------------------- Start */
 
@@ -46,6 +53,8 @@ async function boot() {
     s.na = s.ar.map(a => norm(DB.artists[a])).join(' ');
   });
   TIERS.forEach(t => byTier[t.id] = DB.songs.filter(s => s.d === t.id));
+  PL = buildPlaylist(Playlist.restore());
+  if (plPlayable() && settings.mode === 'playlist') mode = 'playlist';
   buildChrome();
   newRound();
   $('#boot').remove();
@@ -55,19 +64,7 @@ async function boot() {
 /* ------------------------------------------------------------- Oberflaeche */
 
 function buildChrome() {
-  const list = $('#tierList'), tabs = $('#tabs');
-  TIERS.forEach((t, i) => {
-    const b = el('button', 'tier-item', t.label);
-    b.style.setProperty('--tc', `var(--t-${t.id})`);
-    b.appendChild(el('span', 'dot'));
-    b.onclick = () => switchTo(i);
-    list.appendChild(b);
-
-    const tab = el('button', 'tab', t.label);
-    tab.style.setProperty('--tc', `var(--t-${t.id})`);
-    tab.onclick = () => switchTo(i);
-    tabs.appendChild(tab);
-  });
+  renderSlots();
 
   const chips = $('#stageChips');
   STAGES.forEach((s, i) => {
@@ -136,7 +133,7 @@ function buildChrome() {
     }
     if ((e.key === 'ArrowLeft' || e.key === 'ArrowRight') && !inp.value) {
       e.preventDefault();
-      switchTo((active + (e.key === 'ArrowRight' ? 1 : -1) + TIERS.length) % TIERS.length);
+      switchTo((active + (e.key === 'ArrowRight' ? 1 : -1) + slots().length) % slots().length);
       return;
     }
     if (e.key === 'Enter') {
@@ -166,7 +163,28 @@ function buildChrome() {
     if (!e.target.closest('.guess-row')) hideSuggest();
   });
 
+  buildPlaylistUI();
   renderStats();
+}
+
+/* Die Leiste links und die Reiter oben zeigen je nach Modus die
+   Schwierigkeitsstufen oder die fuenf Playlist-Plaetze. */
+function renderSlots() {
+  const list = $('#tierList'), tabs = $('#tabs');
+  list.innerHTML = '';
+  tabs.innerHTML = '';
+  slots().forEach((t, i) => {
+    const b = el('button', 'tier-item', t.label);
+    b.style.setProperty('--tc', `var(--t-${t.id})`);
+    b.appendChild(el('span', 'dot'));
+    b.onclick = () => switchTo(i);
+    list.appendChild(b);
+
+    const tab = el('button', 'tab', t.short || t.label);
+    tab.style.setProperty('--tc', `var(--t-${t.id})`);
+    tab.onclick = () => switchTo(i);
+    tabs.appendChild(tab);
+  });
 }
 
 /* Stufen umschalten darf die Runde nicht zuruecksetzen: die Position wird
@@ -207,11 +225,21 @@ function drawSong(tier) {
   return arr[Math.floor(Math.random() * arr.length)];
 }
 
+function drawPlaylist() {
+  const src = PL ? PL.songs.slice() : [];
+  for (let i = src.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [src[i], src[j]] = [src[j], src[i]];
+  }
+  return src;
+}
+
 function newRound() {
   Audio2.stop();
   clearTimeout(sweepTimer);
-  round = TIERS.map(t => {
-    const song = drawSong(t.id);
+  const picked = mode === 'playlist' ? drawPlaylist() : null;
+  round = slots().map((t, idx) => {
+    const song = picked ? picked[idx % Math.max(1, picked.length)] : drawSong(t.id);
     return {
       tier: t,
       song,
@@ -224,8 +252,10 @@ function newRound() {
       error: false,
     };
   });
-  recent = [...round.map(r => r.song && r.song.i).filter(x => x != null), ...recent].slice(0, RECENT_MAX);
-  save('recent', recent);
+  if (mode === 'charts') {
+    recent = [...round.map(r => r.song && r.song.i).filter(x => x != null), ...recent].slice(0, RECENT_MAX);
+    save('recent', recent);
+  }
   active = 0;
   render();
   resetBar();
@@ -313,7 +343,7 @@ function suggest(q) {
   const n = norm(q);
   if (n.length < 2) return hideSuggest();
   const out = [], seen = new Set();
-  for (const s of DB.songs) {
+  for (const s of pool().songs) {
     let sc = 0;
     if (s.n.startsWith(n)) sc = 3;
     else if (s.n.includes(n)) sc = 2;
@@ -325,7 +355,7 @@ function suggest(q) {
     out.push([sc, s]);
     if (out.length > 400) break;
   }
-  out.sort((a, b) => b[0] - a[0] || b[1].s - a[1].s);
+  out.sort((a, b) => b[0] - a[0] || b[1].s - a[1].s || a[1].t.localeCompare(b[1].t));
   sugItems = out.slice(0, 8).map(x => x[1]);
   sugIdx = -1;
   renderSuggest();
@@ -417,9 +447,10 @@ function finish(r, won) {
   clearPick();
   stats.played++;
   if (won) stats.solved++;
-  const bt = stats.byTier[r.tier.id] || { p: 0, w: 0 };
+  const key = mode === 'playlist' ? 'playlist' : r.tier.id;
+  const bt = stats.byTier[key] || { p: 0, w: 0 };
   bt.p++; if (won) bt.w++;
-  stats.byTier[r.tier.id] = bt;
+  stats.byTier[key] = bt;
   save('stats', stats);
   renderStats();
   render();
@@ -436,7 +467,9 @@ function showReveal(r, won) {
   $('#revealArt').src = s.c.replace('100x100bb', '400x400bb');
   $('#revealTitle').textContent = s.t;
   $('#revealArtist').textContent = s.a;
-  $('#revealMeta').textContent = [s.al, s.y || null, s.s ? (s.s / 1e9 >= 1 ? (s.s / 1e9).toFixed(2) + ' Mrd. Streams' : Math.round(s.s / 1e6) + ' Mio. Streams') : null].filter(Boolean).join(' · ');
+  $('#revealMeta').textContent = [s.al, s.y || null,
+    s.s ? (s.s / 1e9 >= 1 ? (s.s / 1e9).toFixed(2) + ' Mrd. Streams' : Math.round(s.s / 1e6) + ' Mio. Streams') : (s.g || null),
+  ].filter(Boolean).join(' · ');
   const badge = $('#revealBadge');
   if (won) {
     const secs = enabledStages()[r.stage];
@@ -544,7 +577,8 @@ function render() {
   $('#search').disabled = over;
   $('#actionBtn').disabled = over;
   $('#playBtn').classList.toggle('loading', !!r && !r.buffer && !r.error);
-  $('#search').placeholder = r && r.error ? 'Song nicht ladbar – R für neue Runde' : 'Song suchen …';
+  $('#search').placeholder = r && r.error ? 'Song nicht ladbar – R für neue Runde'
+    : mode === 'playlist' ? 'Song aus der Playlist suchen …' : 'Song suchen …';
   $('#roundScore').textContent = round.reduce((a, b) => a + b.points, 0);
   setAction();
 }
@@ -555,6 +589,158 @@ function renderStats() {
   const rate = stats.played ? Math.round(stats.solved / stats.played * 100) : 0;
   const rows = [['Runden', stats.rounds], ['Songs erraten', `${stats.solved}/${stats.played}`], ['Quote', rate + ' %'], ['Bestes Ergebnis', stats.best]];
   rows.forEach(([k, v]) => { d.appendChild(el('dt', null, k)); d.appendChild(el('dd', null, v)); });
+}
+
+/* ------------------------------------------------------------- Playlist */
+
+const PL_MIN = 5;
+/* Kollaborationen: der komplette Kuenstlerstring bleibt eine ID, zusaetzlich
+   werden die Beteiligten einzeln aufgenommen. Ein falscher Schnitt kostet hier
+   nichts - er faerbt hoechstens einen Tipp gelb, der es sonst nicht waere. */
+const SPLIT_ARTIST = /\s*(?:,|&|\/|\bfeat\.?\b|\bft\.?\b|\bfeaturing\b|\bwith\b|\bx\b|\bvs\.?\b)\s*/i;
+
+function buildPlaylist(pl) {
+  if (!pl || !pl.songs || !pl.songs.length) return null;
+  const artists = [], byName = new Map();
+  const idOf = name => {
+    const n = norm(name);
+    if (!n) return -1;
+    if (!byName.has(n)) { byName.set(n, artists.length); artists.push(name); }
+    return byName.get(n);
+  };
+  const songs = pl.songs.map((raw, i) => {
+    const s = { ...raw, i, d: 'playlist' };
+    const ids = new Set();
+    const add = x => { const id = idOf(x); if (id >= 0) ids.add(id); };
+    add(s.a);
+    String(s.a || '').split(SPLIT_ARTIST).forEach(add);
+    (String(s.t || '').match(/\((?:feat|ft|with)\.?\s+([^)]+)\)/i) || [])[1]?.split(SPLIT_ARTIST).forEach(add);
+    s.ar = [...ids];
+    s.n = norm(s.t);
+    s.na = s.ar.map(a => norm(artists[a])).join(' ');
+    return s;
+  });
+  return { name: pl.name || 'Playlist', artists, songs, missed: pl.missed || [] };
+}
+
+const plPlayable = () => !!PL && PL.songs.length >= PL_MIN;
+
+let plBusy = false;
+
+function buildPlaylistUI() {
+  const file = $('#plFile');
+  $('#plPick').onclick = () => file.click();
+  file.onchange = () => {
+    const f = file.files && file.files[0];
+    if (f) readPlaylistFile(f);
+    file.value = '';
+  };
+
+  $('#plPasteToggle').onclick = () => {
+    const box = $('#plPaste'), go = $('#plPasteGo');
+    box.hidden = !box.hidden;
+    go.hidden = box.hidden;
+    if (!box.hidden) box.focus();
+  };
+  $('#plPasteGo').onclick = () => {
+    const box = $('#plPaste');
+    if (box.value.trim()) loadPlaylistText(box.value, 'Eingefügte Liste');
+  };
+
+  $('#plClear').onclick = () => {
+    PL = null;
+    Playlist.store(null);
+    if (mode === 'playlist') setMode('charts');
+    renderPlaylist();
+  };
+
+  $('#modeSeg').querySelectorAll('button').forEach(b => {
+    b.onclick = () => setMode(b.dataset.v);
+  });
+
+  /* Datei irgendwo aufs Fenster ziehen reicht. */
+  document.addEventListener('dragover', e => { e.preventDefault(); document.body.classList.add('dragging'); });
+  document.addEventListener('dragleave', e => { if (!e.relatedTarget) document.body.classList.remove('dragging'); });
+  document.addEventListener('drop', e => {
+    e.preventDefault();
+    document.body.classList.remove('dragging');
+    const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+    if (f) readPlaylistFile(f);
+  });
+
+  renderPlaylist();
+}
+
+function readPlaylistFile(f) {
+  if (!/\.(csv|tsv|txt|json|m3u|m3u8)$/i.test(f.name) && !/^text\/|json/.test(f.type || '')) {
+    return plNote('Das ist keine Textdatei – CSV, TSV, TXT oder JSON wird gebraucht.');
+  }
+  if (f.size > 4e6) return plNote('Datei ist zu groß.');
+  const rd = new FileReader();
+  rd.onload = () => loadPlaylistText(String(rd.result || ''), f.name.replace(/\.[a-z0-9]+$/i, ''));
+  rd.readAsText(f);
+}
+
+async function loadPlaylistText(text, name) {
+  if (plBusy) return;
+  const parsed = Playlist.parse(text);
+  if (!parsed.tracks.length) return plNote(parsed.note || 'Keine Titel in der Datei gefunden.');
+
+  plBusy = true;
+  renderPlaylist();
+  plNote('Titel werden gesucht … 0/' + parsed.tracks.length);
+
+  const res = await Playlist.resolve(parsed.tracks, {
+    onProgress: (done, total) => plNote(`Titel werden gesucht … ${done}/${total}`),
+  });
+
+  plBusy = false;
+  const raw = { name, songs: res.songs, missed: res.missed };
+  PL = buildPlaylist(raw);
+  Playlist.store(PL ? raw : null);
+  renderPlaylist();
+
+  if (res.throttled) plNote('Apple hat abgeriegelt – in ein paar Minuten nochmal.');
+  else if (!PL) plNote('Kein einziger Titel gefunden. Stimmen Titel- und Künstlerspalte?');
+  else if (!plPlayable()) plNote(`Nur ${PL.songs.length} von ${parsed.tracks.length} Titeln gefunden – für eine Runde braucht es ${PL_MIN}.`);
+  else setMode('playlist');
+}
+
+function plNote(msg) { $('#plStatus').textContent = msg; }
+
+function renderPlaylist() {
+  $('#modeSeg').querySelectorAll('button').forEach(b => {
+    b.classList.toggle('on', b.dataset.v === mode);
+    b.disabled = b.dataset.v === 'playlist' && !plPlayable();
+  });
+  $('#plPick').disabled = plBusy;
+  $('#plClear').hidden = !PL;
+  $('#plPaste').hidden = true;
+  $('#plPasteGo').hidden = true;
+
+  if (plBusy) return;
+  if (!PL) return plNote('');
+  const miss = PL.missed.length;
+  plNote(`${PL.name}: ${PL.songs.length} Songs${miss ? ` · ${miss} nicht gefunden` : ''}`);
+  $('#plStatus').title = miss ? PL.missed.slice(0, 40).join('\n') : '';
+}
+
+function setMode(m) {
+  if (m === mode) return;
+  if (m === 'playlist' && !plPlayable()) return;
+  mode = m;
+  settings.mode = m;
+  save('settings', settings);
+  Audio2.stop();
+  $('#reveal').hidden = true;
+  $('#summary').hidden = true;
+  hideSuggest();
+  pick = null;
+  $('#search').value = '';
+  $('#clearPick').hidden = true;
+  renderSlots();
+  renderPlaylist();
+  newRound();
 }
 
 /* ------------------------------------------------------------------ Konfetti */

@@ -29,6 +29,29 @@ keine Bibliotheken. Alles läuft im Browser.
 
 Fertig. Jede spätere Änderung im Repo ist nach etwa einer Minute live.
 
+## Eigene Playlist spielen
+
+Rechts unter **Modus** auf *Playlist laden* — oder die Datei einfach irgendwo
+aufs Fenster ziehen. Danach werden fünf zufällige Songs aus der Liste gespielt,
+ohne Schwierigkeitsstufen.
+
+Woher die Datei kommt:
+
+| Dienst | Weg |
+|---|---|
+| Spotify | [Exportify](https://exportify.net) → CSV je Playlist |
+| Apple Music | Musik-App am Mac: Playlist auswählen → *Ablage → Exportieren* (TXT) |
+| YouTube Music | [Google Takeout](https://takeout.google.com) → YouTube → Playlists (CSV) |
+| Deezer, Tidal, Amazon | TuneMyMusic oder Soundiiz, beide exportieren CSV |
+| Lokale Dateien | M3U-Playlist aus dem Musikprogramm |
+| Irgendwas anderes | *oder Liste einfügen*: eine Zeile pro Song, `Titel – Künstler` |
+
+Titel und Künstler werden automatisch erkannt, egal wie die Spalten heißen.
+Anschließend sucht die Seite jeden Titel bei Apple – das dauert etwa eine
+Sekunde pro zehn Songs und passiert nur einmal, danach liegt die Playlist im
+Browser. Songs, die Apple nicht findet, fallen raus; wie viele es waren, steht
+unter dem Knopf. Für eine Runde braucht es mindestens fünf gefundene Songs.
+
 ### Wenn die Seite leer bleibt
 
 Fast immer liegt `index.html` dann nicht direkt im Repo-Hauptverzeichnis, sondern in
