@@ -336,6 +336,7 @@ function finish(r, won) {
   bt.p++; if (won) bt.w++;
   stats.byTier[r.tier.id] = bt;
   save('stats', stats);
+  renderStats();
   render();
   showReveal(r, won);
 }
