@@ -12,6 +12,13 @@ const { JSDOM } = require('jsdom');
 const ROOT = path.join(__dirname, '..');
 const read = f => fs.readFileSync(path.join(ROOT, f), 'utf8');
 const tick = (ms = 0) => new Promise(r => setTimeout(r, ms));
+/* Auf einen Zustand warten statt auf die Uhr - feste Wartezeiten machen den
+   Test auf langsamen Maschinen wackelig. */
+const waitFor = async (fn, ms = 8000) => {
+  const t0 = Date.now();
+  while (Date.now() - t0 < ms) { if (fn()) return true; await tick(25); }
+  return false;
+};
 
 let failed = 0;
 const assert = (ok, msg) => { if (ok) console.log('ok  ' + msg); else { failed++; console.error('FEHLGESCHLAGEN: ' + msg); } };
@@ -59,7 +66,7 @@ function makeWindow(store) {
     return { ok: true, status: 200, arrayBuffer: async () => new ArrayBuffer(8) };  /* Preview */
   };
 
-  w.eval(['assets/audio.js', 'assets/playlist.js', 'assets/app.js'].map(read).join('\n;\n')
+  w.eval(['assets/audio.js', 'assets/playlist.js', 'assets/filters.js', 'assets/app.js'].map(read).join('\n;\n')
     + '\n;window.__ev = s => eval(s);');
   return w;
 }
@@ -70,13 +77,14 @@ const dummy = n => ({ t: 'Song ' + n, a: 'Kuenstler ' + n, al: 'Album', y: 2020,
   /* ------------------------------------------------ Runde im Chartsmodus */
   let w = makeWindow({});
   const G = n => w.__ev(n), $ = s => w.document.querySelector(s);
-  await tick(150);
+  await waitFor(() => !w.document.querySelector('#app').hidden);
 
   assert(!$('#app').hidden, 'Boot: App sichtbar');
   assert($('#tabs').children.length === 5, 'Boot: fuenf Reiter');
   assert(G('round').length === 5 && G('round').every(r => r.song), 'Boot: Runde mit fuenf Songs');
 
-  await G('playCurrent()'); await tick(30);
+  await G('playCurrent()');
+  await waitFor(() => G('round[0].buffer') != null);
   assert(G('round[0].buffer') != null, 'Abspielen: Puffer geladen');
 
   /* Zeit -> Pixel: jede Stufenlaenge landet genau auf ihrer Segmentkante,
@@ -112,7 +120,8 @@ const dummy = n => ({ t: 'Song ' + n, a: 'Kuenstler ' + n, al: 'Album', y: 2020,
   /* ---------------------------------------------------- Playlist-Modus */
   const csv = 'Track Name,Artist Name(s)\nUnstoppable,Sia\nBlinding Lights,The Weeknd\nLevitating,Dua Lipa\n'
             + 'Hello,Adele\nBad Guy,Billie Eilish\nStronger,Britney Spears\nGibtsNicht,Niemand';
-  await G(`loadPlaylistText(${JSON.stringify(csv)}, 'Testliste')`); await tick(1500);
+  await G(`loadPlaylistText(${JSON.stringify(csv)}, 'Testliste')`);
+  await waitFor(() => G('plBusy') === false, 20000);
 
   assert(G('PL') != null && G('PL.songs.length') === 6, 'Playlist: sechs von sieben aufgeloest');
   assert(G('PL.missed').length === 1, 'Playlist: der unbekannte Titel wird gemeldet');
@@ -133,7 +142,8 @@ const dummy = n => ({ t: 'Song ' + n, a: 'Kuenstler ' + n, al: 'Album', y: 2020,
   $('#summaryNext').click(); await tick(30);
 
   const calls = itunesCalls;
-  await G(`loadPlaylistText(${JSON.stringify(csv)}, 'Testliste')`); await tick(400);
+  await G(`loadPlaylistText(${JSON.stringify(csv)}, 'Testliste')`);
+  await waitFor(() => G('plBusy') === false, 20000);
   assert(itunesCalls === calls, 'Playlist: zweiter Import kommt aus dem Cache');
 
   G("setMode('charts')"); await tick(30);
@@ -142,12 +152,87 @@ const dummy = n => ({ t: 'Song ' + n, a: 'Kuenstler ' + n, al: 'Album', y: 2020,
   $('#plClear').click(); await tick(10);
   assert(G('PL') === null && $('#modeSeg').children[1].disabled, 'Playlist entfernt: Modus wieder gesperrt');
 
+  /* ------------------------------------------------------ Songauswahl */
+  w = makeWindow({});
+  const F = n => w.__ev(n), $$ = q => w.document.querySelector(q);
+  await waitFor(() => !w.document.querySelector('#app').hidden);
+
+  const all = F('DB.songs').length;
+  assert(F('settings.filters').length === 1 && F('settings.filters')[0].type === 'instrumental',
+    'Filter: Instrumentals sind von Haus aus draussen');
+  assert(F('filtered').length < all, 'Filter: die Standardregel greift');
+
+  const add = (mode, type, value) => {
+    $$('#fMode').value = mode; $$('#fType').value = type; $$('#fValue').value = value;
+    $$('#fAdd').click();
+  };
+
+  const songBefore = F('round[0].song.t');
+  add('nur', 'decade', '2010er');
+  assert(F('filtered').every(s => s.y >= 2010 && s.y < 2020), 'Filter: „nur 2010er" schraenkt ein');
+  assert(F('round[0].song.t') === songBefore, 'Filter: die laufende Runde bleibt stehen');
+
+  const only2010 = F('filtered').length;
+  add('ohne', 'genre', 'Hip-Hop/Rap');
+  assert(F('filtered').length < only2010 && F('filtered').every(s => s.g !== 'Hip-Hop/Rap'),
+    'Filter: „ohne Hip-Hop/Rap" wirft raus');
+
+  const cut = F('filtered').length;
+  add('dazu', 'artist', 'Billie Eilish');
+  assert(F('filtered').length > cut, 'Filter: „dazu Billie Eilish" holt Songs ausserhalb der Auswahl dazu');
+  assert(F("filtered.some(s => s.a.includes('Billie Eilish') && (s.y < 2010 || s.y >= 2020))"),
+    'Filter: dazu schlaegt die Einschraenkung');
+  assert($$('#filterList').children.length === 4, 'Filter: vier Regeln stehen als Chips');
+
+  F('newRound()'); await tick(30);
+  const pool = new Set(F('filtered').map(s => s.i));
+  assert(F('round').every(r => r.song && pool.has(r.song.i)), 'Filter: die neue Runde zieht nur aus dem Pool');
+
+  /* Zu kleiner Pool warnt. Die 1960er haben ausserdem keine Impossible-Songs,
+     die Stufe muss also Ersatz aus dem Rest bekommen. */
+  while (F('settings.filters').length) w.document.querySelector('#filterList .frule button').click();
+  add('nur', 'decade', '1960er');
+  assert(F('filtered').length < 30 && $$('#filterCount').classList.contains('warn')
+    && /Nur \d+ Songs/.test($$('#filterCount').textContent), 'Filter: kleiner Pool warnt (' + $$('#filterCount').textContent + ')');
+  assert(F('byTier.impossible').length === 0, 'Filter: die 1960er lassen Impossible leer');
+
+  F('newRound()'); await tick(30);
+  const small = new Set(F('filtered').map(s => s.i));
+  assert(F('round').every(r => r.song && small.has(r.song.i)),
+    'Filter: leere Stufen bekommen Ersatz aus dem Rest des Pools');
+  assert(new Set(F('round').map(r => r.song.i)).size === 5, 'Filter: der Ersatz wiederholt keinen Song');
+
+  /* Zwei „nur" verschiedener Art muessen beide passen - hier bleibt nichts */
+  add('nur', 'artist', 'Billie Eilish');
+  assert(F('filtered').length === 0 && /Kein Song passt/.test($$('#filterCount').textContent),
+    'Filter: sich ausschliessende Regeln werden gemeldet');
+  F('newRound()'); await tick(30);
+  assert(F('round').every(r => r.song === null) && $$('#search').disabled,
+    'Filter: leerer Pool laesst die Seite stehen statt zu stuerzen');
+  w.document.querySelector('#filterList .frule button').click();   /* 1960er weg */
+
+  /* Unsinnige Eingabe */
+  add('ohne', 'genre', 'Gibtsnicht');
+  assert(/Kein Treffer/.test($$('#filterCount').textContent), 'Filter: unbekannter Wert wird gemeldet');
+
+  /* Regeln ueberleben das Neuladen */
+  const saved = w.localStorage.getItem('songrate:settings');
+  const w2 = makeWindow({ 'songrate:settings': saved });
+  await waitFor(() => !w2.document.querySelector('#app').hidden);
+  assert(w2.__ev('settings.filters').some(r => r.type === 'artist' && r.value === 'billie eilish'),
+    'Filter: Regeln ueberleben das Neuladen');
+
+  /* Im Playlist-Modus hat die Songauswahl nichts zu suchen */
+  w2.__ev('PL = buildPlaylist({ name: "X", songs: [1,2,3,4,5,6].map(n => ({ t: "S"+n, a: "K"+n, al: "A", y: 2020, g: "Pop", s: 0, p: "https://audio/"+n, c: "https://art/"+n+"/100x100bb.jpg", id: n })), missed: [] }); setMode("playlist")');
+  await waitFor(() => w2.document.querySelector('#filterPanel').hidden);
+  assert(w2.document.querySelector('#filterPanel').hidden, 'Filter: Panel ist im Playlist-Modus weg');
+
   /* ------------------------------------------------------- Randfaelle */
   w = makeWindow({
     'songrate:playlist': JSON.stringify({ name: 'Gespeichert', songs: [1, 2, 3, 4, 5, 6].map(dummy), missed: ['Fehlt'] }),
     'songrate:settings': JSON.stringify({ mode: 'playlist' }),
   });
-  await tick(150);
+  await waitFor(() => !w.document.querySelector('#app').hidden);
   assert(w.__ev('mode') === 'playlist' && w.__ev('PL.songs.length') === 6, 'Neustart: gespeicherte Playlist wird wieder aufgenommen');
   assert(w.document.querySelector('#plStatus').textContent.includes('Gespeichert'), 'Neustart: Status nennt die Playlist');
 
@@ -155,25 +240,25 @@ const dummy = n => ({ t: 'Song ' + n, a: 'Kuenstler ' + n, al: 'Album', y: 2020,
     'songrate:playlist': JSON.stringify({ name: 'Kurz', songs: [1, 2, 3].map(dummy), missed: [] }),
     'songrate:settings': JSON.stringify({ mode: 'playlist' }),
   });
-  await tick(150);
+  await waitFor(() => !w.document.querySelector('#app').hidden);
   assert(w.__ev('mode') === 'charts' && w.document.querySelector('#modeSeg').children[1].disabled,
     'Zu kurze Playlist: Modus bleibt gesperrt');
 
   /* Drosselung: der Lauf bricht nicht ab, sondern wartet sichtbar und laesst
      sich abbrechen; die Titelliste bleibt fuer „Weiter suchen" liegen. */
   w = makeWindow({});
-  await tick(150);
+  await waitFor(() => !w.document.querySelector('#app').hidden);
   w.fetch = async url => String(url).includes('itunes')
     ? { ok: false, status: 403, json: async () => ({}) }
     : { ok: true, status: 200, arrayBuffer: async () => new ArrayBuffer(8) };
   const status = () => w.document.querySelector('#plStatus').textContent;
   w.__ev("loadPlaylistText('Track Name,Artist Name(s)\\nA,B\\nC,D', 'X')");
-  await tick(1200);
+  await waitFor(() => /Apple bremst/.test(status()));
   assert(/Apple bremst – weiter in \d+ s/.test(status()), 'Drosselung: Wartezeit wird heruntergezählt (' + status() + ')');
   assert(!w.document.querySelector('#plCancel').hidden, 'Drosselung: Abbrechen ist sichtbar');
 
   w.document.querySelector('#plCancel').click();
-  await tick(1200);
+  await waitFor(() => w.__ev('plBusy') === false);
   assert(w.__ev('plBusy') === false, 'Abbrechen: Lauf endet');
   assert(!w.document.querySelector('#plResume').hidden, 'Abbrechen: „Weiter suchen" steht bereit');
   assert(w.__ev('Playlist.restoreQueue()') != null, 'Abbrechen: Titelliste bleibt gespeichert');

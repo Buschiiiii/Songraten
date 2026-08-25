@@ -98,6 +98,30 @@
       </div>
     </div>
 
+    <div class="panel" id="filterPanel">
+      <h2>Songauswahl</h2>
+      <div id="filterList" class="filter-list"></div>
+      <div class="filter-add">
+        <select id="fMode" aria-label="Wirkung">
+          <option value="nur">nur</option>
+          <option value="ohne">ohne</option>
+          <option value="dazu">dazu</option>
+        </select>
+        <select id="fType" aria-label="Art">
+          <option value="genre">Genre</option>
+          <option value="artist">Künstler</option>
+          <option value="decade">Jahrzehnt</option>
+          <option value="instrumental">Instrumental</option>
+        </select>
+        <input id="fValue" list="fOptions" placeholder="Wert …" autocomplete="off" spellcheck="false">
+        <datalist id="fOptions"></datalist>
+        <button id="fAdd" class="btn-ghost" title="Filter hinzufügen">Hinzufügen</button>
+      </div>
+      <p id="filterCount" class="note"></p>
+      <p class="note">nur schränkt ein, ohne wirft raus, dazu holt zurück.
+        Filter wirken ab der nächsten Runde.</p>
+    </div>
+
     <div class="panel">
       <h2>Stufen</h2>
       <div class="chips" id="stageChips"></div>
@@ -139,6 +163,7 @@
 
 <script src="assets/audio.js"></script>
 <script src="assets/playlist.js"></script>
+<script src="assets/filters.js"></script>
 <script src="assets/app.js"></script>
 </body>
 </html>

@@ -21,9 +21,13 @@ let DB = null;            /* { artists:[], songs:[] } */
 let PL = null;            /* aufgeloeste Playlist, gleiche Form wie DB */
 let mode = 'charts';      /* 'charts' | 'playlist' */
 let byTier = {};
+let filtered = [];        /* Songs, die nach den Filtern uebrig bleiben */
 let round = [];           /* 5 Songstaende */
 let active = 0;
-let settings = load('settings', { stages: [true, true, true, true, true, true], start: 'hook', volume: 0.8, mode: 'charts' });
+let settings = load('settings', {
+  stages: [true, true, true, true, true, true], start: 'hook', volume: 0.8, mode: 'charts',
+  filters: Filters.DEFAULT.map(r => ({ ...r })),
+});
 let stats = load('stats', { rounds: 0, solved: 0, played: 0, best: 0, byTier: {} });
 let recent = load('recent', []);
 let pick = null;          /* aktuell im Suchfeld gewaehlter Song */
@@ -52,7 +56,7 @@ async function boot() {
     s.n = norm(s.t);
     s.na = s.ar.map(a => norm(DB.artists[a])).join(' ');
   });
-  TIERS.forEach(t => byTier[t.id] = DB.songs.filter(s => s.d === t.id));
+  applyFilters();
   PL = buildPlaylist(Playlist.restore());
   plQueue = Playlist.restoreQueue();
   if (plPlayable() && settings.mode === 'playlist') mode = 'playlist';
@@ -165,6 +169,7 @@ function buildChrome() {
   });
 
   buildPlaylistUI();
+  buildFilterUI();
   renderStats();
 }
 
@@ -218,9 +223,13 @@ function renderChips() {
 
 /* ----------------------------------------------------------------- Runde */
 
-function drawSong(tier) {
-  const pool = byTier[tier];
-  if (!pool || !pool.length) return null;
+/* Ist eine Stufe durch die Filter leer, wird aus dem restlichen Pool
+   gezogen - lieber eine spielbare Runde als eine leere Kachel. Die Warnung
+   in der Songauswahl sagt vorher, dass das passiert. */
+function drawSong(tier, used) {
+  let pool = (byTier[tier] || []).filter(s => !used.has(s.i));
+  if (!pool.length) pool = filtered.filter(s => !used.has(s.i));
+  if (!pool.length) return null;
   const fresh = pool.filter(s => !recent.includes(s.i));
   const arr = fresh.length > 20 ? fresh : pool;
   return arr[Math.floor(Math.random() * arr.length)];
@@ -240,8 +249,10 @@ function newRound() {
   clearTimeout(sweepTimer);
   cancelAnimationFrame(sweepRaf);
   const picked = mode === 'playlist' ? drawPlaylist() : null;
+  const used = new Set();
   round = slots().map((t, idx) => {
-    const song = picked ? picked[idx % Math.max(1, picked.length)] : drawSong(t.id);
+    const song = picked ? picked[idx % Math.max(1, picked.length)] : drawSong(t.id, used);
+    if (song) used.add(song.i);
     return {
       tier: t,
       song,
@@ -436,7 +447,7 @@ function setAction() {
 
 function submit() {
   const r = round[active];
-  if (!r || r.status !== 'playing') return;
+  if (!r || !r.song || r.status !== 'playing') return;
   const target = r.song;
   const guess = pick;
 
@@ -605,11 +616,12 @@ function render() {
     gl.appendChild(row);
   });
 
-  const over = !r || r.status !== 'playing';
+  const over = !r || !r.song || r.status !== 'playing';
   $('#search').disabled = over;
   $('#actionBtn').disabled = over;
   $('#playBtn').classList.toggle('loading', !!r && !r.buffer && !r.error);
-  $('#search').placeholder = r && r.error ? 'Song nicht ladbar – R für neue Runde'
+  $('#search').placeholder = r && !r.song ? 'Kein Song passt zu den Filtern'
+    : r && r.error ? 'Song nicht ladbar – R für neue Runde'
     : mode === 'playlist' ? 'Song aus der Playlist suchen …' : 'Song suchen …';
   $('#roundScore').textContent = round.reduce((a, b) => a + b.points, 0);
   setAction();
@@ -621,6 +633,95 @@ function renderStats() {
   const rate = stats.played ? Math.round(stats.solved / stats.played * 100) : 0;
   const rows = [['Runden', stats.rounds], ['Songs erraten', `${stats.solved}/${stats.played}`], ['Quote', rate + ' %'], ['Bestes Ergebnis', stats.best]];
   rows.forEach(([k, v]) => { d.appendChild(el('dt', null, k)); d.appendChild(el('dd', null, v)); });
+}
+
+/* --------------------------------------------------------- Songauswahl */
+
+/* Der Pool wird neu gerechnet, die laufende Runde aber nicht angefasst -
+   sonst waere ein Klick auf einen Filter dasselbe wie Aufgeben. */
+function applyFilters() {
+  filtered = Filters.apply(DB.songs, settings.filters, DB);
+  TIERS.forEach(t => byTier[t.id] = filtered.filter(s => s.d === t.id));
+  renderFilters();
+}
+
+function buildFilterUI() {
+  $('#fType').onchange = renderFilterOptions;
+  $('#fAdd').onclick = addFilter;
+  $('#fValue').onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); addFilter(); } };
+  renderFilterOptions();
+  renderFilters();
+}
+
+function renderFilterOptions() {
+  const type = $('#fType').value;
+  const box = $('#fOptions'), inp = $('#fValue');
+  box.innerHTML = '';
+  Filters.options(type, DB).forEach(o => {
+    const opt = document.createElement('option');
+    opt.value = o.text;
+    box.appendChild(opt);
+  });
+  inp.hidden = type === 'instrumental';
+  inp.value = '';
+  inp.placeholder = type === 'genre' ? 'z. B. Hip-Hop/Rap'
+    : type === 'artist' ? 'z. B. Billie Eilish'
+    : type === 'decade' ? 'z. B. 2010er' : '';
+}
+
+function addFilter() {
+  const mode = $('#fMode').value, type = $('#fType').value;
+  const parsed = Filters.parse(type, $('#fValue').value, DB);
+  if (!parsed) return filterNote('Kein Treffer – bitte aus der Liste wählen.');
+
+  const rule = { mode, type, value: parsed.value, text: parsed.text };
+  /* Dieselbe Sache zweimal mit verschiedener Wirkung ergibt keinen Sinn. */
+  settings.filters = settings.filters.filter(r => !(r.type === rule.type && String(r.value) === String(rule.value)));
+  settings.filters.push(rule);
+  save('settings', settings);
+  $('#fValue').value = '';
+  applyFilters();
+}
+
+function removeFilter(i) {
+  settings.filters.splice(i, 1);
+  save('settings', settings);
+  applyFilters();
+}
+
+function filterNote(msg) {
+  const c = $('#filterCount');
+  c.textContent = msg;
+  c.classList.add('warn');
+  clearTimeout(filterNote.t);
+  filterNote.t = setTimeout(renderFilters, 2600);
+}
+
+function renderFilters() {
+  $('#filterPanel').hidden = mode === 'playlist';
+
+  const box = $('#filterList');
+  box.innerHTML = '';
+  settings.filters.forEach((r, i) => {
+    const chip = el('div', 'frule ' + r.mode);
+    chip.appendChild(el('span', null, Filters.label(r)));
+    const x = el('button', null, '×');
+    x.title = 'Filter entfernen';
+    x.onclick = () => removeFilter(i);
+    chip.appendChild(x);
+    box.appendChild(chip);
+  });
+
+  const n = filtered.length;
+  const empty = TIERS.filter(t => !(byTier[t.id] || []).length).map(t => t.label);
+  const c = $('#filterCount');
+  let warn = true, msg;
+  if (!n) msg = 'Kein Song passt zu den Filtern.';
+  else if (n < Filters.MIN_POOL) msg = `Nur ${n} Songs übrig – das wird schnell vorhersehbar.`;
+  else if (empty.length) msg = `${n} Songs · leer: ${empty.join(', ')} – dort kommt Ersatz aus dem Rest.`;
+  else { msg = `${n} Songs im Pool`; warn = false; }
+  c.textContent = msg;
+  c.classList.toggle('warn', warn);
 }
 
 /* ------------------------------------------------------------- Playlist */
@@ -802,6 +903,7 @@ function setMode(m) {
   $('#clearPick').hidden = true;
   renderSlots();
   renderPlaylist();
+  renderFilters();
   newRound();
 }
 

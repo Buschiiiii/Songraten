@@ -180,6 +180,32 @@ main{
 .seg button:hover{color:var(--text)}
 .seg button.on{background:var(--green);color:#07130b}
 
+/* ---------- Songauswahl ---------- */
+.filter-list{display:flex;flex-wrap:wrap;gap:5px;margin-bottom:9px}
+.filter-list:empty{display:none}
+.frule{
+  display:inline-flex;align-items:center;gap:6px;padding:5px 8px 5px 10px;
+  border-radius:999px;background:var(--panel-2);font-size:12px;color:var(--text);
+  border-left:3px solid var(--grey);max-width:100%;
+}
+.frule.nur{border-left-color:var(--green)}
+.frule.ohne{border-left-color:var(--t-expert)}
+.frule.dazu{border-left-color:var(--t-medium)}
+.frule span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.frule button{color:var(--muted);font-size:15px;line-height:1;padding:0 1px}
+.frule button:hover{color:var(--text)}
+
+.filter-add{display:grid;grid-template-columns:1fr 1fr;gap:5px}
+.filter-add select,.filter-add input{
+  min-width:0;padding:7px 9px;border-radius:9px;background:var(--panel-2);
+  border:1px solid var(--line);color:var(--text);font:inherit;font-size:12.5px;outline:none;
+}
+.filter-add select{-webkit-appearance:none;appearance:none;cursor:pointer}
+.filter-add input{grid-column:1 / -1}
+.filter-add input:focus{border-color:var(--green-dim)}
+.filter-add .btn-ghost{grid-column:1 / -1;margin-top:0;padding:8px 12px;font-size:13px}
+#filterCount.warn{color:var(--yellow)}
+
 /* ---------- Playlist ---------- */
 .pl-load{display:flex;flex-direction:column;gap:6px;margin-top:10px}
 .pl-load .btn-ghost{margin-top:0}
