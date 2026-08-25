@@ -79,6 +79,39 @@ Unter 130 Mio. wird es unfair statt schwer. Der Pool je Stufe wird mit festem
 Seed gemischt, nicht nach Streams sortiert — sonst füllt sich jede Stufe nur
 vom oberen Rand ihres Bereichs.
 
+## Songauswahl (Filter)
+
+Regeln in `assets/filters.js`, gespeichert in `settings.filters`. Drei Modi,
+damit sich alles kombinieren lässt:
+
+| Modus | Wirkung |
+|---|---|
+| `nur` | schränkt ein — mehrere gleicher Art wirken als ODER, verschiedene Arten als UND |
+| `ohne` | wirft raus |
+| `dazu` | holt dazu und schlägt beide anderen |
+
+„nur 2010er + ohne Hip-Hop/Rap + dazu Billie Eilish" ergibt also die 2010er
+ohne Rap, aber mit **allen** Billie-Eilish-Songs, auch denen von 2019 und 2021.
+
+Arten: `genre`, `artist`, `decade`, `instrumental`. Werte werden normalisiert
+gespeichert (`value`) und im Original angezeigt (`text`). Dieselbe Sache kann
+nur einen Modus haben — beim Hinzufügen wird eine ältere Regel dazu ersetzt.
+
+Voreingestellt ist `ohne Instrumental`. Die Kataloge kennzeichnen Instrumentals
+nicht, deshalb die Erkennung über Titel, Album (`instrumental`, `karaoke`,
+`score` …) und Genres, die praktisch nie Gesang haben. Bewusst eng: im
+aktuellen `songs.json` trifft sie genau einen Song. Wer echte Instrumentals
+vermisst, erweitert `INST_WORDS`/`INST_GENRES`.
+
+Der Pool wird sofort neu gerechnet, die **laufende Runde aber nicht angefasst**
+— sonst wäre ein Klick auf einen Filter dasselbe wie Aufgeben. Vorschläge im
+Suchfeld kommen weiter aus der ganzen Datei, nicht aus dem Pool: sonst wäre
+die Vorschlagsliste bei kleinen Pools die Lösung.
+
+Warnung ab weniger als 30 Songs (`Filters.MIN_POOL`), ebenso wenn eine Stufe
+leer läuft. Leere Stufen ziehen Ersatz aus dem restlichen Pool, damit die Runde
+spielbar bleibt.
+
 ## Playlist-Modus
 
 Direkt bei Spotify, Apple Music oder YouTube nachfragen geht nicht: alle drei
@@ -143,7 +176,7 @@ kworb geprüft, plus die `NEVER_SPLIT`-Liste in `match_local.py`.
    `.reveal` setzt `display:grid`, was das `hidden`-Attribut aushebelt. Das hat
    die Seite schon einmal komplett blockiert: beide Overlays waren dauerhaft
    sichtbar und kein Klick kam mehr durch.
-2. **Stufen umschalten darf die Runde nicht zurücksetzen.** `remapStages()`
+2. **Weder Stufen noch Filter dürfen die Runde zurücksetzen.** `remapStages()`
    rechnet die Position auf die nächste Stufe um, die mindestens so lang ist
    wie die bisherige. Nie `newRound()` aus einer Einstellung heraus aufrufen.
 3. **`.stage-progress` darf in `render()` nicht mitgelöscht werden.** `render()`
@@ -159,7 +192,8 @@ kworb geprüft, plus die `NEVER_SPLIT`-Liste in `match_local.py`.
 5. **Der Cursor steht dauerhaft im Suchfeld.** Kürzel dürfen deshalb keine
    Schriftzeichen sein: ↑ spielt ab, Enter rät, Shift+Enter überspringt,
    ←→ wechselt die Stufe (nur bei leerem Feld), Cmd+Enter würfelt neu.
-6. localStorage-Schlüssel: `songrate:settings`, `songrate:stats`,
+6. localStorage-Schlüssel: `songrate:settings` (enthält auch `filters`),
+   `songrate:stats`,
    `songrate:recent` (letzte 60 Songs, gegen Wiederholungen),
    `songrate:playlist` (aufgelöste Playlist), `songrate:plcache`
    (Titel → iTunes-Treffer), `songrate:plqueue` (Titelliste eines noch nicht
@@ -171,15 +205,15 @@ kworb geprüft, plus die `NEVER_SPLIT`-Liste in `match_local.py`.
 
 Es gibt keinen Browser in der Entwicklungsumgebung, aber jsdom reicht und hat
 bisher jeden Fehler gefunden: `index.html` laden, `AudioContext` mocken,
-`fetch` auf die lokale `songs.json` biegen, dann `audio.js` + `app.js`
-auswerten und die Handler direkt aufrufen. Genau das macht `tools/test_ui.js`
+`fetch` auf die lokale `songs.json` biegen, dann `audio.js`, `playlist.js`,
+`filters.js` und `app.js` auswerten und die Handler direkt aufrufen. Genau das macht `tools/test_ui.js`
 (`npm i jsdom`, dann `node tools/test_ui.js`) — es spielt eine Runde in beiden
-Modi durch. Zwei Stolpersteine dabei: die drei
+Modi durch. Zwei Stolpersteine dabei: alle vier
 Skripte in **einem** `eval` zusammenhängen (sonst sieht `app.js` weder `Audio2`
-noch `Playlist`), und `getContext` für das Konfetti-Canvas stubben. Vor jeder
+noch `Playlist` oder `Filters`), und `getContext` für das Konfetti-Canvas stubben. Vor jeder
 Auslieferung einmal durchspielen: Runde starten, raten, überspringen, auflösen,
-neue Runde, Stufen umschalten, Neuwürfeln, Playlist laden, im Playlist-Modus
-eine Runde beenden, zurückschalten.
+neue Runde, Stufen umschalten, Neuwürfeln, Filter setzen und entfernen,
+Playlist laden, im Playlist-Modus eine Runde beenden, zurückschalten.
 
 ## Offene Punkte
 

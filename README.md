@@ -29,6 +29,29 @@ keine Bibliotheken. Alles läuft im Browser.
 
 Fertig. Jede spätere Änderung im Repo ist nach etwa einer Minute live.
 
+## Songauswahl einstellen
+
+Rechts unter **Songauswahl** legst du fest, woraus gezogen wird. Jede Regel hat
+eine Wirkung und eine Art:
+
+- **nur** – schränkt ein: *nur 2010er* spielt nur Songs aus den 2010ern.
+  Mehrere Regeln derselben Art gelten zusammen (*nur 2000er* + *nur 2010er*
+  = beide Jahrzehnte), Regeln verschiedener Art müssen alle passen.
+- **ohne** – wirft raus: *ohne Hip-Hop/Rap*.
+- **dazu** – holt dazu und sticht die anderen: *dazu Billie Eilish* bringt alle
+  ihre Songs mit, auch wenn sie sonst durch die Filter fallen würden.
+
+Arten sind Genre, Künstler, Jahrzehnt und Instrumental. **Instrumentals sind
+von Haus aus draußen** – die Regel steht als erster Chip da und lässt sich
+wegklicken wie jede andere.
+
+Unter den Chips steht, wie viele Songs übrig sind. Bei weniger als 30 kommt
+eine Warnung: dann wiederholt sich die Runde schnell und wird vorhersehbar.
+Läuft eine Schwierigkeitsstufe leer, zieht sie Ersatz aus dem Rest.
+
+Filter wirken ab der nächsten Runde – die laufende bleibt stehen. Mit **Alle
+neu würfeln** greifen sie sofort.
+
 ## Eigene Playlist spielen
 
 Rechts unter **Modus** auf *Playlist laden* — oder die Datei einfach irgendwo
