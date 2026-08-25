@@ -199,25 +199,56 @@ const dummy = n => ({ t: 'Song ' + n, a: 'Kuenstler ' + n, al: 'Album', y: 2020,
   await waitFor(() => !w.document.querySelector('#app').hidden);
 
   const all = F('DB.songs').length;
+  const setMode = m => $$(`#fMode button[data-v="${m}"]`).click();
+  const rowIn = (sel, text) => [...$$(sel).querySelectorAll('.fopt')]
+    .find(r => r.querySelector('.txt').textContent === text);
+  const groupOf = type => (type === 'genre' ? '#gGenre' : type === 'decade' ? '#gDecade' : '#gArtist');
+  const search = text => { const a = $$('#fArtist'); a.value = text; a.dispatchEvent(new w.Event('input')); };
+  const add = (mode, type, text) => {
+    setMode(mode);
+    if (type === 'artist') search(text);
+    const row = rowIn(groupOf(type), text);
+    if (!row) throw new Error('Keine Zeile fuer ' + text);
+    row.click();
+  };
+
   assert(F('settings.filters').length === 1 && F('settings.filters')[0].type === 'instrumental',
     'Filter: Instrumentals sind von Haus aus draussen');
+  assert($$('#fInst').checked, 'Filter: der Schalter steht passend dazu an');
   assert(F('filtered').length < all, 'Filter: die Standardregel greift');
 
-  const add = (mode, type, value) => {
-    $$('#fMode').value = mode; $$('#fType').value = type; $$('#fValue').value = value;
-    $$('#fAdd').click();
-  };
+  /* Der Schalter ist die einzige Bedienung fuer Instrumentals */
+  $$('#fInst').checked = false; $$('#fInst').dispatchEvent(new w.Event('change'));
+  assert(F('filtered').length === all && !F("settings.filters.some(r => r.type === 'instrumental')"),
+    'Filter: Schalter aus laesst Instrumentals wieder zu');
+  $$('#fInst').checked = true; $$('#fInst').dispatchEvent(new w.Event('change'));
+  assert(F('filtered').length < all, 'Filter: Schalter an wirft sie wieder raus');
+
+  /* Genres und Jahrzehnte stehen als Haekchenliste bereit */
+  assert($$('#gGenre').querySelectorAll('.fopt').length === F("Filters.options('genre', DB)").length,
+    'Filter: alle Genres stehen zur Auswahl');
+  assert($$('#gDecade').querySelectorAll('.fopt').length === 8, 'Filter: alle Jahrzehnte stehen zur Auswahl');
+  assert(rowIn('#gGenre', 'Pop').querySelector('.num').textContent === '532',
+    'Filter: neben jedem Eintrag steht, wie viele Songs daran haengen');
 
   const songBefore = F('round[0].song.t');
   add('nur', 'decade', '2010er');
   assert(F('filtered').every(s => s.y >= 2010 && s.y < 2020), 'Filter: „nur 2010er" schraenkt ein');
   assert(F('round[0].song.t') === songBefore, 'Filter: die laufende Runde bleibt stehen');
+  assert(rowIn('#gDecade', '2010er').classList.contains('on') && rowIn('#gDecade', '2010er').classList.contains('nur'),
+    'Filter: das Haekchen zeigt die Wirkung an');
+  assert($$('#gDecade').querySelector('.fcount').textContent.includes('1'), 'Filter: die Gruppe zeigt ihre Anzahl');
 
   const only2010 = F('filtered').length;
   add('ohne', 'genre', 'Hip-Hop/Rap');
   assert(F('filtered').length < only2010 && F('filtered').every(s => s.g !== 'Hip-Hop/Rap'),
     'Filter: „ohne Hip-Hop/Rap" wirft raus');
+  assert(rowIn('#gGenre', 'Hip-Hop/Rap').classList.contains('ohne'), 'Filter: die Zeile faerbt sich nach Wirkung');
 
+  /* Kuenstler ueber die Suche, damit man sich nicht vertippt */
+  search('bill');
+  assert([...$$('#gArtist').querySelectorAll('.fopt')].some(r => r.querySelector('.txt').textContent === 'Billie Eilish'),
+    'Filter: die Kuenstlersuche schlaegt vor');
   const cut = F('filtered').length;
   add('dazu', 'artist', 'Billie Eilish');
   assert(F('filtered').length > cut, 'Filter: „dazu Billie Eilish" holt Songs ausserhalb der Auswahl dazu');
@@ -225,13 +256,25 @@ const dummy = n => ({ t: 'Song ' + n, a: 'Kuenstler ' + n, al: 'Album', y: 2020,
     'Filter: dazu schlaegt die Einschraenkung');
   assert($$('#filterList').children.length === 4, 'Filter: vier Regeln stehen als Chips');
 
+  /* Nochmal derselbe Modus schaltet die Regel wieder ab */
+  add('ohne', 'genre', 'Hip-Hop/Rap');
+  assert(!F("settings.filters.some(r => r.type === 'genre')"), 'Filter: zweiter Klick nimmt die Regel zurueck');
+  add('nur', 'genre', 'Pop');
+  add('ohne', 'genre', 'Pop');
+  assert(F("settings.filters.filter(r => r.type === 'genre').length") === 1
+    && F("settings.filters.find(r => r.type === 'genre').mode") === 'ohne',
+    'Filter: anderer Modus ersetzt die alte Regel statt sie zu doppeln');
+
   F('newRound()'); await tick(30);
   const pool = new Set(F('filtered').map(s => s.i));
   assert(F('round').every(r => r.song && pool.has(r.song.i)), 'Filter: die neue Runde zieht nur aus dem Pool');
 
+  /* Zuruecksetzen */
+  $$('#fReset').click();
+  assert(F('settings.filters').length === 1 && $$('#fInst').checked, 'Filter: Zuruecksetzen laesst nur den Standard stehen');
+
   /* Zu kleiner Pool warnt. Die 1960er haben ausserdem keine Impossible-Songs,
      die Stufe muss also Ersatz aus dem Rest bekommen. */
-  while (F('settings.filters').length) w.document.querySelector('#filterList .frule button').click();
   add('nur', 'decade', '1960er');
   assert(F('filtered').length < 30 && $$('#filterCount').classList.contains('warn')
     && /Nur \d+ Songs/.test($$('#filterCount').textContent), 'Filter: kleiner Pool warnt (' + $$('#filterCount').textContent + ')');
@@ -250,11 +293,11 @@ const dummy = n => ({ t: 'Song ' + n, a: 'Kuenstler ' + n, al: 'Album', y: 2020,
   F('newRound()'); await tick(30);
   assert(F('round').every(r => r.song === null) && $$('#search').disabled,
     'Filter: leerer Pool laesst die Seite stehen statt zu stuerzen');
-  w.document.querySelector('#filterList .frule button').click();   /* 1960er weg */
 
-  /* Unsinnige Eingabe */
-  add('ohne', 'genre', 'Gibtsnicht');
-  assert(/Kein Treffer/.test($$('#filterCount').textContent), 'Filter: unbekannter Wert wird gemeldet');
+  /* Kuenstlersuche ohne Treffer */
+  search('xyzgibtsnicht');
+  assert(/Kein Künstler/.test($$('#gArtist').querySelector('.fnote').textContent),
+    'Filter: Suche ohne Treffer sagt das');
 
   /* Regeln ueberleben das Neuladen */
   const saved = w.localStorage.getItem('songrate:settings');
@@ -262,6 +305,8 @@ const dummy = n => ({ t: 'Song ' + n, a: 'Kuenstler ' + n, al: 'Album', y: 2020,
   await waitFor(() => !w2.document.querySelector('#app').hidden);
   assert(w2.__ev('settings.filters').some(r => r.type === 'artist' && r.value === 'billie eilish'),
     'Filter: Regeln ueberleben das Neuladen');
+  assert([...w2.document.querySelectorAll('#gDecade .fopt')].find(r => r.querySelector('.txt').textContent === '1960er').classList.contains('on'),
+    'Filter: die Haekchen stehen nach dem Neuladen wieder richtig');
 
   /* Im Playlist-Modus hat die Songauswahl nichts zu suchen */
   w2.__ev('PL = buildPlaylist({ name: "X", songs: [1,2,3,4,5,6].map(n => ({ t: "S"+n, a: "K"+n, al: "A", y: 2020, g: "Pop", s: 0, p: "https://audio/"+n, c: "https://art/"+n+"/100x100bb.jpg", id: n })), missed: [] }); setMode("playlist")');

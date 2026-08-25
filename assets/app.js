@@ -22,6 +22,7 @@ let PL = null;            /* aufgeloeste Playlist, gleiche Form wie DB */
 let mode = 'charts';      /* 'charts' | 'playlist' */
 let byTier = {};
 let filtered = [];        /* Songs, die nach den Filtern uebrig bleiben */
+let filterMode = 'nur';   /* Wirkung, die ein Klick in den Listen bekommt */
 let round = [];           /* 5 Songstaende */
 let active = 0;
 let settings = load('settings', {
@@ -701,44 +702,97 @@ function renderStats() {
 function applyFilters() {
   filtered = Filters.apply(DB.songs, settings.filters, DB);
   TIERS.forEach(t => byTier[t.id] = filtered.filter(s => s.d === t.id));
+  if ($('#fArtist')) renderArtistHits($('#fArtist').value);
   renderFilters();
 }
 
 function buildFilterUI() {
-  $('#fType').onchange = renderFilterOptions;
-  $('#fAdd').onclick = addFilter;
-  $('#fValue').onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); addFilter(); } };
-  renderFilterOptions();
+  $('#fMode').querySelectorAll('button').forEach(b => {
+    b.onclick = () => {
+      filterMode = b.dataset.v;
+      $('#fMode').querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b));
+      renderFilters();
+    };
+  });
+
+  $('#fInst').onchange = () => {
+    settings.filters = settings.filters.filter(r => r.type !== 'instrumental');
+    if ($('#fInst').checked) settings.filters.push({ mode: 'ohne', type: 'instrumental', value: '', text: 'Instrumental' });
+    save('settings', settings);
+    applyFilters();
+  };
+
+  $('#fReset').onclick = () => {
+    settings.filters = Filters.DEFAULT.map(r => ({ ...r }));
+    save('settings', settings);
+    applyFilters();
+  };
+
+  const art = $('#fArtist');
+  art.oninput = () => renderArtistHits(art.value);
+  art.onkeydown = e => {
+    if (e.key !== 'Enter') return;
+    e.preventDefault();
+    const first = $('#gArtist').querySelector('.fopt');
+    if (first) first.click();
+  };
+
+  buildOptionList('#gGenre', 'genre');
+  buildOptionList('#gDecade', 'decade');
+  renderArtistHits('');
   renderFilters();
 }
 
-function renderFilterOptions() {
-  const type = $('#fType').value;
-  const box = $('#fOptions'), inp = $('#fValue');
+/* Haekchenliste fuer Genres und Jahrzehnte. Steht komplett da - anklicken
+   statt tippen, damit man sich nicht vertippen kann. */
+function buildOptionList(sel, type) {
+  const box = $(sel).querySelector('.fopts');
   box.innerHTML = '';
-  Filters.options(type, DB).forEach(o => {
-    const opt = document.createElement('option');
-    opt.value = o.text;
-    box.appendChild(opt);
-  });
-  inp.hidden = type === 'instrumental';
-  inp.value = '';
-  inp.placeholder = type === 'genre' ? 'z. B. Hip-Hop/Rap'
-    : type === 'artist' ? 'z. B. Billie Eilish'
-    : type === 'decade' ? 'z. B. 2010er' : '';
+  const cnt = Filters.counts(type, DB);
+  Filters.options(type, DB).forEach(o => box.appendChild(optionRow(type, o, cnt.get(o.value) || 0)));
 }
 
-function addFilter() {
-  const mode = $('#fMode').value, type = $('#fType').value;
-  const parsed = Filters.parse(type, $('#fValue').value, DB);
-  if (!parsed) return filterNote('Kein Treffer – bitte aus der Liste wählen.');
+function optionRow(type, o, n) {
+  const row = el('button', 'fopt');
+  row.dataset.type = type;
+  row.dataset.value = o.value;
+  row.appendChild(el('span', 'box'));
+  row.appendChild(el('span', 'txt', o.text));
+  row.appendChild(el('span', 'num', n ? String(n) : ''));
+  row.onclick = () => toggleRule(type, o);
+  return row;
+}
 
-  const rule = { mode, type, value: parsed.value, text: parsed.text };
-  /* Dieselbe Sache zweimal mit verschiedener Wirkung ergibt keinen Sinn. */
-  settings.filters = settings.filters.filter(r => !(r.type === rule.type && String(r.value) === String(rule.value)));
-  settings.filters.push(rule);
+function renderArtistHits(q) {
+  const box = $('#gArtist').querySelector('.fopts');
+  box.innerHTML = '';
+  const cnt = Filters.counts('artist', DB);
+  const n = norm(q);
+  const opts = Filters.options('artist', DB);
+  const hits = (n
+    ? opts.filter(o => o.value.includes(n))
+        .sort((a, b) => (a.value.startsWith(n) ? 0 : 1) - (b.value.startsWith(n) ? 0 : 1)
+          || (cnt.get(b.value) || 0) - (cnt.get(a.value) || 0))
+    : settings.filters.filter(r => r.type === 'artist').map(r => ({ value: r.value, text: r.text }))
+  ).slice(0, 20);
+
+  if (!hits.length) {
+    box.appendChild(el('p', 'fnote', n ? 'Kein Künstler mit diesem Namen.' : 'Tippen, um zu suchen.'));
+    return;
+  }
+  hits.forEach(o => box.appendChild(optionRow('artist', o, cnt.get(o.value) || 0)));
+  markRules();
+}
+
+/* Klick auf eine Zeile: gleicher Modus schaltet ab, anderer schaltet um. */
+function toggleRule(type, o) {
+  const idx = settings.filters.findIndex(r => r.type === type && String(r.value) === String(o.value));
+  const had = idx >= 0 ? settings.filters[idx] : null;
+  if (idx >= 0) settings.filters.splice(idx, 1);
+  if (!had || had.mode !== filterMode) {
+    settings.filters.push({ mode: filterMode, type, value: o.value, text: o.text });
+  }
   save('settings', settings);
-  $('#fValue').value = '';
   applyFilters();
 }
 
@@ -748,12 +802,17 @@ function removeFilter(i) {
   applyFilters();
 }
 
-function filterNote(msg) {
-  const c = $('#filterCount');
-  c.textContent = msg;
-  c.classList.add('warn');
-  clearTimeout(filterNote.t);
-  filterNote.t = setTimeout(renderFilters, 2600);
+/* Haekchen und Farbe der Zeilen an die aktiven Regeln angleichen. */
+function markRules() {
+  document.querySelectorAll('.fopt').forEach(row => {
+    const r = settings.filters.find(x => x.type === row.dataset.type && String(x.value) === row.dataset.value);
+    row.classList.toggle('on', !!r);
+    ['nur', 'ohne', 'dazu'].forEach(m => row.classList.toggle(m, !!r && r.mode === m));
+  });
+  [['#gGenre', 'genre'], ['#gDecade', 'decade'], ['#gArtist', 'artist']].forEach(([sel, type]) => {
+    const n = settings.filters.filter(r => r.type === type).length;
+    $(sel).querySelector('.fcount').textContent = n ? ` · ${n}` : '';
+  });
 }
 
 function renderFilters() {
@@ -770,6 +829,9 @@ function renderFilters() {
     chip.appendChild(x);
     box.appendChild(chip);
   });
+  $('#fReset').hidden = !settings.filters.length;
+  $('#fInst').checked = settings.filters.some(r => r.type === 'instrumental' && r.mode === 'ohne');
+  markRules();
 
   const n = filtered.length;
   const empty = TIERS.filter(t => !(byTier[t.id] || []).length).map(t => t.label);

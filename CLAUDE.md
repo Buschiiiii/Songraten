@@ -95,7 +95,17 @@ ohne Rap, aber mit **allen** Billie-Eilish-Songs, auch denen von 2019 und 2021.
 
 Arten: `genre`, `artist`, `decade`, `instrumental`. Werte werden normalisiert
 gespeichert (`value`) und im Original angezeigt (`text`). Dieselbe Sache kann
-nur einen Modus haben — beim Hinzufügen wird eine ältere Regel dazu ersetzt.
+nur einen Modus haben — ein Klick mit anderem Modus ersetzt die alte Regel,
+ein Klick mit demselben nimmt sie zurück.
+
+Bedienung: nichts wird getippt. Oben stehen die aktiven Regeln als Chips (nach
+Modus eingefärbt), darunter ein Schalter für die Instrumentals, dann die
+Wirkung (`nur`/`ohne`/`dazu`) für alles, was danach angeklickt wird, und
+darunter drei Klapplisten — Genres und Jahrzehnte komplett als Häkchenliste
+mit Songzahl, Künstler über ein Suchfeld mit Vorschlägen (1094 Namen, deshalb
+keine offene Liste). Die Häkchen spiegeln die Regeln, `markRules()` hält
+beides zusammen. `Filters.counts()` liefert die Zahlen und wird pro Art
+einmal gerechnet.
 
 Voreingestellt ist `ohne Instrumental`. Die Kataloge kennzeichnen Instrumentals
 nicht, deshalb die Erkennung über Titel, Album (`instrumental`, `karaoke`,

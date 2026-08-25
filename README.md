@@ -31,8 +31,22 @@ Fertig. Jede spätere Änderung im Repo ist nach etwa einer Minute live.
 
 ## Songauswahl einstellen
 
-Rechts unter **Songauswahl** legst du fest, woraus gezogen wird. Jede Regel hat
-eine Wirkung und eine Art:
+Rechts unter **Songauswahl** legst du fest, woraus gezogen wird — alles per
+Klick, getippt wird nur der Künstlername:
+
+1. **Instrumentals ausblenden** ist ein Schalter und von Haus aus an.
+2. Darunter wählst du die **Wirkung** – *nur*, *ohne* oder *dazu*.
+3. Dann klappst du **Genres**, **Jahrzehnte** oder **Künstler** auf und setzt
+   Häkchen. Neben jedem Eintrag steht, wie viele Songs daran hängen. Künstler
+   suchst du im Feld, die Vorschläge kommen aus der Songliste – so kann man
+   sich nicht vertippen.
+
+Oben stehen alle aktiven Regeln als farbige Chips: grün *nur*, rot *ohne*,
+gelb *dazu*. Ein Klick auf das × wirft eine raus, *Alle Filter zurücksetzen*
+stellt den Ausgangszustand her. „Nur Songs von Sia, aber ohne Instrumentals"
+ist also: Schalter an, Wirkung *nur*, Künstler *Sia* anhaken.
+
+Die drei Wirkungen im Einzelnen:
 
 - **nur** – schränkt ein: *nur 2010er* spielt nur Songs aus den 2010ern.
   Mehrere Regeln derselben Art gelten zusammen (*nur 2000er* + *nur 2010er*
@@ -40,10 +54,6 @@ eine Wirkung und eine Art:
 - **ohne** – wirft raus: *ohne Hip-Hop/Rap*.
 - **dazu** – holt dazu und sticht die anderen: *dazu Billie Eilish* bringt alle
   ihre Songs mit, auch wenn sie sonst durch die Filter fallen würden.
-
-Arten sind Genre, Künstler, Jahrzehnt und Instrumental. **Instrumentals sind
-von Haus aus draußen** – die Regel steht als erster Chip da und lässt sich
-wegklicken wie jede andere.
 
 Unter den Chips steht, wie viele Songs übrig sind. Bei weniger als 30 kommt
 eine Warnung: dann wiederholt sich die Runde schnell und wird vorhersehbar.
