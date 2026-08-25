@@ -1,4 +1,4 @@
-/* Songrate – Spiellogik */
+/* Songraten – Spiellogik */
 
 const STAGES = [0.01, 0.1, 0.5, 2, 8, 15];
 const TIERS = [

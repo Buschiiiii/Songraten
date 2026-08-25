@@ -1,4 +1,4 @@
-# Songrate
+# Songraten
 
 Website zum Songraten, Nachbau von Songless. Fünf Songs pro Runde, einer je
 Schwierigkeitsstufe, Ausschnitte von 0,01 bis 15 Sekunden. Zweck: der Betreiber
@@ -101,7 +101,9 @@ kworb geprüft, plus die `NEVER_SPLIT`-Liste in `match_local.py`.
    Schriftzeichen sein: ↑ spielt ab, Enter rät, Shift+Enter überspringt,
    ←→ wechselt die Stufe (nur bei leerem Feld), Cmd+Enter würfelt neu.
 6. localStorage-Schlüssel: `songrate:settings`, `songrate:stats`,
-   `songrate:recent` (letzte 60 Songs, gegen Wiederholungen).
+   `songrate:recent` (letzte 60 Songs, gegen Wiederholungen). Das Präfix bleibt
+   `songrate:`, obwohl die Seite Songraten heißt — Umbenennen würde alle
+   bereits gespeicherten Einstellungen und Statistiken verwerfen.
 
 ## Testen ohne Browser
 

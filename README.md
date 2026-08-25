@@ -1,4 +1,4 @@
-# Songrate
+# Songraten
 
 Erkenne den Song in 0,01 Sekunden. Fünf Songs pro Runde, von Easy bis Impossible,
 nach echten Spotify-Streamzahlen sortiert.
@@ -11,7 +11,7 @@ keine Bibliotheken. Alles läuft im Browser.
 ## Website online stellen
 
 1. Auf [github.com](https://github.com) einloggen, oben rechts **+** → **New repository**.
-2. Namen vergeben, z. B. `songrate`. **Public** auswählen, sonst gibt es keine Pages.
+2. Namen vergeben, z. B. `songraten`. **Public** auswählen, sonst gibt es keine Pages.
    Kein Häkchen bei „Add a README file". Dann **Create repository**.
 3. Auf der leeren Repo-Seite auf **uploading an existing file** klicken.
 4. Das ZIP entpacken, den Ordner öffnen und **den Inhalt** in das Browserfenster ziehen —
@@ -24,7 +24,7 @@ keine Bibliotheken. Alles läuft im Browser.
 7. Ein bis zwei Minuten warten, Seite neu laden. Oben steht dann die Adresse:
 
    ```
-   https://DEIN-NAME.github.io/songrate/
+   https://DEIN-NAME.github.io/songraten/
    ```
 
 Fertig. Jede spätere Änderung im Repo ist nach etwa einer Minute live.
