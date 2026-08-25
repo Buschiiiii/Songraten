@@ -192,7 +192,16 @@ kworb geprüft, plus die `NEVER_SPLIT`-Liste in `match_local.py`.
 5. **Der Cursor steht dauerhaft im Suchfeld.** Kürzel dürfen deshalb keine
    Schriftzeichen sein: ↑ spielt ab, Enter rät, Shift+Enter überspringt,
    ←→ wechselt die Stufe (nur bei leerem Feld), Cmd+Enter würfelt neu.
-6. localStorage-Schlüssel: `songrate:settings` (enthält auch `filters`),
+6. **Die Vorschlagsliste wird häppchenweise gezeichnet** (`SUG_PAGE`), sonst
+   sind bei „billie" zwar 30 Treffer da, aber nur die ersten acht erreichbar.
+   Nachgeladen wird beim Scrollen ans Ende, beim Klick auf „n weitere" und
+   wenn man mit ↓ unten anstößt; die Auswahl scrollt über `scrollIntoView`
+   mit. Zwei Stolpersteine: `renderSuggest()` darf die Liste **nicht** neu
+   aufbauen (sonst springt die Scrollposition bei jedem Tastendruck), und der
+   globale Klick-Handler muss `isConnected` prüfen — der „weitere"-Knopf
+   verschwand sonst beim Klick aus dem DOM und galt als Klick daneben, was
+   die Liste sofort wieder schloss.
+7. localStorage-Schlüssel: `songrate:settings` (enthält auch `filters`),
    `songrate:stats`,
    `songrate:recent` (letzte 60 Songs, gegen Wiederholungen),
    `songrate:playlist` (aufgelöste Playlist), `songrate:plcache`

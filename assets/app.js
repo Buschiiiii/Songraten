@@ -31,7 +31,10 @@ let settings = load('settings', {
 let stats = load('stats', { rounds: 0, solved: 0, played: 0, best: 0, byTier: {} });
 let recent = load('recent', []);
 let pick = null;          /* aktuell im Suchfeld gewaehlter Song */
-let sugItems = [], sugIdx = -1;
+let sugAll = [];          /* alle Treffer der aktuellen Eingabe */
+let sugItems = [];        /* davon schon gezeichnet */
+let sugIdx = -1;
+const SUG_PAGE = 12;      /* so viele kommen pro Nachladen dazu */
 
 function load(k, d) { try { return { ...d, ...JSON.parse(localStorage.getItem('songrate:' + k) || '{}') }; } catch (e) { return d; } }
 function loadArr(k) { try { return JSON.parse(localStorage.getItem('songrate:' + k) || '[]'); } catch (e) { return []; } }
@@ -128,8 +131,7 @@ function buildChrome() {
     if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
       if (open) {
         e.preventDefault();
-        sugIdx = (sugIdx + (e.key === 'ArrowDown' ? 1 : -1) + sugItems.length) % sugItems.length;
-        renderSuggest();
+        moveSuggest(e.key === 'ArrowDown' ? 1 : -1);
       } else if (e.key === 'ArrowUp') {
         e.preventDefault();
         playCurrent();
@@ -165,6 +167,9 @@ function buildChrome() {
   });
 
   document.addEventListener('click', e => {
+    /* Ein Klick auf einen Knopf, der sich dabei selbst aus dem DOM nimmt,
+       ist kein Klick daneben - sonst schliesst „weitere" die Liste. */
+    if (!e.target.isConnected) return;
     if (!e.target.closest('.guess-row')) hideSuggest();
   });
 
@@ -382,6 +387,10 @@ function resetBar() {
 
 /* ------------------------------------------------------------------ Suche */
 
+/* Es werden alle Treffer gesammelt, aber nur haeppchenweise gezeichnet -
+   sonst haengen bei "billie" zwar 29 Songs in der Liste, sichtbar sind aber
+   nur die ersten acht und der Rest ist unerreichbar. Nachgeladen wird beim
+   Scrollen ans Ende und wenn man mit der Pfeiltaste unten anstoesst. */
 function suggest(q) {
   const n = norm(q);
   if (n.length < 2) return hideSuggest();
@@ -396,29 +405,79 @@ function suggest(q) {
     if (seen.has(k)) continue;
     seen.add(k);
     out.push([sc, s]);
-    if (out.length > 400) break;
   }
   out.sort((a, b) => b[0] - a[0] || b[1].s - a[1].s || a[1].t.localeCompare(b[1].t));
-  sugItems = out.slice(0, 8).map(x => x[1]);
-  sugIdx = -1;
-  renderSuggest();
-}
 
-function renderSuggest() {
+  sugAll = out.map(x => x[1]);
+  sugItems = [];
+  sugIdx = -1;
+
   const box = $('#suggest');
   box.innerHTML = '';
-  if (!sugItems.length) { box.hidden = true; return; }
-  sugItems.forEach((s, i) => {
-    const b = el('button', 'sug' + (i === sugIdx ? ' active' : ''));
+  box.scrollTop = 0;
+  box.hidden = !sugAll.length;
+  box.onscroll = () => {
+    if (box.scrollTop + box.clientHeight >= box.scrollHeight - 60) growSuggest();
+  };
+  growSuggest();
+}
+
+/* Zeichnet die naechste Seite. Gibt zurueck, ob etwas dazugekommen ist. */
+function growSuggest() {
+  const box = $('#suggest');
+  const next = sugAll.slice(sugItems.length, sugItems.length + SUG_PAGE);
+  if (!next.length) return false;
+
+  next.forEach(s => {
+    const b = el('button', 'sug');
     b.appendChild(el('b', null, s.t));
     b.appendChild(el('span', null, s.a));
     b.onclick = () => choose(s);
     box.appendChild(b);
   });
-  box.hidden = false;
+  sugItems = sugItems.concat(next);
+
+  /* Der Knopf wird wiederverwendet und nur ans Ende geschoben. */
+  const rest = sugAll.length - sugItems.length;
+  let m = box.querySelector('.sug-more');
+  if (rest > 0) {
+    if (!m) { m = el('button', 'sug-more'); m.onclick = () => growSuggest(); }
+    m.textContent = `${rest} weitere`;
+    box.appendChild(m);
+  } else if (m) m.remove();
+  return true;
 }
 
-function hideSuggest() { sugItems = []; sugIdx = -1; $('#suggest').hidden = true; }
+/* Auswahl umsetzen und mitscrollen - ohne das steht man beim Durchgehen mit
+   den Pfeiltasten irgendwann unter dem sichtbaren Rand. */
+function moveSuggest(dir) {
+  if (!sugItems.length) return;
+  /* Nach unten wird nachgeladen, nach oben nur innerhalb des Geladenen
+     umgebrochen - sonst zeichnet ein Tastendruck die ganze Trefferliste. */
+  if (dir > 0 && sugIdx >= sugItems.length - 1) growSuggest();
+  sugIdx = dir > 0
+    ? (sugIdx + 1 >= sugItems.length ? 0 : sugIdx + 1)
+    : (sugIdx <= 0 ? sugItems.length - 1 : sugIdx - 1);
+  renderSuggest();
+}
+
+function renderSuggest() {
+  const box = $('#suggest');
+  const rows = [...box.querySelectorAll('.sug')];
+  rows.forEach((b, i) => b.classList.toggle('active', i === sugIdx));
+  const act = rows[sugIdx];
+  if (act && act.scrollIntoView) act.scrollIntoView({ block: 'nearest' });
+}
+
+function hideSuggest() {
+  sugAll = [];
+  sugItems = [];
+  sugIdx = -1;
+  const box = $('#suggest');
+  box.onscroll = null;
+  box.innerHTML = '';
+  box.hidden = true;
+}
 
 function choose(s) {
   pick = s;

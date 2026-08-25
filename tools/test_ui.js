@@ -43,6 +43,8 @@ function makeWindow(store) {
     set fillStyle(v) {}, set globalAlpha(v) {},
   });
   w.requestAnimationFrame = cb => setTimeout(() => cb(w.performance.now()), 8);
+  /* jsdom kennt kein Layout: scrollIntoView nur mitzaehlen. */
+  w.Element.prototype.scrollIntoView = function () { w.__scrolls = (w.__scrolls || 0) + 1; };
   w.cancelAnimationFrame = id => clearTimeout(id);
   w.AudioContext = class {
     constructor() { this.state = 'running'; this.currentTime = 0; this.destination = {}; }
@@ -151,6 +153,45 @@ const dummy = n => ({ t: 'Song ' + n, a: 'Kuenstler ' + n, al: 'Album', y: 2020,
 
   $('#plClear').click(); await tick(10);
   assert(G('PL') === null && $('#modeSeg').children[1].disabled, 'Playlist entfernt: Modus wieder gesperrt');
+
+  /* ------------------------------------------------- Suchfeld/Vorschlaege */
+  const box = $('#suggest'), rows = () => box.querySelectorAll('.sug');
+  const key = (k, opts) => $('#search').dispatchEvent(new w.KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true, ...opts }));
+
+  G("suggest('billie')");
+  const hits = G('sugAll').length;
+  assert(hits > 12, 'Vorschlaege: „billie" findet mehr als eine Seite (' + hits + ')');
+  assert(G("sugAll.some(s => s.n === 'your power')"), 'Vorschlaege: auch Your Power ist dabei');
+  assert(rows().length === 12, 'Vorschlaege: erst eine Seite gezeichnet');
+  assert(/\d+ weitere/.test(box.querySelector('.sug-more').textContent), 'Vorschlaege: Rest wird angeboten');
+
+  box.querySelector('.sug-more').click();
+  assert(rows().length === Math.min(24, hits), 'Vorschlaege: Nachladen zeichnet die naechste Seite');
+
+  G("suggest('billie')");
+  w.__scrolls = 0;
+  for (let i = 0; i < 12; i++) key('ArrowDown');
+  assert(G('sugIdx') === 11 && rows()[11].classList.contains('active'), 'Vorschlaege: Pfeiltaste wandert mit');
+  assert(w.__scrolls >= 12, 'Vorschlaege: die Auswahl wird sichtbar gescrollt');
+
+  key('ArrowDown');
+  assert(rows().length > 12 && G('sugIdx') === 12 && rows()[12].classList.contains('active'),
+    'Vorschlaege: unten anstossen laedt nach statt zu springen');
+
+  G('hideSuggest()');
+  G("suggest('billie')");
+  key('ArrowUp');
+  assert(G('sugIdx') === G('sugItems').length - 1, 'Vorschlaege: nach oben aus dem Stand ans Ende');
+
+  /* Ganz nach unten scrollen laedt ebenfalls nach */
+  G("suggest('the')");
+  const drawn = rows().length;
+  box.scrollTop = 99999;
+  box.dispatchEvent(new w.Event('scroll'));
+  assert(G('sugAll').length > drawn ? rows().length > drawn : true, 'Vorschlaege: Scrollen laedt nach');
+
+  G('hideSuggest()');
+  assert(box.hidden && rows().length === 0, 'Vorschlaege: schliessen raeumt auf');
 
   /* ------------------------------------------------------ Songauswahl */
   w = makeWindow({});
