@@ -74,6 +74,27 @@ const Filters = (() => {
       .sort((a, b) => String(a.text).localeCompare(String(b.text), 'de', { numeric: true }));
   }
 
+  /* Wie viele Songs haengen an einem Wert - steht neben den Haekchen, damit
+     man sieht, dass "nur Jazz" zwei Songs bedeutet. */
+  const countCache = new WeakMap();
+  function counts(type, db) {
+    let per = countCache.get(db);
+    if (!per) countCache.set(db, per = {});
+    if (per[type]) return per[type];
+    const m = new Map();
+    const bump = k => { if (k) m.set(k, (m.get(k) || 0) + 1); };
+    db.songs.forEach(s => {
+      if (type === 'genre') bump(norm(s.g));
+      else if (type === 'decade') bump(String(decadeOf(s)));
+      else if (type === 'artist') {
+        const ids = new Set((s.ar || []).map(a => norm(db.artists[a])));
+        ids.add(norm(s.a));
+        ids.forEach(bump);
+      } else if (type === 'instrumental' && isInstrumental(s)) bump('');
+    });
+    return (per[type] = m);
+  }
+
   /* Freitext -> Regelwert. Erst exakt, dann Anfang, dann enthalten. */
   function parse(type, text, db) {
     if (type === 'instrumental') return { value: '', text: 'Instrumental' };
@@ -91,5 +112,5 @@ const Filters = (() => {
 
   const same = (a, b) => a.mode === b.mode && a.type === b.type && String(a.value) === String(b.value);
 
-  return { apply, matches, options, parse, label, same, isInstrumental, decadeOf, DEFAULT, MIN_POOL };
+  return { apply, matches, options, counts, parse, label, same, isInstrumental, decadeOf, DEFAULT, MIN_POOL };
 })();

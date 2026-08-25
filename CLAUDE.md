@@ -81,8 +81,11 @@ vom oberen Rand ihres Bereichs.
 
 ## Songauswahl (Filter)
 
-Regeln in `assets/filters.js`, gespeichert in `settings.filters`. Drei Modi,
-damit sich alles kombinieren lässt:
+Regeln in `assets/filters.js`. **Jeder Modus hat seinen eigenen Regelsatz** —
+`settings.filters` für die Charts, `settings.plFilters` für die Playlist.
+Sonst stünde nach „nur 1960er" in den Charts die eigene Playlist leer da, und
+die Auswahllisten passen so zum jeweiligen Bestand. Drei Modi, damit sich
+alles kombinieren lässt:
 
 | Modus | Wirkung |
 |---|---|
@@ -95,7 +98,17 @@ ohne Rap, aber mit **allen** Billie-Eilish-Songs, auch denen von 2019 und 2021.
 
 Arten: `genre`, `artist`, `decade`, `instrumental`. Werte werden normalisiert
 gespeichert (`value`) und im Original angezeigt (`text`). Dieselbe Sache kann
-nur einen Modus haben — beim Hinzufügen wird eine ältere Regel dazu ersetzt.
+nur einen Modus haben — ein Klick mit anderem Modus ersetzt die alte Regel,
+ein Klick mit demselben nimmt sie zurück.
+
+Bedienung: nichts wird getippt. Oben stehen die aktiven Regeln als Chips (nach
+Modus eingefärbt), darunter ein Schalter für die Instrumentals, dann die
+Wirkung (`nur`/`ohne`/`dazu`) für alles, was danach angeklickt wird, und
+darunter drei Klapplisten — Genres und Jahrzehnte komplett als Häkchenliste
+mit Songzahl, Künstler über ein Suchfeld mit Vorschlägen (1094 Namen, deshalb
+keine offene Liste). Die Häkchen spiegeln die Regeln, `markRules()` hält
+beides zusammen. `Filters.counts()` liefert die Zahlen und wird pro Art
+einmal gerechnet.
 
 Voreingestellt ist `ohne Instrumental`. Die Kataloge kennzeichnen Instrumentals
 nicht, deshalb die Erkennung über Titel, Album (`instrumental`, `karaoke`,
@@ -110,7 +123,9 @@ die Vorschlagsliste bei kleinen Pools die Lösung.
 
 Warnung ab weniger als 30 Songs (`Filters.MIN_POOL`), ebenso wenn eine Stufe
 leer läuft. Leere Stufen ziehen Ersatz aus dem restlichen Pool, damit die Runde
-spielbar bleibt.
+spielbar bleibt. In der Playlist ist die Schwelle `PL_MIN` (5) — so viele
+braucht eine Runde; bleiben weniger übrig, sind die restlichen Plätze leer und
+die Warnung sagt es.
 
 ## Playlist-Modus
 
@@ -140,7 +155,9 @@ wäre sonst dauerhaft verloren.
 Künstler mindestens 2,5 Punkte erreicht.
 
 Im Modus selbst: keine Schwierigkeitsstufen, fünf zufällige Songs aus der
-Liste, Faktor 1,0, Vorschläge im Suchfeld nur aus der Playlist. Die
+Liste, Faktor 1,0, Vorschläge im Suchfeld nur aus der Playlist. Die Filter
+gelten hier genauso — ein importiertes Album bringt gern Instrumental- und
+Karaokefassungen mit, die die Standardregel wegräumt. Die
 Ausschnittlängen (0,01–15 s) bleiben. Unter fünf gefundenen Songs bleibt der
 Modus gesperrt. Künstler-IDs werden hier lokal vergeben: der komplette
 Künstlerstring plus die Einzelnamen — ein falscher Schnitt färbt hier
@@ -192,7 +209,16 @@ kworb geprüft, plus die `NEVER_SPLIT`-Liste in `match_local.py`.
 5. **Der Cursor steht dauerhaft im Suchfeld.** Kürzel dürfen deshalb keine
    Schriftzeichen sein: ↑ spielt ab, Enter rät, Shift+Enter überspringt,
    ←→ wechselt die Stufe (nur bei leerem Feld), Cmd+Enter würfelt neu.
-6. localStorage-Schlüssel: `songrate:settings` (enthält auch `filters`),
+6. **Die Vorschlagsliste wird häppchenweise gezeichnet** (`SUG_PAGE`), sonst
+   sind bei „billie" zwar 30 Treffer da, aber nur die ersten acht erreichbar.
+   Nachgeladen wird beim Scrollen ans Ende, beim Klick auf „n weitere" und
+   wenn man mit ↓ unten anstößt; die Auswahl scrollt über `scrollIntoView`
+   mit. Zwei Stolpersteine: `renderSuggest()` darf die Liste **nicht** neu
+   aufbauen (sonst springt die Scrollposition bei jedem Tastendruck), und der
+   globale Klick-Handler muss `isConnected` prüfen — der „weitere"-Knopf
+   verschwand sonst beim Klick aus dem DOM und galt als Klick daneben, was
+   die Liste sofort wieder schloss.
+7. localStorage-Schlüssel: `songrate:settings` (enthält auch `filters`),
    `songrate:stats`,
    `songrate:recent` (letzte 60 Songs, gegen Wiederholungen),
    `songrate:playlist` (aufgelöste Playlist), `songrate:plcache`

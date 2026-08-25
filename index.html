@@ -100,23 +100,39 @@
 
     <div class="panel" id="filterPanel">
       <h2>Songauswahl</h2>
+
       <div id="filterList" class="filter-list"></div>
-      <div class="filter-add">
-        <select id="fMode" aria-label="Wirkung">
-          <option value="nur">nur</option>
-          <option value="ohne">ohne</option>
-          <option value="dazu">dazu</option>
-        </select>
-        <select id="fType" aria-label="Art">
-          <option value="genre">Genre</option>
-          <option value="artist">Künstler</option>
-          <option value="decade">Jahrzehnt</option>
-          <option value="instrumental">Instrumental</option>
-        </select>
-        <input id="fValue" list="fOptions" placeholder="Wert …" autocomplete="off" spellcheck="false">
-        <datalist id="fOptions"></datalist>
-        <button id="fAdd" class="btn-ghost" title="Filter hinzufügen">Hinzufügen</button>
+      <button id="fReset" class="pl-link" hidden>Alle Filter zurücksetzen</button>
+
+      <label class="switch" for="fInst">
+        <input type="checkbox" id="fInst" checked>
+        <span class="track"></span>
+        <span class="switch-txt">Instrumentals ausblenden</span>
+      </label>
+
+      <p class="fhead">Angeklicktes wirkt als</p>
+      <div class="seg seg-row" id="fMode">
+        <button data-v="nur" class="on">nur</button>
+        <button data-v="ohne">ohne</button>
+        <button data-v="dazu">dazu</button>
       </div>
+
+      <details class="fgroup" id="gGenre">
+        <summary>Genres<span class="fcount"></span></summary>
+        <div class="fopts"></div>
+      </details>
+
+      <details class="fgroup" id="gDecade">
+        <summary>Jahrzehnte<span class="fcount"></span></summary>
+        <div class="fopts"></div>
+      </details>
+
+      <details class="fgroup" id="gArtist">
+        <summary>Künstler<span class="fcount"></span></summary>
+        <input id="fArtist" type="text" placeholder="Künstler suchen …" autocomplete="off" spellcheck="false">
+        <div class="fopts"></div>
+      </details>
+
       <p id="filterCount" class="note"></p>
       <p class="note">nur schränkt ein, ohne wirft raus, dazu holt zurück.
         Filter wirken ab der nächsten Runde.</p>

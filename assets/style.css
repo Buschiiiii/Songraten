@@ -160,13 +160,19 @@ main{
 .suggest{
   position:absolute;bottom:calc(100% + 8px);left:0;right:0;z-index:20;
   background:var(--panel-2);border:1px solid var(--line);border-radius:var(--r);
-  overflow:auto;max-height:290px;box-shadow:0 18px 40px rgba(0,0,0,.55);
+  overflow:auto;max-height:330px;overscroll-behavior:contain;
+  box-shadow:0 18px 40px rgba(0,0,0,.55);scroll-padding:4px 0;
 }
 .sug{display:block;width:100%;text-align:left;padding:9px 15px;border-bottom:1px solid rgba(255,255,255,.04)}
 .sug:last-child{border-bottom:0}
 .sug:hover,.sug.active{background:rgba(62,224,122,.12)}
 .sug b{display:block;font-weight:600;font-size:14px}
 .sug span{color:var(--muted);font-size:12.5px}
+.sug-more{
+  display:block;width:100%;text-align:center;padding:8px 15px;
+  color:var(--muted);font-size:12px;background:rgba(255,255,255,.02);
+}
+.sug-more:hover{color:var(--text)}
 
 .hint{color:var(--grey);font-size:12px;margin:4px 0 0;text-align:center}
 
@@ -195,15 +201,61 @@ main{
 .frule button{color:var(--muted);font-size:15px;line-height:1;padding:0 1px}
 .frule button:hover{color:var(--text)}
 
-.filter-add{display:grid;grid-template-columns:1fr 1fr;gap:5px}
-.filter-add select,.filter-add input{
-  min-width:0;padding:7px 9px;border-radius:9px;background:var(--panel-2);
+/* Schalter fuer die Instrumentals */
+.switch{display:flex;align-items:center;gap:9px;cursor:pointer;padding:7px 0;font-size:12.5px}
+.switch input{position:absolute;opacity:0;width:0;height:0}
+.switch .track{
+  position:relative;flex:none;width:34px;height:19px;border-radius:999px;
+  background:var(--panel-2);border:1px solid var(--line);transition:.15s;
+}
+.switch .track::after{
+  content:"";position:absolute;left:2px;top:2px;width:13px;height:13px;border-radius:50%;
+  background:var(--muted);transition:.15s;
+}
+.switch input:checked + .track{background:var(--green-dim);border-color:var(--green-dim)}
+.switch input:checked + .track::after{transform:translateX(15px);background:var(--green)}
+.switch input:focus-visible + .track{box-shadow:0 0 0 2px rgba(62,224,122,.35)}
+
+.fhead{color:var(--grey);font-size:11px;margin:10px 0 5px;text-transform:uppercase;letter-spacing:.07em}
+.seg-row{flex-direction:row}
+.seg-row button{flex:1;text-align:center;padding:7px 4px}
+
+/* Klapplisten */
+.fgroup{border-top:1px solid var(--line);margin-top:8px}
+.fgroup summary{
+  display:flex;align-items:center;gap:6px;list-style:none;cursor:pointer;
+  padding:9px 0;font-size:12.5px;font-weight:600;color:var(--muted);
+}
+.fgroup summary::-webkit-details-marker{display:none}
+.fgroup summary::before{content:"▸";font-size:10px;transition:transform .15s}
+.fgroup[open] summary::before{transform:rotate(90deg)}
+.fgroup summary:hover{color:var(--text)}
+.fgroup .fcount{color:var(--green);font-weight:700}
+.fgroup #fArtist{
+  width:100%;padding:7px 10px;margin-bottom:6px;border-radius:9px;background:var(--panel-2);
   border:1px solid var(--line);color:var(--text);font:inherit;font-size:12.5px;outline:none;
 }
-.filter-add select{-webkit-appearance:none;appearance:none;cursor:pointer}
-.filter-add input{grid-column:1 / -1}
-.filter-add input:focus{border-color:var(--green-dim)}
-.filter-add .btn-ghost{grid-column:1 / -1;margin-top:0;padding:8px 12px;font-size:13px}
+.fgroup #fArtist:focus{border-color:var(--green-dim)}
+.fopts{display:flex;flex-direction:column;max-height:196px;overflow:auto;overscroll-behavior:contain;padding-bottom:6px}
+.fnote{color:var(--grey);font-size:11.5px;margin:2px 0 6px}
+
+.fopt{
+  display:flex;align-items:center;gap:8px;width:100%;text-align:left;
+  padding:6px 4px;border-radius:8px;font-size:12.5px;color:var(--muted);transition:.12s;
+}
+.fopt:hover{background:var(--panel-2);color:var(--text)}
+.fopt .box{
+  flex:none;width:14px;height:14px;border-radius:4px;border:1.5px solid var(--line);
+  display:grid;place-items:center;transition:.12s;
+}
+.fopt.on .box::after{content:"";width:7px;height:7px;border-radius:2px;background:currentColor}
+.fopt .txt{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.fopt .num{color:var(--grey);font-family:var(--mono);font-size:11px}
+.fopt.on{color:var(--text)}
+.fopt.on.nur .box{border-color:var(--green);color:var(--green)}
+.fopt.on.ohne .box{border-color:var(--t-expert);color:var(--t-expert)}
+.fopt.on.dazu .box{border-color:var(--t-medium);color:var(--t-medium)}
+
 #filterCount.warn{color:var(--yellow)}
 
 /* ---------- Playlist ---------- */

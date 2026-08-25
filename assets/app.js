@@ -21,17 +21,33 @@ let DB = null;            /* { artists:[], songs:[] } */
 let PL = null;            /* aufgeloeste Playlist, gleiche Form wie DB */
 let mode = 'charts';      /* 'charts' | 'playlist' */
 let byTier = {};
-let filtered = [];        /* Songs, die nach den Filtern uebrig bleiben */
+let filtered = [];        /* Chartsongs, die nach den Filtern uebrig bleiben */
+let plFiltered = [];      /* dasselbe fuer die Playlist */
+let filterMode = 'nur';   /* Wirkung, die ein Klick in den Listen bekommt */
+
+/* Jeder Modus hat seinen eigenen Regelsatz: eine importierte Playlist bringt
+   andere Genres und Kuenstler mit als die Charts, und wer dort „nur 1960er"
+   gesetzt hat, soll seine Playlist nicht leer vorfinden. */
+const activeFilters = () => (mode === 'playlist' ? settings.plFilters : settings.filters);
+const activePool = () => (mode === 'playlist' ? plFiltered : filtered);
+function setFilters(list) {
+  if (mode === 'playlist') settings.plFilters = list; else settings.filters = list;
+  save('settings', settings);
+}
 let round = [];           /* 5 Songstaende */
 let active = 0;
 let settings = load('settings', {
   stages: [true, true, true, true, true, true], start: 'hook', volume: 0.8, mode: 'charts',
   filters: Filters.DEFAULT.map(r => ({ ...r })),
+  plFilters: Filters.DEFAULT.map(r => ({ ...r })),
 });
 let stats = load('stats', { rounds: 0, solved: 0, played: 0, best: 0, byTier: {} });
 let recent = load('recent', []);
 let pick = null;          /* aktuell im Suchfeld gewaehlter Song */
-let sugItems = [], sugIdx = -1;
+let sugAll = [];          /* alle Treffer der aktuellen Eingabe */
+let sugItems = [];        /* davon schon gezeichnet */
+let sugIdx = -1;
+const SUG_PAGE = 12;      /* so viele kommen pro Nachladen dazu */
 
 function load(k, d) { try { return { ...d, ...JSON.parse(localStorage.getItem('songrate:' + k) || '{}') }; } catch (e) { return d; } }
 function loadArr(k) { try { return JSON.parse(localStorage.getItem('songrate:' + k) || '[]'); } catch (e) { return []; } }
@@ -59,6 +75,7 @@ async function boot() {
   applyFilters();
   PL = buildPlaylist(Playlist.restore());
   plQueue = Playlist.restoreQueue();
+  if (PL) plFiltered = Filters.apply(PL.songs, settings.plFilters, PL);
   if (plPlayable() && settings.mode === 'playlist') mode = 'playlist';
   buildChrome();
   newRound();
@@ -128,8 +145,7 @@ function buildChrome() {
     if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
       if (open) {
         e.preventDefault();
-        sugIdx = (sugIdx + (e.key === 'ArrowDown' ? 1 : -1) + sugItems.length) % sugItems.length;
-        renderSuggest();
+        moveSuggest(e.key === 'ArrowDown' ? 1 : -1);
       } else if (e.key === 'ArrowUp') {
         e.preventDefault();
         playCurrent();
@@ -165,6 +181,9 @@ function buildChrome() {
   });
 
   document.addEventListener('click', e => {
+    /* Ein Klick auf einen Knopf, der sich dabei selbst aus dem DOM nimmt,
+       ist kein Klick daneben - sonst schliesst „weitere" die Liste. */
+    if (!e.target.isConnected) return;
     if (!e.target.closest('.guess-row')) hideSuggest();
   });
 
@@ -236,7 +255,7 @@ function drawSong(tier, used) {
 }
 
 function drawPlaylist() {
-  const src = PL ? PL.songs.slice() : [];
+  const src = plFiltered.slice();
   for (let i = src.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
     [src[i], src[j]] = [src[j], src[i]];
@@ -251,7 +270,7 @@ function newRound() {
   const picked = mode === 'playlist' ? drawPlaylist() : null;
   const used = new Set();
   round = slots().map((t, idx) => {
-    const song = picked ? picked[idx % Math.max(1, picked.length)] : drawSong(t.id, used);
+    const song = picked ? (picked[idx] || null) : drawSong(t.id, used);
     if (song) used.add(song.i);
     return {
       tier: t,
@@ -382,6 +401,10 @@ function resetBar() {
 
 /* ------------------------------------------------------------------ Suche */
 
+/* Es werden alle Treffer gesammelt, aber nur haeppchenweise gezeichnet -
+   sonst haengen bei "billie" zwar 29 Songs in der Liste, sichtbar sind aber
+   nur die ersten acht und der Rest ist unerreichbar. Nachgeladen wird beim
+   Scrollen ans Ende und wenn man mit der Pfeiltaste unten anstoesst. */
 function suggest(q) {
   const n = norm(q);
   if (n.length < 2) return hideSuggest();
@@ -396,29 +419,79 @@ function suggest(q) {
     if (seen.has(k)) continue;
     seen.add(k);
     out.push([sc, s]);
-    if (out.length > 400) break;
   }
   out.sort((a, b) => b[0] - a[0] || b[1].s - a[1].s || a[1].t.localeCompare(b[1].t));
-  sugItems = out.slice(0, 8).map(x => x[1]);
-  sugIdx = -1;
-  renderSuggest();
-}
 
-function renderSuggest() {
+  sugAll = out.map(x => x[1]);
+  sugItems = [];
+  sugIdx = -1;
+
   const box = $('#suggest');
   box.innerHTML = '';
-  if (!sugItems.length) { box.hidden = true; return; }
-  sugItems.forEach((s, i) => {
-    const b = el('button', 'sug' + (i === sugIdx ? ' active' : ''));
+  box.scrollTop = 0;
+  box.hidden = !sugAll.length;
+  box.onscroll = () => {
+    if (box.scrollTop + box.clientHeight >= box.scrollHeight - 60) growSuggest();
+  };
+  growSuggest();
+}
+
+/* Zeichnet die naechste Seite. Gibt zurueck, ob etwas dazugekommen ist. */
+function growSuggest() {
+  const box = $('#suggest');
+  const next = sugAll.slice(sugItems.length, sugItems.length + SUG_PAGE);
+  if (!next.length) return false;
+
+  next.forEach(s => {
+    const b = el('button', 'sug');
     b.appendChild(el('b', null, s.t));
     b.appendChild(el('span', null, s.a));
     b.onclick = () => choose(s);
     box.appendChild(b);
   });
-  box.hidden = false;
+  sugItems = sugItems.concat(next);
+
+  /* Der Knopf wird wiederverwendet und nur ans Ende geschoben. */
+  const rest = sugAll.length - sugItems.length;
+  let m = box.querySelector('.sug-more');
+  if (rest > 0) {
+    if (!m) { m = el('button', 'sug-more'); m.onclick = () => growSuggest(); }
+    m.textContent = `${rest} weitere`;
+    box.appendChild(m);
+  } else if (m) m.remove();
+  return true;
 }
 
-function hideSuggest() { sugItems = []; sugIdx = -1; $('#suggest').hidden = true; }
+/* Auswahl umsetzen und mitscrollen - ohne das steht man beim Durchgehen mit
+   den Pfeiltasten irgendwann unter dem sichtbaren Rand. */
+function moveSuggest(dir) {
+  if (!sugItems.length) return;
+  /* Nach unten wird nachgeladen, nach oben nur innerhalb des Geladenen
+     umgebrochen - sonst zeichnet ein Tastendruck die ganze Trefferliste. */
+  if (dir > 0 && sugIdx >= sugItems.length - 1) growSuggest();
+  sugIdx = dir > 0
+    ? (sugIdx + 1 >= sugItems.length ? 0 : sugIdx + 1)
+    : (sugIdx <= 0 ? sugItems.length - 1 : sugIdx - 1);
+  renderSuggest();
+}
+
+function renderSuggest() {
+  const box = $('#suggest');
+  const rows = [...box.querySelectorAll('.sug')];
+  rows.forEach((b, i) => b.classList.toggle('active', i === sugIdx));
+  const act = rows[sugIdx];
+  if (act && act.scrollIntoView) act.scrollIntoView({ block: 'nearest' });
+}
+
+function hideSuggest() {
+  sugAll = [];
+  sugItems = [];
+  sugIdx = -1;
+  const box = $('#suggest');
+  box.onscroll = null;
+  box.innerHTML = '';
+  box.hidden = true;
+}
 
 function choose(s) {
   pick = s;
@@ -642,67 +715,140 @@ function renderStats() {
 function applyFilters() {
   filtered = Filters.apply(DB.songs, settings.filters, DB);
   TIERS.forEach(t => byTier[t.id] = filtered.filter(s => s.d === t.id));
+  plFiltered = PL ? Filters.apply(PL.songs, settings.plFilters, PL) : [];
+  rebuildFilterLists();
   renderFilters();
+}
+
+/* Die Auswahllisten kommen aus dem Pool, der gerade gilt - in der Playlist
+   stehen also ihre Genres und Kuenstler, nicht die der Charts. */
+function rebuildFilterLists() {
+  if (!$('#gGenre')) return;
+  buildOptionList('#gGenre', 'genre');
+  buildOptionList('#gDecade', 'decade');
+  renderArtistHits($('#fArtist').value);
 }
 
 function buildFilterUI() {
-  $('#fType').onchange = renderFilterOptions;
-  $('#fAdd').onclick = addFilter;
-  $('#fValue').onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); addFilter(); } };
-  renderFilterOptions();
+  $('#fMode').querySelectorAll('button').forEach(b => {
+    b.onclick = () => {
+      filterMode = b.dataset.v;
+      $('#fMode').querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b));
+      renderFilters();
+    };
+  });
+
+  $('#fInst').onchange = () => {
+    const list = activeFilters().filter(r => r.type !== 'instrumental');
+    if ($('#fInst').checked) list.push({ mode: 'ohne', type: 'instrumental', value: '', text: 'Instrumental' });
+    setFilters(list);
+    applyFilters();
+  };
+
+  $('#fReset').onclick = () => {
+    setFilters(Filters.DEFAULT.map(r => ({ ...r })));
+    applyFilters();
+  };
+
+  const art = $('#fArtist');
+  art.oninput = () => renderArtistHits(art.value);
+  art.onkeydown = e => {
+    if (e.key !== 'Enter') return;
+    e.preventDefault();
+    const first = $('#gArtist').querySelector('.fopt');
+    if (first) first.click();
+  };
+
+  buildOptionList('#gGenre', 'genre');
+  buildOptionList('#gDecade', 'decade');
+  renderArtistHits('');
   renderFilters();
 }
 
-function renderFilterOptions() {
-  const type = $('#fType').value;
-  const box = $('#fOptions'), inp = $('#fValue');
+/* Haekchenliste fuer Genres und Jahrzehnte. Steht komplett da - anklicken
+   statt tippen, damit man sich nicht vertippen kann. */
+function buildOptionList(sel, type) {
+  const box = $(sel).querySelector('.fopts');
   box.innerHTML = '';
-  Filters.options(type, DB).forEach(o => {
-    const opt = document.createElement('option');
-    opt.value = o.text;
-    box.appendChild(opt);
-  });
-  inp.hidden = type === 'instrumental';
-  inp.value = '';
-  inp.placeholder = type === 'genre' ? 'z. B. Hip-Hop/Rap'
-    : type === 'artist' ? 'z. B. Billie Eilish'
-    : type === 'decade' ? 'z. B. 2010er' : '';
+  const db = pool();
+  const cnt = Filters.counts(type, db);
+  const opts = Filters.options(type, db);
+  if (!opts.length) { box.appendChild(el('p', 'fnote', 'Nichts zur Auswahl.')); return; }
+  opts.forEach(o => box.appendChild(optionRow(type, o, cnt.get(o.value) || 0)));
 }
 
-function addFilter() {
-  const mode = $('#fMode').value, type = $('#fType').value;
-  const parsed = Filters.parse(type, $('#fValue').value, DB);
-  if (!parsed) return filterNote('Kein Treffer – bitte aus der Liste wählen.');
+function optionRow(type, o, n) {
+  const row = el('button', 'fopt');
+  row.dataset.type = type;
+  row.dataset.value = o.value;
+  row.appendChild(el('span', 'box'));
+  row.appendChild(el('span', 'txt', o.text));
+  row.appendChild(el('span', 'num', n ? String(n) : ''));
+  row.onclick = () => toggleRule(type, o);
+  return row;
+}
 
-  const rule = { mode, type, value: parsed.value, text: parsed.text };
-  /* Dieselbe Sache zweimal mit verschiedener Wirkung ergibt keinen Sinn. */
-  settings.filters = settings.filters.filter(r => !(r.type === rule.type && String(r.value) === String(rule.value)));
-  settings.filters.push(rule);
-  save('settings', settings);
-  $('#fValue').value = '';
+function renderArtistHits(q) {
+  const box = $('#gArtist').querySelector('.fopts');
+  box.innerHTML = '';
+  const db = pool();
+  const cnt = Filters.counts('artist', db);
+  const n = norm(q);
+  const opts = Filters.options('artist', db);
+  const hits = (n
+    ? opts.filter(o => o.value.includes(n))
+        .sort((a, b) => (a.value.startsWith(n) ? 0 : 1) - (b.value.startsWith(n) ? 0 : 1)
+          || (cnt.get(b.value) || 0) - (cnt.get(a.value) || 0))
+    : activeFilters().filter(r => r.type === 'artist').map(r => ({ value: r.value, text: r.text }))
+  ).slice(0, 20);
+
+  if (!hits.length) {
+    box.appendChild(el('p', 'fnote', n ? 'Kein Künstler mit diesem Namen.' : 'Tippen, um zu suchen.'));
+    return;
+  }
+  hits.forEach(o => box.appendChild(optionRow('artist', o, cnt.get(o.value) || 0)));
+  markRules();
+}
+
+/* Klick auf eine Zeile: gleicher Modus schaltet ab, anderer schaltet um. */
+function toggleRule(type, o) {
+  const list = activeFilters().slice();
+  const idx = list.findIndex(r => r.type === type && String(r.value) === String(o.value));
+  const had = idx >= 0 ? list[idx] : null;
+  if (idx >= 0) list.splice(idx, 1);
+  if (!had || had.mode !== filterMode) list.push({ mode: filterMode, type, value: o.value, text: o.text });
+  setFilters(list);
   applyFilters();
 }
 
 function removeFilter(i) {
-  settings.filters.splice(i, 1);
-  save('settings', settings);
+  const list = activeFilters().slice();
+  list.splice(i, 1);
+  setFilters(list);
   applyFilters();
 }
 
-function filterNote(msg) {
-  const c = $('#filterCount');
-  c.textContent = msg;
-  c.classList.add('warn');
-  clearTimeout(filterNote.t);
-  filterNote.t = setTimeout(renderFilters, 2600);
+/* Haekchen und Farbe der Zeilen an die aktiven Regeln angleichen. */
+function markRules() {
+  const rules = activeFilters();
+  document.querySelectorAll('.fopt').forEach(row => {
+    const r = rules.find(x => x.type === row.dataset.type && String(x.value) === row.dataset.value);
+    row.classList.toggle('on', !!r);
+    ['nur', 'ohne', 'dazu'].forEach(m => row.classList.toggle(m, !!r && r.mode === m));
+  });
+  [['#gGenre', 'genre'], ['#gDecade', 'decade'], ['#gArtist', 'artist']].forEach(([sel, type]) => {
+    const n = rules.filter(r => r.type === type).length;
+    $(sel).querySelector('.fcount').textContent = n ? ` · ${n}` : '';
+  });
 }
 
 function renderFilters() {
-  $('#filterPanel').hidden = mode === 'playlist';
+  const rules = activeFilters();
+  $('#filterPanel').querySelector('h2').textContent = mode === 'playlist' ? 'Songauswahl · Playlist' : 'Songauswahl';
 
   const box = $('#filterList');
   box.innerHTML = '';
-  settings.filters.forEach((r, i) => {
+  rules.forEach((r, i) => {
     const chip = el('div', 'frule ' + r.mode);
     chip.appendChild(el('span', null, Filters.label(r)));
     const x = el('button', null, '×');
@@ -711,15 +857,25 @@ function renderFilters() {
     chip.appendChild(x);
     box.appendChild(chip);
   });
+  $('#fReset').hidden = !rules.length;
+  $('#fInst').checked = rules.some(r => r.type === 'instrumental' && r.mode === 'ohne');
+  markRules();
 
-  const n = filtered.length;
-  const empty = TIERS.filter(t => !(byTier[t.id] || []).length).map(t => t.label);
+  const n = activePool().length;
   const c = $('#filterCount');
   let warn = true, msg;
-  if (!n) msg = 'Kein Song passt zu den Filtern.';
-  else if (n < Filters.MIN_POOL) msg = `Nur ${n} Songs übrig – das wird schnell vorhersehbar.`;
-  else if (empty.length) msg = `${n} Songs · leer: ${empty.join(', ')} – dort kommt Ersatz aus dem Rest.`;
-  else { msg = `${n} Songs im Pool`; warn = false; }
+  if (mode === 'playlist') {
+    const total = PL ? PL.songs.length : 0;
+    if (!n) msg = 'Kein Song der Playlist passt zu den Filtern.';
+    else if (n < PL_MIN) msg = `Nur ${n} von ${total} Songs übrig – für eine Runde braucht es ${PL_MIN}.`;
+    else { msg = `${n} von ${total} Songs der Playlist`; warn = false; }
+  } else {
+    const empty = TIERS.filter(t => !(byTier[t.id] || []).length).map(t => t.label);
+    if (!n) msg = 'Kein Song passt zu den Filtern.';
+    else if (n < Filters.MIN_POOL) msg = `Nur ${n} Songs übrig – das wird schnell vorhersehbar.`;
+    else if (empty.length) msg = `${n} Songs · leer: ${empty.join(', ')} – dort kommt Ersatz aus dem Rest.`;
+    else { msg = `${n} Songs im Pool`; warn = false; }
+  }
   c.textContent = msg;
   c.classList.toggle('warn', warn);
 }
@@ -791,6 +947,7 @@ function buildPlaylistUI() {
     Playlist.store(null);
     Playlist.storeQueue(null, null);
     if (mode === 'playlist') setMode('charts');
+    applyFilters();
     renderPlaylist();
   };
 
@@ -851,6 +1008,7 @@ async function runResolve(name, tracks) {
   PL = buildPlaylist(raw);
   Playlist.store(PL ? raw : null);
 
+  applyFilters();
   const complete = !res.throttled && res.done >= res.total;
   if (complete) { plQueue = null; Playlist.storeQueue(null, null); }
   else plQueue = { name, tracks };
@@ -903,7 +1061,7 @@ function setMode(m) {
   $('#clearPick').hidden = true;
   renderSlots();
   renderPlaylist();
-  renderFilters();
+  applyFilters();
   newRound();
 }
 
