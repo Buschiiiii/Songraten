@@ -54,6 +54,7 @@ async function boot() {
   });
   TIERS.forEach(t => byTier[t.id] = DB.songs.filter(s => s.d === t.id));
   PL = buildPlaylist(Playlist.restore());
+  plQueue = Playlist.restoreQueue();
   if (plPlayable() && settings.mode === 'playlist') mode = 'playlist';
   buildChrome();
   newRound();
@@ -237,6 +238,7 @@ function drawPlaylist() {
 function newRound() {
   Audio2.stop();
   clearTimeout(sweepTimer);
+  cancelAnimationFrame(sweepRaf);
   const picked = mode === 'playlist' ? drawPlaylist() : null;
   round = slots().map((t, idx) => {
     const song = picked ? picked[idx % Math.max(1, picked.length)] : drawSong(t.id);
@@ -293,6 +295,9 @@ async function playCurrent() {
   const r = round[active];
   if (!r || !r.song || r.status !== 'playing') return;
   const btn = $('#playBtn');
+  /* Muss vor jedem await passieren: iOS gibt den Ton nur frei, solange die
+     Nutzergeste noch laeuft. Nach dem Warten aufs Laden ist es zu spaet. */
+  Audio2.unlock();
   if (!r.buffer) {
     btn.classList.add('loading');
     await preload(active);
@@ -307,32 +312,59 @@ async function playCurrent() {
 }
 
 /* Zeigt in der Leiste mit, wie weit der Ausschnitt laeuft: der helle Balken
-   waechst bis ans Ende des aktuellen Abschnitts. Sehr kurze Stufen laufen
-   optisch etwas langsamer ab, sonst saehe man 0,01s ueberhaupt nicht. */
+   waechst von der Null bis ans Ende des aktuellen Abschnitts.
+
+   Die Leiste ist logarithmisch geteilt, die Zeit laeuft aber gleichmaessig -
+   ein linear wachsender Balken haengt deshalb fast die ganze Zeit zu weit
+   links, weil er sich durch die kurzen Abschnitte quaelt. Darum wird jede
+   gehoerte Sekunde einzeln auf die Leiste umgerechnet: nach 0,01s steht der
+   Balken genau am Ende des 0,01s-Abschnitts, nach 2s am Ende des 2s-
+   Abschnitts. Sehr kurze Stufen laufen optisch ueber 0,4s ab, sonst saehe man
+   sie gar nicht - die Breite bleibt korrekt, nur das Tempo ist gestreckt. */
 let sweepTimer = null;
+let sweepRaf = null;
+
+/* Sekunden -> Pixel, innerhalb eines Abschnitts linear interpoliert. */
+function xForTime(t, stops) {
+  let prevT = 0, prevX = 0;
+  for (const s of stops) {
+    if (t <= s.t) return prevX + (s.t > prevT ? (t - prevT) / (s.t - prevT) * (s.x - prevX) : 0);
+    prevT = s.t; prevX = s.x;
+  }
+  return stops.length ? stops[stops.length - 1].x : 0;
+}
 
 function sweepBar(secs) {
   const bar = $('#stageBar');
   const ov = bar.querySelector('.stage-progress');
-  const seg = bar.querySelector('.stage-seg.current');
-  if (!ov || !seg) return;
-  const target = seg.offsetLeft + seg.offsetWidth;
-  const dur = Math.max(secs, 0.4);
+  const segs = [...bar.querySelectorAll('.stage-seg')];
+  if (!ov || segs.length !== STAGES.length) return;
+
+  const stops = STAGES.map((t, i) => ({ t, x: segs[i].offsetLeft + segs[i].offsetWidth }));
+  const dur = Math.max(secs, 0.4) * 1000;
+  const t0 = performance.now();
+
   clearTimeout(sweepTimer);
+  cancelAnimationFrame(sweepRaf);
   ov.style.transition = 'none';
   ov.style.width = '0px';
   ov.style.opacity = '1';
-  void ov.offsetWidth;
-  ov.style.transition = `width ${dur}s linear`;
-  ov.style.width = target + 'px';
-  sweepTimer = setTimeout(() => {
-    ov.style.transition = 'opacity .45s ease';
-    ov.style.opacity = '0';
-  }, dur * 1000 + 260);
+
+  const step = now => {
+    const p = Math.min(1, (now - t0) / dur);
+    ov.style.width = xForTime(p * secs, stops) + 'px';
+    if (p < 1) sweepRaf = requestAnimationFrame(step);
+    else sweepTimer = setTimeout(() => {
+      ov.style.transition = 'opacity .45s ease';
+      ov.style.opacity = '0';
+    }, 260);
+  };
+  sweepRaf = requestAnimationFrame(step);
 }
 
 function resetBar() {
   clearTimeout(sweepTimer);
+  cancelAnimationFrame(sweepRaf);
   const ov = $('#stageBar').querySelector('.stage-progress');
   if (ov) { ov.style.transition = 'none'; ov.style.width = '0px'; ov.style.opacity = '0'; }
 }
@@ -625,7 +657,9 @@ function buildPlaylist(pl) {
 
 const plPlayable = () => !!PL && PL.songs.length >= PL_MIN;
 
-let plBusy = false;
+let plBusy = false;       /* Suche laeuft gerade */
+let plStop = false;       /* Abbruch angefordert */
+let plQueue = null;       /* eingelesene Liste, solange sie nicht fertig ist */
 
 function buildPlaylistUI() {
   const file = $('#plFile');
@@ -647,9 +681,14 @@ function buildPlaylistUI() {
     if (box.value.trim()) loadPlaylistText(box.value, 'Eingefügte Liste');
   };
 
+  $('#plCancel').onclick = () => { plStop = true; plNote('Wird abgebrochen …'); };
+  $('#plResume').onclick = () => { if (plQueue) runResolve(plQueue.name, plQueue.tracks); };
+
   $('#plClear').onclick = () => {
     PL = null;
+    plQueue = null;
     Playlist.store(null);
+    Playlist.storeQueue(null, null);
     if (mode === 'playlist') setMode('charts');
     renderPlaylist();
   };
@@ -685,25 +724,43 @@ async function loadPlaylistText(text, name) {
   if (plBusy) return;
   const parsed = Playlist.parse(text);
   if (!parsed.tracks.length) return plNote(parsed.note || 'Keine Titel in der Datei gefunden.');
+  plQueue = { name, tracks: parsed.tracks };
+  Playlist.storeQueue(name, parsed.tracks);
+  await runResolve(name, parsed.tracks);
+}
 
+/* Ein Lauf ueber die Titelliste. Was schon im Cache liegt, geht ohne Anfrage
+   durch - deshalb macht ein zweiter Lauf genau dort weiter, wo der erste
+   aufgehoert hat. */
+async function runResolve(name, tracks) {
+  if (plBusy) return;
   plBusy = true;
+  plStop = false;
   renderPlaylist();
-  plNote('Titel werden gesucht … 0/' + parsed.tracks.length);
+  plNote(`Titel werden gesucht … 0/${tracks.length}`);
 
-  const res = await Playlist.resolve(parsed.tracks, {
+  const res = await Playlist.resolve(tracks, {
+    cancelled: () => plStop,
     onProgress: (done, total) => plNote(`Titel werden gesucht … ${done}/${total}`),
+    onWait: secs => plNote(`Apple bremst – weiter in ${secs} s`),
   });
 
   plBusy = false;
   const raw = { name, songs: res.songs, missed: res.missed };
   PL = buildPlaylist(raw);
   Playlist.store(PL ? raw : null);
+
+  const complete = !res.throttled && res.done >= res.total;
+  if (complete) { plQueue = null; Playlist.storeQueue(null, null); }
+  else plQueue = { name, tracks };
+
+  if (plPlayable() && mode !== 'playlist') setMode('playlist');
   renderPlaylist();
 
-  if (res.throttled) plNote('Apple hat abgeriegelt – in ein paar Minuten nochmal.');
+  if (res.throttled) plNote(`${res.songs.length} von ${res.total} gefunden – Apple bremst. Später auf „Weiter suchen“ tippen.`);
+  else if (!complete) plNote(`Abgebrochen bei ${res.done} von ${res.total} – „Weiter suchen“ macht dort weiter.`);
   else if (!PL) plNote('Kein einziger Titel gefunden. Stimmen Titel- und Künstlerspalte?');
-  else if (!plPlayable()) plNote(`Nur ${PL.songs.length} von ${parsed.tracks.length} Titeln gefunden – für eine Runde braucht es ${PL_MIN}.`);
-  else setMode('playlist');
+  else if (!plPlayable()) plNote(`Nur ${PL.songs.length} von ${res.total} Titeln gefunden – für eine Runde braucht es ${PL_MIN}.`);
 }
 
 function plNote(msg) { $('#plStatus').textContent = msg; }
@@ -714,9 +771,14 @@ function renderPlaylist() {
     b.disabled = b.dataset.v === 'playlist' && !plPlayable();
   });
   $('#plPick').disabled = plBusy;
-  $('#plClear').hidden = !PL;
+  $('#plPick').hidden = plBusy;
+  $('#plPasteToggle').hidden = plBusy;
+  $('#plCancel').hidden = !plBusy;
+  $('#plResume').hidden = plBusy || !plQueue;
+  $('#plClear').hidden = plBusy || !PL;
   $('#plPaste').hidden = true;
   $('#plPasteGo').hidden = true;
+  if (plQueue) $('#plResume').textContent = `Weiter suchen (${plQueue.tracks.length} Titel)`;
 
   if (plBusy) return;
   if (!PL) return plNote('');

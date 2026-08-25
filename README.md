@@ -47,10 +47,17 @@ Woher die Datei kommt:
 | Irgendwas anderes | *oder Liste einfügen*: eine Zeile pro Song, `Titel – Künstler` |
 
 Titel und Künstler werden automatisch erkannt, egal wie die Spalten heißen.
-Anschließend sucht die Seite jeden Titel bei Apple – das dauert etwa eine
-Sekunde pro zehn Songs und passiert nur einmal, danach liegt die Playlist im
+Anschließend sucht die Seite jeden Titel bei Apple – rechne mit gut vier
+Sekunden pro zehn Songs. Das passiert nur einmal, danach liegt die Playlist im
 Browser. Songs, die Apple nicht findet, fallen raus; wie viele es waren, steht
 unter dem Knopf. Für eine Runde braucht es mindestens fünf gefundene Songs.
+
+Bei langen Listen bremst Apple irgendwann und schickt ein paar Minuten lang
+nur noch Absagen. Dann steht im Status **„Apple bremst – weiter in … s"** und
+die Suche macht von selbst weiter, sobald die Zeit um ist; bis dahin kannst du
+mit **Abbrechen** anhalten. Bereits gefundene Songs sind gespeichert, und
+**Weiter suchen** setzt genau dort wieder an – auch nach dem Schließen der
+Seite.
 
 ### Wenn die Seite leer bleibt
 

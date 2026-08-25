@@ -20,13 +20,43 @@ const Audio2 = (() => {
     return ctx;
   }
 
+  /* iOS gibt Ton nur frei, wenn der Context in einer echten Nutzergeste
+     aufgeweckt und einmal etwas abgespielt wurde - deshalb der stumme
+     Ein-Sample-Puffer. Ohne audioSession.type = 'playback' schaltet Safari
+     den Ton ausserdem mit dem Klingelschalter stumm. */
+  function unlock() {
+    const c = ensure();
+    try {
+      if (navigator.audioSession) navigator.audioSession.type = 'playback';
+    } catch (e) {}
+    try {
+      const src = c.createBufferSource();
+      src.buffer = c.createBuffer(1, 1, 22050);
+      src.connect(c.destination);
+      src.start(0);
+    } catch (e) {}
+    return c;
+  }
+
+  /* Solange der Context nicht laeuft, wird bei jeder Geste neu versucht. */
+  ['pointerdown', 'touchend', 'keydown'].forEach(ev =>
+    document.addEventListener(ev, () => { if (!ctx || ctx.state !== 'running') unlock(); }, { capture: true, passive: true }));
+
+  /* Safari kennt decodeAudioData lange nur mit Rueckruf. */
+  function decode(c, buf) {
+    return new Promise((res, rej) => {
+      const p = c.decodeAudioData(buf, res, rej);
+      if (p && p.then) p.then(res, rej);
+    });
+  }
+
   async function load(url) {
     if (cache.has(url)) return cache.get(url);
     const p = (async () => {
       const res = await fetch(url, { mode: 'cors' });
       if (!res.ok) throw new Error('HTTP ' + res.status);
       const buf = await res.arrayBuffer();
-      return await ensure().decodeAudioData(buf);
+      return await decode(ensure(), buf);
     })();
     cache.set(url, p);
     p.catch(() => cache.delete(url));
@@ -71,5 +101,5 @@ const Audio2 = (() => {
 
   function warm(url) { load(url).catch(() => {}); }
 
-  return { load, play, stop, setVolume, warm, ensure };
+  return { load, play, stop, setVolume, warm, ensure, unlock, state: () => (ctx ? ctx.state : 'none') };
 })();

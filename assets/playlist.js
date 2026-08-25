@@ -8,7 +8,13 @@ const Playlist = (() => {
   const MAX_TRACKS = 300;
   const CACHE_KEY = 'songrate:plcache';
   const STORE_KEY = 'songrate:playlist';
+  const QUEUE_KEY = 'songrate:plqueue';
   const CACHE_MAX = 900;
+  /* Apple laesst ein paar hundert Anfragen durch und macht dann fuer eine
+     Weile mit 403 dicht. Deshalb Pause zwischen den Anfragen und, wenn es
+     doch passiert, warten statt abbrechen. */
+  const PAUSE_MS = 260;
+  const BACKOFF = [30, 60, 120, 240, 300];
 
   const norm = s => (s || '').toLowerCase()
     .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
@@ -229,22 +235,37 @@ const Playlist = (() => {
     };
   }
 
-  /* Loest die Titelliste ueber die iTunes-Suche auf. Sequentiell mit kleiner
-     Pause, weil Apple bei zu vielen Anfragen mit 403 dichtmacht. Alles, was
-     einmal gefunden wurde, bleibt im localStorage. */
+  const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+  /* Wartet die Drosselung ab und zaehlt dabei sichtbar herunter. */
+  async function waitOut(secs, opts) {
+    const until = Date.now() + secs * 1000;
+    while (Date.now() < until) {
+      if (opts.cancelled && opts.cancelled()) return false;
+      if (opts.onWait) opts.onWait(Math.ceil((until - Date.now()) / 1000));
+      await sleep(500);
+    }
+    return true;
+  }
+
+  /* Loest die Titelliste ueber die iTunes-Suche auf. Sequentiell mit Pause,
+     weil Apple sonst mit 403 dichtmacht; passiert es doch, wird gewartet und
+     an derselben Stelle weitergemacht. Alles, was einmal gefunden wurde,
+     bleibt im localStorage - ein zweiter Lauf ueberspringt es sofort. */
   async function resolve(tracks, opts) {
     opts = opts || {};
     const cache = loadCache();
     const songs = [], missed = [];
-    let done = 0, throttled = false;
+    let done = 0, throttled = false, waits = 0;
+    const stop = () => !!(opts.cancelled && opts.cancelled());
 
     for (const t of tracks) {
-      if (opts.cancelled && opts.cancelled()) break;
+      if (stop()) break;
       const key = keyOf(t);
       let hit = cache[key];
       if (hit === undefined && misses.has(key)) hit = null;
 
-      if (hit === undefined) {
+      while (hit === undefined) {
         try {
           let cands = await lookup(t, 'DE');
           if (!cands.length) cands = await lookup(t, 'US');
@@ -255,12 +276,16 @@ const Playlist = (() => {
           }
           hit = bestScore >= 2.5 && best ? toSong(best) : null;
           if (hit) cache[key] = hit; else misses.add(key);
+          waits = 0;
         } catch (e) {
-          if (e.throttled) { throttled = true; break; }
-          hit = null;
+          if (!e.throttled) { hit = null; break; }
+          saveCache(cache);
+          if (waits >= BACKOFF.length) { throttled = true; break; }
+          if (!await waitOut(BACKOFF[waits++], opts)) break;
         }
-        await new Promise(r => setTimeout(r, 90));
+        await sleep(PAUSE_MS);
       }
+      if (throttled || stop()) break;
 
       if (hit) songs.push({ ...hit }); else missed.push(termOf(t));
       done++;
@@ -268,7 +293,7 @@ const Playlist = (() => {
     }
 
     saveCache(cache);
-    return { songs: dedupe(songs), missed, throttled };
+    return { songs: dedupe(songs), missed, throttled, done, total: tracks.length };
   }
 
   function dedupe(songs) {
@@ -291,6 +316,22 @@ const Playlist = (() => {
     } catch (e) {}
   }
 
+  /* Die eingelesene Titelliste bleibt liegen, damit ein abgebrochener Lauf
+     spaeter weitergehen kann - auch nach einem Neuladen der Seite. */
+  function storeQueue(name, tracks) {
+    try {
+      if (tracks && tracks.length) localStorage.setItem(QUEUE_KEY, JSON.stringify({ name, tracks }));
+      else localStorage.removeItem(QUEUE_KEY);
+    } catch (e) {}
+  }
+
+  function restoreQueue() {
+    try {
+      const q = JSON.parse(localStorage.getItem(QUEUE_KEY) || 'null');
+      return q && q.tracks && q.tracks.length ? q : null;
+    } catch (e) { return null; }
+  }
+
   function restore() {
     try {
       const pl = JSON.parse(localStorage.getItem(STORE_KEY) || 'null');
@@ -298,5 +339,5 @@ const Playlist = (() => {
     } catch (e) { return null; }
   }
 
-  return { parse, resolve, store, restore, MAX_TRACKS };
+  return { parse, resolve, store, restore, storeQueue, restoreQueue, MAX_TRACKS };
 })();
