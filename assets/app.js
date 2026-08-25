@@ -21,13 +21,25 @@ let DB = null;            /* { artists:[], songs:[] } */
 let PL = null;            /* aufgeloeste Playlist, gleiche Form wie DB */
 let mode = 'charts';      /* 'charts' | 'playlist' */
 let byTier = {};
-let filtered = [];        /* Songs, die nach den Filtern uebrig bleiben */
+let filtered = [];        /* Chartsongs, die nach den Filtern uebrig bleiben */
+let plFiltered = [];      /* dasselbe fuer die Playlist */
 let filterMode = 'nur';   /* Wirkung, die ein Klick in den Listen bekommt */
+
+/* Jeder Modus hat seinen eigenen Regelsatz: eine importierte Playlist bringt
+   andere Genres und Kuenstler mit als die Charts, und wer dort „nur 1960er"
+   gesetzt hat, soll seine Playlist nicht leer vorfinden. */
+const activeFilters = () => (mode === 'playlist' ? settings.plFilters : settings.filters);
+const activePool = () => (mode === 'playlist' ? plFiltered : filtered);
+function setFilters(list) {
+  if (mode === 'playlist') settings.plFilters = list; else settings.filters = list;
+  save('settings', settings);
+}
 let round = [];           /* 5 Songstaende */
 let active = 0;
 let settings = load('settings', {
   stages: [true, true, true, true, true, true], start: 'hook', volume: 0.8, mode: 'charts',
   filters: Filters.DEFAULT.map(r => ({ ...r })),
+  plFilters: Filters.DEFAULT.map(r => ({ ...r })),
 });
 let stats = load('stats', { rounds: 0, solved: 0, played: 0, best: 0, byTier: {} });
 let recent = load('recent', []);
@@ -63,6 +75,7 @@ async function boot() {
   applyFilters();
   PL = buildPlaylist(Playlist.restore());
   plQueue = Playlist.restoreQueue();
+  if (PL) plFiltered = Filters.apply(PL.songs, settings.plFilters, PL);
   if (plPlayable() && settings.mode === 'playlist') mode = 'playlist';
   buildChrome();
   newRound();
@@ -242,7 +255,7 @@ function drawSong(tier, used) {
 }
 
 function drawPlaylist() {
-  const src = PL ? PL.songs.slice() : [];
+  const src = plFiltered.slice();
   for (let i = src.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
     [src[i], src[j]] = [src[j], src[i]];
@@ -257,7 +270,7 @@ function newRound() {
   const picked = mode === 'playlist' ? drawPlaylist() : null;
   const used = new Set();
   round = slots().map((t, idx) => {
-    const song = picked ? picked[idx % Math.max(1, picked.length)] : drawSong(t.id, used);
+    const song = picked ? (picked[idx] || null) : drawSong(t.id, used);
     if (song) used.add(song.i);
     return {
       tier: t,
@@ -702,8 +715,18 @@ function renderStats() {
 function applyFilters() {
   filtered = Filters.apply(DB.songs, settings.filters, DB);
   TIERS.forEach(t => byTier[t.id] = filtered.filter(s => s.d === t.id));
-  if ($('#fArtist')) renderArtistHits($('#fArtist').value);
+  plFiltered = PL ? Filters.apply(PL.songs, settings.plFilters, PL) : [];
+  rebuildFilterLists();
   renderFilters();
+}
+
+/* Die Auswahllisten kommen aus dem Pool, der gerade gilt - in der Playlist
+   stehen also ihre Genres und Kuenstler, nicht die der Charts. */
+function rebuildFilterLists() {
+  if (!$('#gGenre')) return;
+  buildOptionList('#gGenre', 'genre');
+  buildOptionList('#gDecade', 'decade');
+  renderArtistHits($('#fArtist').value);
 }
 
 function buildFilterUI() {
@@ -716,15 +739,14 @@ function buildFilterUI() {
   });
 
   $('#fInst').onchange = () => {
-    settings.filters = settings.filters.filter(r => r.type !== 'instrumental');
-    if ($('#fInst').checked) settings.filters.push({ mode: 'ohne', type: 'instrumental', value: '', text: 'Instrumental' });
-    save('settings', settings);
+    const list = activeFilters().filter(r => r.type !== 'instrumental');
+    if ($('#fInst').checked) list.push({ mode: 'ohne', type: 'instrumental', value: '', text: 'Instrumental' });
+    setFilters(list);
     applyFilters();
   };
 
   $('#fReset').onclick = () => {
-    settings.filters = Filters.DEFAULT.map(r => ({ ...r }));
-    save('settings', settings);
+    setFilters(Filters.DEFAULT.map(r => ({ ...r })));
     applyFilters();
   };
 
@@ -748,8 +770,11 @@ function buildFilterUI() {
 function buildOptionList(sel, type) {
   const box = $(sel).querySelector('.fopts');
   box.innerHTML = '';
-  const cnt = Filters.counts(type, DB);
-  Filters.options(type, DB).forEach(o => box.appendChild(optionRow(type, o, cnt.get(o.value) || 0)));
+  const db = pool();
+  const cnt = Filters.counts(type, db);
+  const opts = Filters.options(type, db);
+  if (!opts.length) { box.appendChild(el('p', 'fnote', 'Nichts zur Auswahl.')); return; }
+  opts.forEach(o => box.appendChild(optionRow(type, o, cnt.get(o.value) || 0)));
 }
 
 function optionRow(type, o, n) {
@@ -766,14 +791,15 @@ function optionRow(type, o, n) {
 function renderArtistHits(q) {
   const box = $('#gArtist').querySelector('.fopts');
   box.innerHTML = '';
-  const cnt = Filters.counts('artist', DB);
+  const db = pool();
+  const cnt = Filters.counts('artist', db);
   const n = norm(q);
-  const opts = Filters.options('artist', DB);
+  const opts = Filters.options('artist', db);
   const hits = (n
     ? opts.filter(o => o.value.includes(n))
         .sort((a, b) => (a.value.startsWith(n) ? 0 : 1) - (b.value.startsWith(n) ? 0 : 1)
           || (cnt.get(b.value) || 0) - (cnt.get(a.value) || 0))
-    : settings.filters.filter(r => r.type === 'artist').map(r => ({ value: r.value, text: r.text }))
+    : activeFilters().filter(r => r.type === 'artist').map(r => ({ value: r.value, text: r.text }))
   ).slice(0, 20);
 
   if (!hits.length) {
@@ -786,41 +812,43 @@ function renderArtistHits(q) {
 
 /* Klick auf eine Zeile: gleicher Modus schaltet ab, anderer schaltet um. */
 function toggleRule(type, o) {
-  const idx = settings.filters.findIndex(r => r.type === type && String(r.value) === String(o.value));
-  const had = idx >= 0 ? settings.filters[idx] : null;
-  if (idx >= 0) settings.filters.splice(idx, 1);
-  if (!had || had.mode !== filterMode) {
-    settings.filters.push({ mode: filterMode, type, value: o.value, text: o.text });
-  }
-  save('settings', settings);
+  const list = activeFilters().slice();
+  const idx = list.findIndex(r => r.type === type && String(r.value) === String(o.value));
+  const had = idx >= 0 ? list[idx] : null;
+  if (idx >= 0) list.splice(idx, 1);
+  if (!had || had.mode !== filterMode) list.push({ mode: filterMode, type, value: o.value, text: o.text });
+  setFilters(list);
   applyFilters();
 }
 
 function removeFilter(i) {
-  settings.filters.splice(i, 1);
-  save('settings', settings);
+  const list = activeFilters().slice();
+  list.splice(i, 1);
+  setFilters(list);
   applyFilters();
 }
 
 /* Haekchen und Farbe der Zeilen an die aktiven Regeln angleichen. */
 function markRules() {
+  const rules = activeFilters();
   document.querySelectorAll('.fopt').forEach(row => {
-    const r = settings.filters.find(x => x.type === row.dataset.type && String(x.value) === row.dataset.value);
+    const r = rules.find(x => x.type === row.dataset.type && String(x.value) === row.dataset.value);
     row.classList.toggle('on', !!r);
     ['nur', 'ohne', 'dazu'].forEach(m => row.classList.toggle(m, !!r && r.mode === m));
   });
   [['#gGenre', 'genre'], ['#gDecade', 'decade'], ['#gArtist', 'artist']].forEach(([sel, type]) => {
-    const n = settings.filters.filter(r => r.type === type).length;
+    const n = rules.filter(r => r.type === type).length;
     $(sel).querySelector('.fcount').textContent = n ? ` · ${n}` : '';
   });
 }
 
 function renderFilters() {
-  $('#filterPanel').hidden = mode === 'playlist';
+  const rules = activeFilters();
+  $('#filterPanel').querySelector('h2').textContent = mode === 'playlist' ? 'Songauswahl · Playlist' : 'Songauswahl';
 
   const box = $('#filterList');
   box.innerHTML = '';
-  settings.filters.forEach((r, i) => {
+  rules.forEach((r, i) => {
     const chip = el('div', 'frule ' + r.mode);
     chip.appendChild(el('span', null, Filters.label(r)));
     const x = el('button', null, '×');
@@ -829,18 +857,25 @@ function renderFilters() {
     chip.appendChild(x);
     box.appendChild(chip);
   });
-  $('#fReset').hidden = !settings.filters.length;
-  $('#fInst').checked = settings.filters.some(r => r.type === 'instrumental' && r.mode === 'ohne');
+  $('#fReset').hidden = !rules.length;
+  $('#fInst').checked = rules.some(r => r.type === 'instrumental' && r.mode === 'ohne');
   markRules();
 
-  const n = filtered.length;
-  const empty = TIERS.filter(t => !(byTier[t.id] || []).length).map(t => t.label);
+  const n = activePool().length;
   const c = $('#filterCount');
   let warn = true, msg;
-  if (!n) msg = 'Kein Song passt zu den Filtern.';
-  else if (n < Filters.MIN_POOL) msg = `Nur ${n} Songs übrig – das wird schnell vorhersehbar.`;
-  else if (empty.length) msg = `${n} Songs · leer: ${empty.join(', ')} – dort kommt Ersatz aus dem Rest.`;
-  else { msg = `${n} Songs im Pool`; warn = false; }
+  if (mode === 'playlist') {
+    const total = PL ? PL.songs.length : 0;
+    if (!n) msg = 'Kein Song der Playlist passt zu den Filtern.';
+    else if (n < PL_MIN) msg = `Nur ${n} von ${total} Songs übrig – für eine Runde braucht es ${PL_MIN}.`;
+    else { msg = `${n} von ${total} Songs der Playlist`; warn = false; }
+  } else {
+    const empty = TIERS.filter(t => !(byTier[t.id] || []).length).map(t => t.label);
+    if (!n) msg = 'Kein Song passt zu den Filtern.';
+    else if (n < Filters.MIN_POOL) msg = `Nur ${n} Songs übrig – das wird schnell vorhersehbar.`;
+    else if (empty.length) msg = `${n} Songs · leer: ${empty.join(', ')} – dort kommt Ersatz aus dem Rest.`;
+    else { msg = `${n} Songs im Pool`; warn = false; }
+  }
   c.textContent = msg;
   c.classList.toggle('warn', warn);
 }
@@ -912,6 +947,7 @@ function buildPlaylistUI() {
     Playlist.store(null);
     Playlist.storeQueue(null, null);
     if (mode === 'playlist') setMode('charts');
+    applyFilters();
     renderPlaylist();
   };
 
@@ -972,6 +1008,7 @@ async function runResolve(name, tracks) {
   PL = buildPlaylist(raw);
   Playlist.store(PL ? raw : null);
 
+  applyFilters();
   const complete = !res.throttled && res.done >= res.total;
   if (complete) { plQueue = null; Playlist.storeQueue(null, null); }
   else plQueue = { name, tracks };
@@ -1024,7 +1061,7 @@ function setMode(m) {
   $('#clearPick').hidden = true;
   renderSlots();
   renderPlaylist();
-  renderFilters();
+  applyFilters();
   newRound();
 }
 

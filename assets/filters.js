@@ -76,9 +76,11 @@ const Filters = (() => {
 
   /* Wie viele Songs haengen an einem Wert - steht neben den Haekchen, damit
      man sieht, dass "nur Jazz" zwei Songs bedeutet. */
-  const countCache = {};
+  const countCache = new WeakMap();
   function counts(type, db) {
-    if (countCache[type]) return countCache[type];
+    let per = countCache.get(db);
+    if (!per) countCache.set(db, per = {});
+    if (per[type]) return per[type];
     const m = new Map();
     const bump = k => { if (k) m.set(k, (m.get(k) || 0) + 1); };
     db.songs.forEach(s => {
@@ -90,7 +92,7 @@ const Filters = (() => {
         ids.forEach(bump);
       } else if (type === 'instrumental' && isInstrumental(s)) bump('');
     });
-    return (countCache[type] = m);
+    return (per[type] = m);
   }
 
   /* Freitext -> Regelwert. Erst exakt, dann Anfang, dann enthalten. */

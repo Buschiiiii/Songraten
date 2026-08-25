@@ -308,10 +308,56 @@ const dummy = n => ({ t: 'Song ' + n, a: 'Kuenstler ' + n, al: 'Album', y: 2020,
   assert([...w2.document.querySelectorAll('#gDecade .fopt')].find(r => r.querySelector('.txt').textContent === '1960er').classList.contains('on'),
     'Filter: die Haekchen stehen nach dem Neuladen wieder richtig');
 
-  /* Im Playlist-Modus hat die Songauswahl nichts zu suchen */
-  w2.__ev('PL = buildPlaylist({ name: "X", songs: [1,2,3,4,5,6].map(n => ({ t: "S"+n, a: "K"+n, al: "A", y: 2020, g: "Pop", s: 0, p: "https://audio/"+n, c: "https://art/"+n+"/100x100bb.jpg", id: n })), missed: [] }); setMode("playlist")');
-  await waitFor(() => w2.document.querySelector('#filterPanel').hidden);
-  assert(w2.document.querySelector('#filterPanel').hidden, 'Filter: Panel ist im Playlist-Modus weg');
+  /* Die Playlist hat einen eigenen Regelsatz - ein ganzes Album bringt gern
+     Instrumentalfassungen mit, die will man auch dort loswerden. */
+  const plSongs = [
+    { t: 'Song A', a: 'Band', al: 'Album', y: 2015, g: 'Rock' },
+    { t: 'Song B', a: 'Band', al: 'Album', y: 2015, g: 'Rock' },
+    { t: 'Song C', a: 'Band', al: 'Album', y: 2015, g: 'Rock' },
+    { t: 'Song D (Instrumental)', a: 'Band', al: 'Album', y: 2015, g: 'Rock' },
+    { t: 'Song E - Instrumental', a: 'Band', al: 'Album', y: 2015, g: 'Rock' },
+    { t: 'Song F', a: 'Gast', al: 'Album', y: 2005, g: 'Pop' },
+    { t: 'Song G', a: 'Gast', al: 'Album (Karaoke Version)', y: 2005, g: 'Pop' },
+    { t: 'Song H', a: 'Gast', al: 'Album', y: 2005, g: 'Pop' },
+  ].map((s, i) => ({ ...s, s: 0, p: 'https://audio/' + i, c: 'https://art/' + i + '/100x100bb.jpg', id: i }));
+
+  const chartRules = JSON.stringify(w2.__ev('settings.filters'));
+  w2.__ev(`PL = buildPlaylist({ name: "Album", songs: ${JSON.stringify(plSongs)}, missed: [] }); setMode("playlist")`);
+  await waitFor(() => w2.__ev('mode') === 'playlist');
+
+  assert(!w2.document.querySelector('#filterPanel').hidden, 'Playlist-Filter: das Panel bleibt sichtbar');
+  assert(/Playlist/.test(w2.document.querySelector('#filterPanel h2').textContent),
+    'Playlist-Filter: die Überschrift sagt, worauf die Regeln wirken');
+  assert(w2.__ev('plFiltered').length === 5,
+    'Playlist-Filter: Instrumentals und Karaoke fliegen von Haus aus raus (' + w2.__ev('plFiltered').length + ' von 8)');
+  assert(w2.__ev("plFiltered.every(s => !/Instrumental|Karaoke/i.test(s.t + s.al))"),
+    'Playlist-Filter: es bleibt nichts Instrumentales übrig');
+
+  const pgen = [...w2.document.querySelectorAll('#gGenre .fopt')].map(r => r.querySelector('.txt').textContent);
+  assert(pgen.length === 2 && pgen.includes('Rock') && pgen.includes('Pop'),
+    'Playlist-Filter: die Listen zeigen die Genres der Playlist');
+  const part = w2.document.querySelector('#fArtist');
+  part.value = 'ban'; part.dispatchEvent(new w2.Event('input'));
+  assert([...w2.document.querySelectorAll('#gArtist .fopt')].some(r => r.querySelector('.txt').textContent === 'Band'),
+    'Playlist-Filter: die Künstlersuche kennt die Künstler der Playlist');
+
+  w2.document.querySelector('#fMode button[data-v="ohne"]').click();
+  [...w2.document.querySelectorAll('#gGenre .fopt')].find(r => r.querySelector('.txt').textContent === 'Pop').click();
+  assert(w2.__ev('plFiltered').every(s => s.g !== 'Pop'), 'Playlist-Filter: „ohne Pop" wirkt auf die Playlist');
+  assert(JSON.stringify(w2.__ev('settings.filters')) === chartRules,
+    'Playlist-Filter: die Regeln der Charts bleiben davon unberührt');
+  assert(w2.__ev('settings.plFilters').length === 2, 'Playlist-Filter: eigener Regelsatz wird gespeichert');
+
+  w2.__ev('newRound()'); await tick(30);
+  assert(w2.__ev("round.filter(r => r.song).length") === 3
+    && w2.__ev("round.filter(r => r.song).every(r => plFiltered.some(x => x.i === r.song.i))"),
+    'Playlist-Filter: die Runde zieht nur aus dem gefilterten Rest');
+  assert(/Nur 3 von 8/.test(w2.document.querySelector('#filterCount').textContent),
+    'Playlist-Filter: zu wenig Songs wird gemeldet (' + w2.document.querySelector('#filterCount').textContent + ')');
+
+  w2.__ev("setMode('charts')"); await tick(30);
+  assert(JSON.stringify(w2.__ev('settings.filters')) === chartRules && !/Playlist/.test(w2.document.querySelector('#filterPanel h2').textContent),
+    'Playlist-Filter: zurück im Chartsmodus gelten wieder die alten Regeln');
 
   /* ------------------------------------------------------- Randfaelle */
   w = makeWindow({

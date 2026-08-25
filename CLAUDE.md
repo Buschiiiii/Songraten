@@ -81,8 +81,11 @@ vom oberen Rand ihres Bereichs.
 
 ## Songauswahl (Filter)
 
-Regeln in `assets/filters.js`, gespeichert in `settings.filters`. Drei Modi,
-damit sich alles kombinieren lässt:
+Regeln in `assets/filters.js`. **Jeder Modus hat seinen eigenen Regelsatz** —
+`settings.filters` für die Charts, `settings.plFilters` für die Playlist.
+Sonst stünde nach „nur 1960er" in den Charts die eigene Playlist leer da, und
+die Auswahllisten passen so zum jeweiligen Bestand. Drei Modi, damit sich
+alles kombinieren lässt:
 
 | Modus | Wirkung |
 |---|---|
@@ -120,7 +123,9 @@ die Vorschlagsliste bei kleinen Pools die Lösung.
 
 Warnung ab weniger als 30 Songs (`Filters.MIN_POOL`), ebenso wenn eine Stufe
 leer läuft. Leere Stufen ziehen Ersatz aus dem restlichen Pool, damit die Runde
-spielbar bleibt.
+spielbar bleibt. In der Playlist ist die Schwelle `PL_MIN` (5) — so viele
+braucht eine Runde; bleiben weniger übrig, sind die restlichen Plätze leer und
+die Warnung sagt es.
 
 ## Playlist-Modus
 
@@ -150,7 +155,9 @@ wäre sonst dauerhaft verloren.
 Künstler mindestens 2,5 Punkte erreicht.
 
 Im Modus selbst: keine Schwierigkeitsstufen, fünf zufällige Songs aus der
-Liste, Faktor 1,0, Vorschläge im Suchfeld nur aus der Playlist. Die
+Liste, Faktor 1,0, Vorschläge im Suchfeld nur aus der Playlist. Die Filter
+gelten hier genauso — ein importiertes Album bringt gern Instrumental- und
+Karaokefassungen mit, die die Standardregel wegräumt. Die
 Ausschnittlängen (0,01–15 s) bleiben. Unter fünf gefundenen Songs bleibt der
 Modus gesperrt. Künstler-IDs werden hier lokal vergeben: der komplette
 Künstlerstring plus die Einzelnamen — ein falscher Schnitt färbt hier

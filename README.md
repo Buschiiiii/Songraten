@@ -62,6 +62,13 @@ Läuft eine Schwierigkeitsstufe leer, zieht sie Ersatz aus dem Rest.
 Filter wirken ab der nächsten Runde – die laufende bleibt stehen. Mit **Alle
 neu würfeln** greifen sie sofort.
 
+Im Playlist-Modus gilt dasselbe Panel, aber mit **eigenen Regeln** für die
+Playlist – die Überschrift sagt dir, worauf sie gerade wirken, und die Listen
+zeigen die Genres, Jahrzehnte und Künstler deiner Playlist. Praktisch, wenn du
+ein ganzes Album hineinziehst: die Instrumental- und Karaokefassungen sind
+damit von Haus aus draußen. Bleiben weniger als fünf Songs übrig, sagt die
+Warnung Bescheid.
+
 ## Eigene Playlist spielen
 
 Rechts unter **Modus** auf *Playlist laden* — oder die Datei einfach irgendwo
