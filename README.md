@@ -41,10 +41,13 @@ einem Unterordner. In der Dateiliste des Repos muss `index.html` direkt sichtbar
 Pro Runde werden fünf Songs gezogen, einer je Stufe. Oben wechselst du zwischen ihnen,
 jeder Song hat seinen eigenen Fortschritt.
 
-- **Abspielen** spielt den Ausschnitt in der aktuellen Länge.
+- **Abspielen** spielt den Ausschnitt in der aktuellen Länge. Die Leiste oben
+  zeigt dabei mit, wie weit er läuft: der helle Balken wandert bis ans Ende
+  des Abschnitts, der zur aktuellen Stufe gehört.
 - **Suchen und Raten**: tippen, Vorschlag auswählen, *Raten*.
 - Falsch geraten oder *Überspringen* → nächstlängere Stufe.
-- Nach der letzten Stufe wird aufgelöst.
+- Nach der letzten Stufe wird aufgelöst. Dann läuft der Ausschnitt in voller
+  Länge; ein Klick aufs Cover spielt ihn nochmal.
 
 Rückmeldung zu jedem Versuch:
 
@@ -57,12 +60,26 @@ Rückmeldung zu jedem Versuch:
 Bei Songs mit mehreren Künstlern zählt jeder einzeln. Rätst du bei einem Song von
 Charli xcx und Billie Eilish irgendeinen Song von einer der beiden, wird es gelb.
 
-**Tasten:** Leertaste spielt ab · Enter rät · S überspringt · R würfelt neu · 1–5 wechselt die Stufe
+**Tasten:** Der Cursor steht immer im Suchfeld, damit du sofort tippen kannst.
+Die Kürzel sind deshalb keine Schriftzeichen.
+
+| Taste | |
+|---|---|
+| ↑ | Ausschnitt abspielen |
+| ↑ ↓ | im Vorschlagsfeld auswählen, solange es offen ist |
+| Enter | Vorschlag übernehmen, dann raten |
+| Shift + Enter | überspringen |
+| ← → | Stufe wechseln, solange das Suchfeld leer ist |
+| Cmd/Strg + Enter | alle neu würfeln |
+
+Klickst du irgendwo neben das Suchfeld, funktionieren zusätzlich Leertaste,
+S, R und 1–5 wie gewohnt.
 
 ### Stufen einstellen
 
 Rechts unter *Stufen* schaltest du einzelne Längen ab. Ist 0,01s aus, startet jeder
-Song bei 0,1s. Die Anzahl der Versuche entspricht der Anzahl aktiver Stufen — eine
+Song bei 0,1s. Umschalten mitten im Spiel wirft die Runde nicht weg — du bleibst
+beim selben Song und an derselben Stelle, nur das Raster ändert sich. Die Anzahl der Versuche entspricht der Anzahl aktiver Stufen — eine
 Stufe abzuschalten kostet also auch einen Versuch.
 
 ### Punkte

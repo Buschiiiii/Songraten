@@ -75,10 +75,13 @@ function buildChrome() {
     c.onclick = () => {
       const on = settings.stages.filter(Boolean).length;
       if (settings.stages[i] && on <= 2) return;
+      const before = round.map(r => enabledStages()[r.stage]);
       settings.stages[i] = !settings.stages[i];
       save('settings', settings);
       renderChips();
-      newRound();
+      remapStages(before);
+      render();
+      focusSearch();
     };
     chips.appendChild(c);
   });
@@ -89,7 +92,10 @@ function buildChrome() {
       settings.start = b.dataset.v;
       save('settings', settings);
       $('#startMode').querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b));
-      newRound();
+      round.forEach(r => {
+        if (r.status === 'playing' && !r.guesses.length && r.stage === 0) r.offset = newOffset();
+      });
+      focusSearch();
     };
     b.classList.toggle('on', b.dataset.v === settings.start);
   });
@@ -108,21 +114,40 @@ function buildChrome() {
   $('#actionBtn').onclick = submit;
   $('#clearPick').onclick = clearPick;
   $('#revealNext').onclick = closeReveal;
-  $('#summaryNext').onclick = () => { $('#summary').hidden = true; newRound(); };
+  $('#revealArt').onclick = () => playFull(revealed);
+  $('#summaryNext').onclick = () => { Audio2.stop(); $('#summary').hidden = true; newRound(); };
 
   const inp = $('#search');
   inp.oninput = () => { pick = null; $('#clearPick').hidden = true; setAction(); suggest(inp.value); };
+  /* Der Cursor bleibt im Suchfeld, deshalb duerfen die Kuerzel keine
+     Schriftzeichen sein - sonst tippt man S und ueberspringt statt zu suchen. */
   inp.onkeydown = e => {
+    const open = sugItems.length && !$('#suggest').hidden;
     if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      if (open) {
+        e.preventDefault();
+        sugIdx = (sugIdx + (e.key === 'ArrowDown' ? 1 : -1) + sugItems.length) % sugItems.length;
+        renderSuggest();
+      } else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        playCurrent();
+      }
+      return;
+    }
+    if ((e.key === 'ArrowLeft' || e.key === 'ArrowRight') && !inp.value) {
       e.preventDefault();
-      if (!sugItems.length) return;
-      sugIdx = (sugIdx + (e.key === 'ArrowDown' ? 1 : -1) + sugItems.length) % sugItems.length;
-      renderSuggest();
-    } else if (e.key === 'Enter') {
+      switchTo((active + (e.key === 'ArrowRight' ? 1 : -1) + TIERS.length) % TIERS.length);
+      return;
+    }
+    if (e.key === 'Enter') {
       e.preventDefault();
+      if (e.metaKey || e.ctrlKey) { newRound(); return; }
+      if (e.shiftKey) { clearPick(); submit(); return; }
       if (sugIdx >= 0 && sugItems[sugIdx]) choose(sugItems[sugIdx]);
       else submit();
-    } else if (e.key === 'Escape') hideSuggest();
+      return;
+    }
+    if (e.key === 'Escape') hideSuggest();
   };
 
   document.addEventListener('keydown', e => {
@@ -144,6 +169,30 @@ function buildChrome() {
   renderStats();
 }
 
+/* Stufen umschalten darf die Runde nicht zuruecksetzen: die Position wird
+   auf die naechste Stufe umgerechnet, die mindestens so lang ist wie bisher. */
+function remapStages(before) {
+  const st = enabledStages();
+  const maxOff = Math.max(0, 30 - st[st.length - 1] - 0.5);
+  round.forEach((r, i) => {
+    if (r.status !== 'playing') return;
+    let idx = st.findIndex(s => s >= before[i]);
+    r.stage = idx < 0 ? st.length - 1 : idx;
+    r.offset = Math.min(r.offset, maxOff);
+  });
+}
+
+function newOffset() {
+  const st = enabledStages();
+  const maxOff = Math.max(0, 30 - st[st.length - 1] - 0.5);
+  return settings.start === 'random' ? Math.random() * maxOff : 0;
+}
+
+function focusSearch() {
+  const inp = $('#search');
+  if (!inp.disabled) setTimeout(() => inp.focus(), 0);
+}
+
 function renderChips() {
   $('#stageChips').querySelectorAll('.chip').forEach((c, i) => c.classList.toggle('on', settings.stages[i]));
 }
@@ -160,13 +209,13 @@ function drawSong(tier) {
 
 function newRound() {
   Audio2.stop();
+  clearTimeout(sweepTimer);
   round = TIERS.map(t => {
     const song = drawSong(t.id);
-    const maxOff = Math.max(0, 30 - enabledStages()[enabledStages().length - 1] - 0.5);
     return {
       tier: t,
       song,
-      offset: settings.start === 'random' ? Math.random() * maxOff : 0,
+      offset: newOffset(),
       stage: 0,
       guesses: [],
       status: 'playing',
@@ -179,6 +228,8 @@ function newRound() {
   save('recent', recent);
   active = 0;
   render();
+  resetBar();
+  focusSearch();
   round.forEach((r, i) => preload(i));
 }
 
@@ -196,12 +247,14 @@ async function preload(i) {
 function switchTo(i) {
   if (i === active) return;
   Audio2.stop();
+  resetBar();
   active = i;
   pick = null;
   $('#search').value = '';
   $('#clearPick').hidden = true;
   hideSuggest();
   render();
+  focusSearch();
 }
 
 /* -------------------------------------------------------------- Abspielen */
@@ -219,7 +272,39 @@ async function playCurrent() {
   const secs = enabledStages()[r.stage];
   btn.classList.add('playing');
   const dur = Audio2.play(r.buffer, r.offset, secs, () => btn.classList.remove('playing'));
+  sweepBar(secs);
   if (dur < 0.25) setTimeout(() => btn.classList.remove('playing'), 260);
+}
+
+/* Zeigt in der Leiste mit, wie weit der Ausschnitt laeuft: der helle Balken
+   waechst bis ans Ende des aktuellen Abschnitts. Sehr kurze Stufen laufen
+   optisch etwas langsamer ab, sonst saehe man 0,01s ueberhaupt nicht. */
+let sweepTimer = null;
+
+function sweepBar(secs) {
+  const bar = $('#stageBar');
+  const ov = bar.querySelector('.stage-progress');
+  const seg = bar.querySelector('.stage-seg.current');
+  if (!ov || !seg) return;
+  const target = seg.offsetLeft + seg.offsetWidth;
+  const dur = Math.max(secs, 0.4);
+  clearTimeout(sweepTimer);
+  ov.style.transition = 'none';
+  ov.style.width = '0px';
+  ov.style.opacity = '1';
+  void ov.offsetWidth;
+  ov.style.transition = `width ${dur}s linear`;
+  ov.style.width = target + 'px';
+  sweepTimer = setTimeout(() => {
+    ov.style.transition = 'opacity .45s ease';
+    ov.style.opacity = '0';
+  }, dur * 1000 + 260);
+}
+
+function resetBar() {
+  clearTimeout(sweepTimer);
+  const ov = $('#stageBar').querySelector('.stage-progress');
+  if (ov) { ov.style.transition = 'none'; ov.style.width = '0px'; ov.style.opacity = '0'; }
 }
 
 /* ------------------------------------------------------------------ Suche */
@@ -343,8 +428,11 @@ function finish(r, won) {
 
 /* -------------------------------------------------------------- Auflösung */
 
+let revealed = null;
+
 function showReveal(r, won) {
   const s = r.song;
+  revealed = r;
   $('#revealArt').src = s.c.replace('100x100bb', '400x400bb');
   $('#revealTitle').textContent = s.t;
   $('#revealArtist').textContent = s.a;
@@ -362,16 +450,26 @@ function showReveal(r, won) {
   const last = round.every(x => x.status !== 'playing');
   $('#revealNext').textContent = last ? 'Ergebnis' : 'Weiter';
   $('#reveal').hidden = false;
+  playFull(r);
+}
+
+/* Nach der Aufloesung laeuft der Ausschnitt in voller Laenge, damit man hoert,
+   was man da eigentlich hatte. Klick aufs Cover spielt ihn nochmal. */
+function playFull(r) {
+  if (r && r.buffer) Audio2.play(r.buffer, 0, r.buffer.duration);
 }
 
 function closeReveal() {
+  Audio2.stop();
   $('#reveal').hidden = true;
   const next = round.findIndex(r => r.status === 'playing');
   if (next >= 0) switchTo(next);
   else showSummary();
+  focusSearch();
 }
 
 function showSummary() {
+  Audio2.stop();
   const list = $('#summaryList');
   list.innerHTML = '';
   let total = 0;
@@ -410,7 +508,8 @@ function render() {
   });
 
   const bar = $('#stageBar');
-  bar.innerHTML = '';
+  bar.querySelectorAll('.stage-seg').forEach(n => n.remove());
+  if (!bar.querySelector('.stage-progress')) bar.appendChild(el('div', 'stage-progress'));
   STAGES.forEach((s, i) => {
     const seg = el('div', 'stage-seg');
     seg.style.flex = Math.log10(s * 1000 + 1);

@@ -85,9 +85,13 @@ main{
 .tab.done::after{content:"·";margin-left:6px;opacity:.7}
 
 /* ---------- Stufenbalken ---------- */
-.stage-bar{display:flex;gap:4px;width:100%;max-width:640px;height:22px;margin-top:4px}
+.stage-bar{position:relative;display:flex;gap:4px;width:100%;max-width:640px;height:22px;margin-top:4px}
+.stage-progress{
+  position:absolute;left:0;top:0;bottom:0;width:0;opacity:0;
+  border-radius:5px;background:#b6ffd2;mix-blend-mode:screen;pointer-events:none;
+}
 .stage-seg{border-radius:5px;background:var(--panel-2);transition:background .25s}
-.stage-seg.filled{background:var(--green)}
+.stage-seg.filled{background:var(--green-dim)}
 .stage-seg.current{background:var(--green);box-shadow:0 0 0 2px rgba(62,224,122,.25)}
 .stage-seg.off{opacity:.25}
 
@@ -193,7 +197,7 @@ main{
 }
 .reveal-card.wide{max-width:460px}
 @keyframes pop{from{opacity:0;transform:scale(.9)}to{opacity:1;transform:none}}
-.reveal-card img{border-radius:14px;margin-bottom:18px;box-shadow:0 12px 34px rgba(0,0,0,.5)}
+.reveal-card img{border-radius:14px;cursor:pointer;margin-bottom:18px;box-shadow:0 12px 34px rgba(0,0,0,.5)}
 .reveal-card h3{font-size:22px;letter-spacing:-.01em}
 .reveal-card p{margin:5px 0 0;color:var(--muted)}
 .reveal-card .meta{font-size:12.5px;color:var(--grey);margin-top:7px}
