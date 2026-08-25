@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Songrate</title>
+<meta name="description" content="Erkenne den Song in 0,01 Sekunden.">
+<link rel="stylesheet" href="assets/style.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><text y='26' font-size='26'>🎵</text></svg>">
+</head>
+<body>
+
+<canvas id="confetti"></canvas>
+
+<div id="boot" class="boot">
+  <div class="boot-pulse"></div>
+  <p>Songs werden geladen …</p>
+</div>
+
+<main id="app" hidden>
+
+  <aside class="col col-left">
+    <h1 class="brand">Song<span>rate</span></h1>
+
+    <nav id="tierList" class="tier-list"></nav>
+
+    <button id="rerollAll" class="btn-ghost btn-reroll">
+      <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="4"/><circle cx="8.5" cy="8.5" r="1.3" fill="currentColor" stroke="none"/><circle cx="15.5" cy="15.5" r="1.3" fill="currentColor" stroke="none"/><circle cx="15.5" cy="8.5" r="1.3" fill="currentColor" stroke="none"/></svg>
+      Alle neu würfeln
+    </button>
+
+    <div class="round-score">
+      <span class="label">Runde</span>
+      <strong id="roundScore">0</strong>
+    </div>
+  </aside>
+
+  <section class="col col-main">
+
+    <div id="tabs" class="tabs"></div>
+
+    <div id="stageBar" class="stage-bar"></div>
+
+    <div class="player">
+      <button id="playBtn" class="play" aria-label="Ausschnitt abspielen">
+        <svg class="ic-play" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5.5v13a1 1 0 0 0 1.54.84l10-6.5a1 1 0 0 0 0-1.68l-10-6.5A1 1 0 0 0 8 5.5z"/></svg>
+        <svg class="ic-stop" viewBox="0 0 24 24" fill="currentColor"><rect x="7" y="7" width="10" height="10" rx="2"/></svg>
+      </button>
+      <span id="stageLabel" class="stage-label">2s</span>
+    </div>
+
+    <div id="guessList" class="guesses"></div>
+
+    <div class="guess-row">
+      <div class="search">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.2-3.2"/></svg>
+        <input id="search" type="text" placeholder="Song suchen …" autocomplete="off" spellcheck="false">
+        <button id="clearPick" class="clear" hidden aria-label="Auswahl löschen">×</button>
+      </div>
+      <button id="actionBtn" class="btn-action skip">
+        <span class="txt">Überspringen</span>
+      </button>
+      <div id="suggest" class="suggest" hidden></div>
+    </div>
+
+    <p class="hint">Leertaste spielt ab · Enter rät · S überspringt · R würfelt neu</p>
+
+  </section>
+
+  <aside class="col col-right">
+
+    <div class="panel">
+      <h2>Songstart</h2>
+      <div class="seg" id="startMode">
+        <button data-v="hook" class="on">Anfang des Ausschnitts</button>
+        <button data-v="random">Zufällige Stelle</button>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>Stufen</h2>
+      <div class="chips" id="stageChips"></div>
+      <p class="note">Abgeschaltete Stufen werden übersprungen – kosten dich aber auch einen Versuch.</p>
+    </div>
+
+    <div class="panel">
+      <h2>Lautstärke</h2>
+      <input id="volume" class="range" type="range" min="0" max="100" value="80">
+    </div>
+
+    <div class="panel stats">
+      <h2>Statistik</h2>
+      <dl id="stats"></dl>
+    </div>
+
+  </aside>
+</main>
+
+<div id="reveal" class="reveal" hidden>
+  <div class="reveal-card">
+    <img id="revealArt" alt="" width="220" height="220">
+    <h3 id="revealTitle"></h3>
+    <p id="revealArtist"></p>
+    <p id="revealMeta" class="meta"></p>
+    <div id="revealBadge" class="badge"></div>
+    <button id="revealNext" class="btn-action">Weiter</button>
+  </div>
+</div>
+
+<div id="summary" class="reveal" hidden>
+  <div class="reveal-card wide">
+    <h3>Runde vorbei</h3>
+    <ul id="summaryList" class="summary-list"></ul>
+    <div class="summary-total"><span>Punkte</span><strong id="summaryScore">0</strong></div>
+    <button id="summaryNext" class="btn-action">Neue Runde</button>
+  </div>
+</div>
+
+<script src="assets/audio.js"></script>
+<script src="assets/app.js"></script>
+</body>
+</html>
