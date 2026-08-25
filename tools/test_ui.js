@@ -35,7 +35,8 @@ function makeWindow(store) {
     clearRect() {}, save() {}, restore() {}, translate() {}, rotate() {}, fillRect() {},
     set fillStyle(v) {}, set globalAlpha(v) {},
   });
-  w.requestAnimationFrame = cb => setTimeout(() => cb(0), 0);
+  w.requestAnimationFrame = cb => setTimeout(() => cb(w.performance.now()), 8);
+  w.cancelAnimationFrame = id => clearTimeout(id);
   w.AudioContext = class {
     constructor() { this.state = 'running'; this.currentTime = 0; this.destination = {}; }
     createGain() { return { gain: { value: 1, setValueAtTime() {}, linearRampToValueAtTime() {} }, connect() {} }; }
@@ -77,6 +78,15 @@ const dummy = n => ({ t: 'Song ' + n, a: 'Kuenstler ' + n, al: 'Album', y: 2020,
 
   await G('playCurrent()'); await tick(30);
   assert(G('round[0].buffer') != null, 'Abspielen: Puffer geladen');
+
+  /* Zeit -> Pixel: jede Stufenlaenge landet genau auf ihrer Segmentkante,
+     dazwischen wird interpoliert. jsdom kennt keine Breiten, deshalb feste. */
+  const stops = [[0.01, 38], [0.1, 114], [0.5, 216], [2, 340], [8, 485], [15, 640]].map(([t, x]) => ({ t, x }));
+  const xf = G('xForTime');
+  assert(xf(0, stops) === 0 && xf(0.01, stops) === 38 && xf(2, stops) === 340 && xf(15, stops) === 640,
+    'Balken: Stufenlaengen landen auf den Segmentkanten');
+  assert(xf(1, stops) > 216 && xf(1, stops) < 340, 'Balken: dazwischen wird interpoliert');
+  assert(xf(99, stops) === 640, 'Balken: laeuft nicht ueber das Ende hinaus');
 
   const wrong = G('DB.songs').find(s => s.i !== G('round[0].song.i'));
   G(`choose(DB.songs[${wrong.i}]); submit()`); await tick(10);
@@ -149,13 +159,24 @@ const dummy = n => ({ t: 'Song ' + n, a: 'Kuenstler ' + n, al: 'Album', y: 2020,
   assert(w.__ev('mode') === 'charts' && w.document.querySelector('#modeSeg').children[1].disabled,
     'Zu kurze Playlist: Modus bleibt gesperrt');
 
+  /* Drosselung: der Lauf bricht nicht ab, sondern wartet sichtbar und laesst
+     sich abbrechen; die Titelliste bleibt fuer „Weiter suchen" liegen. */
   w = makeWindow({});
   await tick(150);
   w.fetch = async url => String(url).includes('itunes')
     ? { ok: false, status: 403, json: async () => ({}) }
     : { ok: true, status: 200, arrayBuffer: async () => new ArrayBuffer(8) };
-  await w.__ev("loadPlaylistText('Track Name,Artist Name(s)\\nA,B', 'X')"); await tick(150);
-  assert(w.document.querySelector('#plStatus').textContent.includes('Apple'), 'Drosselung durch Apple wird gemeldet');
+  const status = () => w.document.querySelector('#plStatus').textContent;
+  w.__ev("loadPlaylistText('Track Name,Artist Name(s)\\nA,B\\nC,D', 'X')");
+  await tick(1200);
+  assert(/Apple bremst – weiter in \d+ s/.test(status()), 'Drosselung: Wartezeit wird heruntergezählt (' + status() + ')');
+  assert(!w.document.querySelector('#plCancel').hidden, 'Drosselung: Abbrechen ist sichtbar');
+
+  w.document.querySelector('#plCancel').click();
+  await tick(1200);
+  assert(w.__ev('plBusy') === false, 'Abbrechen: Lauf endet');
+  assert(!w.document.querySelector('#plResume').hidden, 'Abbrechen: „Weiter suchen" steht bereit');
+  assert(w.__ev('Playlist.restoreQueue()') != null, 'Abbrechen: Titelliste bleibt gespeichert');
 
   console.log(failed ? `\n${failed} Fehler` : '\nAlles durchgespielt');
   process.exit(failed ? 1 : 0);

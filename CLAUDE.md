@@ -33,6 +33,22 @@ Netzwerklatenz sind größer als der Ausschnitt. Deshalb wird die Preview
 komplett geladen, dekodiert und über `source.start(when, offset, duration)`
 geschnitten. 4 ms Rampen an den Kanten gegen Knackser. Siehe `assets/audio.js`.
 
+### iOS gibt den Ton nur unter drei Bedingungen frei
+
+Das hat auf dem iPhone erst komplett stumm geklungen, in Safari wie in Chrome —
+beide sind WebKit, der Fehler ist derselbe:
+
+1. Der AudioContext muss **in** einer Nutzergeste aufgeweckt werden. `resume()`
+   nach einem `await` zählt nicht mehr — deshalb ruft `playCurrent()` zuerst
+   `Audio2.unlock()` auf und wartet **danach** aufs Laden.
+2. Einmal muss wirklich etwas gespielt worden sein, deshalb der stumme
+   Ein-Sample-Puffer in `unlock()`.
+3. Ohne `navigator.audioSession.type = 'playback'` (Safari 16.4+) schaltet iOS
+   die Wiedergabe mit dem Klingelschalter stumm.
+
+Zusätzlich hängt an `pointerdown`, `touchend` und `keydown` ein Aufwecker, der
+so lange erneut versucht, bis der Context wirklich läuft.
+
 ## Datenpipeline — läuft nur beim Bauen, nie zur Laufzeit
 
 (Einzige Ausnahme: der Playlist-Modus fragt die iTunes-Suche im Browser ab,
@@ -78,10 +94,15 @@ genommen; bei Freitextzeilen ist unklar, welche Hälfte der Titel ist, deshalb
 wird beim Bewerten **beide Reihenfolgen** geprüft (`loose`).
 
 Danach wird jeder Titel über die iTunes-Suche aufgelöst — die **einzige**
-Stelle, an der zur Laufzeit gesucht wird. Sequentiell mit 90 ms Pause, weil
-Apple sonst 403 schickt; bei 403 bricht der Lauf ab und meldet das. Treffer
-landen in `songrate:plcache` und überleben das Neuladen, Fehlschläge nicht —
-ein Titel, den Apple gerade nicht ausspuckt, wäre sonst dauerhaft verloren.
+Stelle, an der zur Laufzeit gesucht wird. Sequentiell mit 260 ms Pause; Apple
+lässt trotzdem nur ein paar hundert Anfragen durch und schickt dann für einige
+Minuten 403. Der Lauf bricht deshalb **nicht** ab, sondern wartet sichtbar
+(30, 60, 120, 240, 300 s) und macht an derselben Stelle weiter; erst danach
+gibt er auf. „Abbrechen" hält an, „Weiter suchen" nimmt die gespeicherte Liste
+(`songrate:plqueue`) wieder auf — was schon gefunden wurde, liegt im Cache und
+kostet keine Anfrage mehr. Treffer landen in `songrate:plcache` und überleben
+das Neuladen, Fehlschläge nicht — ein Titel, den Apple gerade nicht ausspuckt,
+wäre sonst dauerhaft verloren.
 Übernommen wird nur, was `previewUrl` hat und beim Abgleich von Titel und
 Künstler mindestens 2,5 Punkte erreicht.
 
@@ -127,15 +148,22 @@ kworb geprüft, plus die `NEVER_SPLIT`-Liste in `match_local.py`.
    wie die bisherige. Nie `newRound()` aus einer Einstellung heraus aufrufen.
 3. **`.stage-progress` darf in `render()` nicht mitgelöscht werden.** `render()`
    entfernt gezielt nur `.stage-seg`, sonst reißt die laufende Animation ab.
-4. Stufen unter 0,4 s laufen optisch über 0,4 s ab, sonst sieht man nichts.
-   Die Breite bleibt korrekt, nur das Tempo ist gestreckt.
+4. **Der helle Balken muss die Zeit umrechnen, nicht linear wachsen.** Die
+   Leiste ist logarithmisch geteilt, die Zeit läuft gleichmäßig — ein linear
+   wachsender Balken hängt fast die ganze Wiedergabe zu weit links, weil er
+   sich durch die kurzen Abschnitte quält. `sweepBar()` rechnet deshalb pro
+   Bild die gehörten Sekunden über `xForTime()` in Pixel um: nach 0,01 s steht
+   er genau auf der 0,01s-Kante, nach 2 s auf der 2s-Kante. Stufen unter 0,4 s
+   laufen optisch über 0,4 s ab, sonst sieht man nichts — die Breite bleibt
+   korrekt, nur das Tempo ist gestreckt.
 5. **Der Cursor steht dauerhaft im Suchfeld.** Kürzel dürfen deshalb keine
    Schriftzeichen sein: ↑ spielt ab, Enter rät, Shift+Enter überspringt,
    ←→ wechselt die Stufe (nur bei leerem Feld), Cmd+Enter würfelt neu.
 6. localStorage-Schlüssel: `songrate:settings`, `songrate:stats`,
    `songrate:recent` (letzte 60 Songs, gegen Wiederholungen),
    `songrate:playlist` (aufgelöste Playlist), `songrate:plcache`
-   (Titel → iTunes-Treffer). Das Präfix bleibt
+   (Titel → iTunes-Treffer), `songrate:plqueue` (Titelliste eines noch nicht
+   fertigen Laufs). Das Präfix bleibt
    `songrate:`, obwohl die Seite Songraten heißt — Umbenennen würde alle
    bereits gespeicherten Einstellungen und Statistiken verwerfen.
 
@@ -160,9 +188,9 @@ eine Runde beenden, zurückschalten.
    lässt und die neue `songs.json` selbst committet. Vorher prüfen, ob Apple
    und kworb Anfragen aus GitHubs Rechenzentren durchlassen.
 2. **Playlist-Modus.** Steht (siehe oben). Offen bleibt: die Trefferquote der
-   iTunes-Suche ist bei Remixen und Live-Versionen mager, und bei sehr langen
-   Listen dauert das Auflösen entsprechend lang — ein Fortschrittsabbruch per
-   Knopf fehlt noch.
+   iTunes-Suche ist bei Remixen und Live-Versionen mager. Wie lange Apple nach
+   einem 403 wirklich dichthält, ist nicht dokumentiert — die Wartestufen sind
+   geraten und müssen an echten großen Listen nachjustiert werden.
 
 ## Deployment
 
