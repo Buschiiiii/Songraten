@@ -228,8 +228,9 @@ const dummy = n => ({ t: 'Song ' + n, a: 'Kuenstler ' + n, al: 'Album', y: 2020,
   assert($$('#gGenre').querySelectorAll('.fopt').length === F("Filters.options('genre', DB)").length,
     'Filter: alle Genres stehen zur Auswahl');
   assert($$('#gDecade').querySelectorAll('.fopt').length === 8, 'Filter: alle Jahrzehnte stehen zur Auswahl');
-  assert(rowIn('#gGenre', 'Pop').querySelector('.num').textContent === '532',
-    'Filter: neben jedem Eintrag steht, wie viele Songs daran haengen');
+  const popSongs = F("DB.songs.filter(s => s.g === 'Pop').length");
+  assert(rowIn('#gGenre', 'Pop').querySelector('.num').textContent === String(popSongs),
+    'Filter: neben jedem Eintrag steht, wie viele Songs daran haengen (' + popSongs + ')');
 
   const songBefore = F('round[0].song.t');
   add('nur', 'decade', '2010er');
