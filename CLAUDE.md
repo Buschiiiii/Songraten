@@ -61,6 +61,15 @@ siehe unten.)
 2. `tools/match_local.py` baut daraus offline in Sekunden `songs.json`.
    Streamzahlen kommen von kworb.net (Spotify all-time), Titel werden lokal
    gegen die Kataloge gematcht.
+3. `tools/dedupe.py` führt am Ende Doppeleinträge zusammen. kworb listet
+   denselben Track manchmal zweimal (Single- und Albumfassung, minimal
+   verschiedene Streamzahlen); der Schlüssel im Matcher fängt das nicht,
+   sobald sich eine Künstler-ID unterscheidet. Genau das ist passiert: „Lean
+   On" gab es mit und ohne Diplo, und ob ein Tipp gelb wurde, war Zufall.
+   Zusammengeführt wird nur bei gleichem Titel **und** mindestens einem
+   gemeinsamen Künstler — „Hello" von Adele und von Lionel Richie bleiben
+   getrennt. `tools/clean_songs.py` wendet dasselbe auf eine fertige
+   `songs.json` an.
 
 Grenzwerte der Stufen, Songs pro Stufe und die Künstleranzahl stehen oben in
 `match_local.py`.

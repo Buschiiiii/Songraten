@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
-import json, os, re, html, time, unicodedata, random
+import json, os, re, html, time, unicodedata, random, sys
 from difflib import SequenceMatcher
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from dedupe import merge_duplicates
 
 TIERS = [('easy', 1.5e9, 1e13), ('medium', 8e8, 1.5e9), ('hard', 4.5e8, 8e8),
          ('expert', 2.8e8, 4.5e8), ('impossible', 1.3e8, 2.8e8)]
@@ -214,6 +217,12 @@ for tier, _, _ in TIERS:
             'p': it['previewUrl'], 'c': it['artworkUrl100'],
         })
 
+# kworb fuehrt denselben Track manchmal zweimal mit leicht verschiedenen
+# Streamzahlen; der Schluessel oben faengt das nicht, sobald sich eine
+# Kuenstler-ID unterscheidet. Deshalb zum Schluss zusammenfuehren.
+songs, merged = merge_duplicates(songs)
+if merged:
+    print(f'{len(merged)} Doppeleintraege zusammengefuehrt')
 songs.sort(key=lambda x: -x['s'])
 data = {'v': 1, 'built': time.strftime('%Y-%m-%d'),
         'tiers': [t[0] for t in TIERS], 'artists': index, 'songs': songs}
