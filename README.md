@@ -29,6 +29,31 @@ keine Bibliotheken. Alles läuft im Browser.
 
 Fertig. Jede spätere Änderung im Repo ist nach etwa einer Minute live.
 
+## Nach Jahrzehnten spielen
+
+Rechts unter **Modus** auf *Jahrzehnte*. Oben erscheinen dann Pfeile, mit denen
+du durch die Jahrzehnte springst – gespielt wird nur aus dem gewählten, und die
+fünf Stufen werden **innerhalb** des Jahrzehnts vergeben: Easy sind die
+bekanntesten 20 % der 80er, nicht die meistgestreamten Songs überhaupt.
+
+Jahrzehnte mit zu wenigen Songs stehen nicht zur Wahl. Wie du mehr Songs für
+die alten Jahrzehnte bekommst, steht unter *Songs nachladen*.
+
+## Songs nachladen (alte Jahrzehnte)
+
+Die mitgelieferte Songliste kommt aus Spotify-Streamzahlen – und Spotify gibt
+es erst seit 2008. Deshalb sind die 60er bis 90er dünn besetzt. Zwei Skripte
+holen die alten Hits nach (Python 3, keine Pakete nötig):
+
+```
+python3 tools/fetch_yearcharts.py     # Jahrescharts von Wikipedia, ~2 Minuten
+python3 tools/add_decades.py 900      # 15 Minuten lang Titel bei Apple suchen
+```
+
+Das zweite Skript darfst du ruhig mehrfach starten: Apple bremst nach einigen
+hundert Anfragen, aber alles Gefundene liegt im Cache, und der nächste Lauf
+macht dort weiter. Danach `data/songs.json` committen – fertig.
+
 ## Songauswahl einstellen
 
 Rechts unter **Songauswahl** legst du fest, woraus gezogen wird — alles per

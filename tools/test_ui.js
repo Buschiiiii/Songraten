@@ -35,7 +35,7 @@ const CATALOG = {
 const sortKey = s => s.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim().split(' ').sort().join(' ');
 let itunesCalls = 0;
 
-function makeWindow(store) {
+function makeWindow(store, patchDb) {
   const w = new JSDOM(read('index.html'), { runScripts: 'outside-only', url: 'https://example.org/' }).window;
 
   w.HTMLCanvasElement.prototype.getContext = () => ({
@@ -58,7 +58,11 @@ function makeWindow(store) {
 
   w.fetch = async url => {
     url = String(url);
-    if (url.includes('songs.json')) return { ok: true, status: 200, json: async () => JSON.parse(read('data/songs.json')) };
+    if (url.includes('songs.json')) {
+      const db = JSON.parse(read('data/songs.json'));
+      if (patchDb) patchDb(db);
+      return { ok: true, status: 200, json: async () => db };
+    }
     if (url.includes('itunes.apple.com/search')) {
       itunesCalls++;
       const term = sortKey(decodeURIComponent(url.split('term=')[1]));
@@ -152,7 +156,99 @@ const dummy = n => ({ t: 'Song ' + n, a: 'Kuenstler ' + n, al: 'Album', y: 2020,
   assert(G('mode') === 'charts' && G('round')[0].tier.id === 'easy', 'Rueckschaltung in den Chartsmodus');
 
   $('#plClear').click(); await tick(10);
-  assert(G('PL') === null && $('#modeSeg').children[1].disabled, 'Playlist entfernt: Modus wieder gesperrt');
+  assert(G('PL') === null && $('#modeSeg').querySelector('[data-v="playlist"]').disabled, 'Playlist entfernt: Modus wieder gesperrt');
+
+  /* ---------------------------------------------------- Jahrzehnte-Modus */
+  const dec = () => G('currentDecade()');
+  $('#modeSeg [data-v="decades"]').click(); await tick(40);
+
+  assert(G('mode') === 'decades', 'Jahrzehnte: Modus laesst sich einschalten');
+  assert(!$('#decadeBar').hidden, 'Jahrzehnte: die Leiste mit den Pfeilen ist da');
+  assert(G('decFiltered').every(s => Math.floor(s.y / 10) * 10 === dec()) && G('decFiltered').length > 0,
+    'Jahrzehnte: der Pool enthaelt nur Songs des Jahrzehnts');
+  assert($('#decLabel').textContent === dec() + 'er', 'Jahrzehnte: die Leiste nennt das Jahrzehnt');
+
+  /* Die Stufen werden innerhalb des Jahrzehnts verteilt, nicht nach den
+     absoluten Streamgrenzen der Charts. */
+  const sizes = G('TIERS.map(t => byTier[t.id].length)');
+  assert(sizes.reduce((a, b) => a + b, 0) === G('decFiltered').length,
+    'Jahrzehnte: jeder Song landet in genau einer Stufe');
+  assert(Math.max(...sizes) - Math.min(...sizes) <= 1, 'Jahrzehnte: die Stufen sind gleich gross (' + sizes.join('/') + ')');
+  const easyMin = G("Math.min(...byTier.easy.map(s => s.s))");
+  const impMax = G("Math.max(...byTier.impossible.map(s => s.s))");
+  assert(easyMin >= impMax, 'Jahrzehnte: Easy sind die bekanntesten Songs des Jahrzehnts');
+
+  G('newRound()'); await tick(40);
+  const decPool = new Set(G('decFiltered').map(s => s.i));
+  assert(G('round').every(r => r.song && decPool.has(r.song.i)), 'Jahrzehnte: die Runde zieht nur aus dem Jahrzehnt');
+
+  /* Weiterspringen mit den Pfeilen */
+  const wasDec = dec();
+  $('#decNext').click(); await tick(40);
+  assert(dec() !== wasDec, 'Jahrzehnte: der Pfeil springt weiter (' + wasDec + ' -> ' + dec() + ')');
+  assert(G('decFiltered').every(s => Math.floor(s.y / 10) * 10 === dec()), 'Jahrzehnte: der Pool wandert mit');
+  assert(G('round').every(r => r.song && Math.floor(r.song.y / 10) * 10 === dec()),
+    'Jahrzehnte: der Wechsel startet eine neue Runde');
+  $('#decPrev').click(); await tick(40);
+  assert(dec() === wasDec, 'Jahrzehnte: der Pfeil zurueck kommt wieder an');
+
+  /* Zu duenn besetzte Jahrzehnte stehen gar nicht erst zur Wahl */
+  assert(G('decadesAvailable()').every(d => G(`filtered.filter(s => Math.floor(s.y/10)*10 === ${d}).length`) >= G('DEC_MIN')),
+    'Jahrzehnte: nur Jahrzehnte mit genug Songs');
+  assert(!G('decadesAvailable()').includes(1950), 'Jahrzehnte: die 1950er mit einem Song fallen weg');
+  assert($('#gDecade').hidden, 'Jahrzehnte: die Jahrzehnt-Liste im Filterpanel ist hier ausgeblendet');
+
+  /* Filter gelten hier genauso */
+  const n0 = G('decFiltered').length;
+  G(`settings.filters.push({ mode: 'ohne', type: 'genre', value: 'pop', text: 'Pop' }); applyFilters()`);
+  assert(G('decFiltered').length < n0 && G('decFiltered').every(s => s.g !== 'Pop'),
+    'Jahrzehnte: die Filter der Charts wirken auch hier');
+  G(`settings.filters = settings.filters.filter(r => r.type !== 'genre'); applyFilters()`);
+
+  /* Zurueck in den Chartsmodus gelten wieder die festen Stufen */
+  $('#modeSeg [data-v="charts"]').click(); await tick(40);
+  assert(G('mode') === 'charts' && $('#decadeBar').hidden, 'Jahrzehnte: zurueck zu den Charts');
+  assert(G("byTier.easy.every(s => s.d === 'easy')"), 'Jahrzehnte: die Charts haben wieder ihre festen Stufen');
+
+  /* --------------------------- Jahrzehnte mit Songs aus den Jahrescharts */
+  /* So sieht songs.json aus, wenn tools/fetch_yearcharts.py gelaufen ist:
+     Songs ohne Streamzahl, dafuer mit Jahreschartplatz und Bekanntheit f. */
+  const w3 = makeWindow({}, db => {
+    for (let i = 1; i <= 40; i++) {
+      db.songs.push({
+        t: 'Achtziger ' + i, a: 'Band ' + i, ar: [], al: 'Album', y: 1985,
+        g: 'Rock', s: 0, r: i, f: Math.round(100 - (i - 1) * 100 / 39),
+        d: '', p: 'https://audio/8' + i, c: 'https://art/8' + i + '/100x100bb.jpg',
+      });
+    }
+  });
+  const H = n => w3.__ev(n), h$ = q => w3.document.querySelector(q);
+  await waitFor(() => !w3.document.querySelector('#app').hidden);
+
+  assert(H("chartFiltered.every(s => s.d)") && H('filtered.length') > H('chartFiltered.length'),
+    'Jahrescharts: Songs ohne Stufe bleiben aus dem Chartsmodus draussen');
+  assert(H("TIERS.every(t => byTier[t.id].every(s => s.d === t.id))"),
+    'Jahrescharts: die Chartstufen bleiben unveraendert');
+  assert(H("sugAll.length === 0"), 'Jahrescharts: kein Nebeneffekt auf die Vorschlaege');
+  H("suggest('achtziger')");
+  assert(H('sugAll').length > 0, 'Jahrescharts: die neuen Songs sind trotzdem ratbar');
+
+  w3.__ev("settings.decade = 1980; setMode('decades')");
+  await waitFor(() => w3.__ev('mode') === 'decades');
+  assert(H('currentDecade()') === 1980, 'Jahrescharts: die 1980er sind jetzt waehlbar');
+  assert(H('decFiltered').length >= 40, 'Jahrescharts: sie fuellen das Jahrzehnt (' + H('decFiltered').length + ' Songs)');
+  assert(H("byTier.easy.some(s => s.r === 1)"), 'Jahrescharts: Platz 1 landet in Easy');
+  assert(H("byTier.impossible.every(s => s.f < byTier.easy[0].f + 1)"),
+    'Jahrescharts: die Stufen folgen der Bekanntheit f');
+
+  H('newRound()'); await tick(40);
+  const decIds = new Set(H('decFiltered').map(s => s.i));
+  assert(H('round').every(r => r.song && decIds.has(r.song.i)), 'Jahrescharts: die Runde zieht aus dem Jahrzehnt');
+
+  w3.__ev("showReveal(round.find(r => r.song.r) || round[0], false)");
+  const meta = h$('#revealMeta').textContent;
+  assert(!H("round.some(r => r.song.r)") || /Platz \d+ der Jahrescharts/.test(meta),
+    'Jahrescharts: die Aufloesung nennt den Chartplatz statt der Streams (' + meta + ')');
 
   /* ------------------------------------------------- Suchfeld/Vorschlaege */
   const box = $('#suggest'), rows = () => box.querySelectorAll('.sug');
@@ -374,7 +470,7 @@ const dummy = n => ({ t: 'Song ' + n, a: 'Kuenstler ' + n, al: 'Album', y: 2020,
     'songrate:settings': JSON.stringify({ mode: 'playlist' }),
   });
   await waitFor(() => !w.document.querySelector('#app').hidden);
-  assert(w.__ev('mode') === 'charts' && w.document.querySelector('#modeSeg').children[1].disabled,
+  assert(w.__ev('mode') === 'charts' && w.document.querySelector('#modeSeg [data-v="playlist"]').disabled,
     'Zu kurze Playlist: Modus bleibt gesperrt');
 
   /* Drosselung: der Lauf bricht nicht ab, sondern wartet sichtbar und laesst

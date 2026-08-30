@@ -7,6 +7,23 @@ OUT = 'catalogs'
 os.makedirs(OUT, exist_ok=True)
 UA = {'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)'}
 artists = json.load(open('artists_top.json'))
+
+# Die Jahrescharts bringen Kuenstler mit, die in kworbs Streamliste fehlen -
+# ohne deren Kataloge findet match_local.py fuer alte Jahrzehnte nichts.
+if os.path.exists('yearcharts.json'):
+    SPLIT = re.compile(r'\s*(?:&|,|\bfeaturing\b|\bfeat\.?\b|\bwith\b|\bx\b|/)\s*', re.I)
+    have = {a['name'].lower() for a in artists}
+    extra = []
+    for row in json.load(open('yearcharts.json', encoding='utf-8')):
+        for part in SPLIT.split(row.get('artist') or ''):
+            part = part.strip(' .-')
+            if len(part) < 2 or part.lower() in have:
+                continue
+            have.add(part.lower())
+            extra.append({'name': part})
+    artists += extra
+    print(f'+{len(extra)} Kuenstler aus den Jahrescharts', flush=True)
+
 t0 = time.time()
 
 def path(name):

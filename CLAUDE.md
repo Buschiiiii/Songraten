@@ -88,6 +88,50 @@ Unter 130 Mio. wird es unfair statt schwer. Der Pool je Stufe wird mit festem
 Seed gemischt, nicht nach Streams sortiert — sonst füllt sich jede Stufe nur
 vom oberen Rand ihres Bereichs.
 
+## Jahrzehnte-Modus
+
+Dritter Modus neben Charts und Playlist. Oben in der Mitte stehen Pfeile, die
+durch die Jahrzehnte springen; gespielt wird nur aus dem gewählten. Jahrzehnte
+mit weniger als `DEC_MIN` (10) Songs stehen gar nicht erst zur Wahl.
+
+**Die Stufen sind hier relativ.** Die Chartsstufen hängen an absoluten
+Streamzahlen — für ein einzelnes Jahrzehnt taugt das nicht, Spotify zählt erst
+seit 2008 mit. `relativeTiers()` sortiert deshalb den Pool des Jahrzehnts nach
+Bekanntheit und schneidet ihn in fünf gleich große Teile: das oberste Fünftel
+ist Easy.
+
+Sortiert wird nach `f`, dem von der Pipeline gerechneten Bekanntheitswert
+(0–100, siehe `tools/fame.py`): Streams zählen als Rang **innerhalb** des
+Jahrzehnts, ein Jahreschartplatz dagegen absolut (Platz 1 = 100, Platz 100 =
+0). Das ist wichtig — relativ gerechnet macht ein Jahrzehnt mit nur drei
+Chartsongs aus „Africa" den unbekanntesten Song der 80er. Fehlt `f` (ältere
+`songs.json`), entscheiden die Streams.
+
+Songs mit leerem `d` haben keine Stufe und damit keine Streamzahl — sie kommen
+aus den Jahrescharts und spielen **nur** im Jahrzehntmodus mit. `chartFiltered`
+hält sie aus den Charts heraus, `filtered` (und damit die Vorschlagsliste)
+enthält sie.
+
+## Mehr Songs für alte Jahrzehnte
+
+`songs.json` hängt an kworb (Spotify all-time) und deckt deshalb alles vor 2000
+kaum ab — „Africa", „Take On Me" und „Hotel California" fehlten komplett. Zwei
+Skripte holen das nach, beide unabhängig von der kworb-Pipeline:
+
+1. `tools/fetch_yearcharts.py` lädt die Billboard-Jahrescharts (Year-End Hot
+   100) von Wikipedia, ein Jahr pro Anfrage mit Cache, und schreibt
+   `yearcharts.json`. `--selftest` prüft nur den Tabellenparser.
+2. `tools/add_decades.py <sekunden>` sucht jeden dieser Titel über die
+   iTunes-Suche und hängt die Treffer an `data/songs.json` — mit `r`
+   (Jahresplatz), ohne Streams, ohne Stufe. Zeitbudget als Argument, Cache pro
+   Titel (`.cache/decade_lookup.json`), also beliebig oft aufrufbar; Apple
+   drosselt nach einigen hundert Anfragen. Geschrieben wird erst am Ende.
+   Grenzen: `PER_DECADE` (500) und `CAP_ARTIST` (12) pro Jahrzehnt.
+
+Wer die volle Pipeline neu baut, bekommt dasselbe über `match_local.py` — es
+liest `yearcharts.json` mit, wenn sie da ist, und `fetch_catalogs.py` holt die
+Kataloge der zusätzlichen Künstler.
+
 ## Songauswahl (Filter)
 
 Regeln in `assets/filters.js`. **Jeder Modus hat seinen eigenen Regelsatz** —
