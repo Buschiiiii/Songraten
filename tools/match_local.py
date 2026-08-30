@@ -4,11 +4,16 @@ from difflib import SequenceMatcher
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from dedupe import merge_duplicates
+from fame import add_fame
 
 TIERS = [('easy', 1.5e9, 1e13), ('medium', 8e8, 1.5e9), ('hard', 4.5e8, 8e8),
          ('expert', 2.8e8, 4.5e8), ('impossible', 1.3e8, 2.8e8)]
 PER_TIER = 400
 CAP = 8
+# Jahrescharts: eigener Topf fuer den Jahrzehntmodus, damit alte Jahrzehnte
+# nicht an Spotifys Streamzahlen haengen. Die Charts bleiben davon unberuehrt.
+PER_DECADE = 500
+CAP_DECADE = 12
 
 BAD = re.compile(r"(remix|live|version|edit\b|mix\b|instrumental|karaoke|sped up|slowed|"
                  r"acoustic|demo\b|commentary|remaster|re-recorded|reprise|interlude|"
@@ -155,6 +160,25 @@ for tier, lo, hi in TIERS:
 print(f'  {time.time()-t0:.0f}s', flush=True)
 
 
+def year_candidates():
+    """Kandidaten aus yearcharts.json, sofern vorhanden."""
+    if not os.path.exists('yearcharts.json'):
+        return []
+    rows = json.load(open('yearcharts.json', encoding='utf-8'))
+    known = {norm(k): k for k in CAT}
+    best = {}
+    for r in rows:
+        parts = [p.strip(' .-') for p in SPLIT.split(r.get('artist') or '') if p.strip(' .-')]
+        arts = [known[norm(p)] for p in parts if norm(p) in known]
+        if not arts:
+            continue
+        key = (norm(r['title']), norm(arts[0]))
+        # Ein Song steht oft in zwei Jahren; der beste Rang zaehlt.
+        if key not in best or r['rank'] < best[key]['rank']:
+            best[key] = {'title': r['title'], 'artists': arts, 'rank': r['rank'], 'year': r['year']}
+    return list(best.values())
+
+
 def split_artist(raw):
     raw = (raw or '').strip()
     if not raw:
@@ -172,6 +196,38 @@ def split_artist(raw):
     return [raw]
 
 
+print('Jahrescharts', flush=True)
+dec_keep = []
+ycands = year_candidates()
+if ycands:
+    seen_song = {(norm(c['title']), tuple(sorted(norm(a) for a in c['artists']))) for c in
+                 [x for t in out_tiers.values() for x in t]}
+    per_dec, cnt_dec = {}, {}
+    ycands.sort(key=lambda c: (c['rank'], c['year']))
+    for c in ycands:
+        dec = c['year'] // 10 * 10
+        if per_dec.get(dec, 0) >= PER_DECADE:
+            continue
+        lead = c['artists'][0]
+        if cnt_dec.get((dec, lead), 0) >= CAP_DECADE:
+            continue
+        key = (norm(c['title']), tuple(sorted(norm(a) for a in c['artists'])))
+        if key in seen_song:
+            continue
+        m = find(c)
+        if not m:
+            continue
+        seen_song.add(key)
+        per_dec[dec] = per_dec.get(dec, 0) + 1
+        cnt_dec[(dec, lead)] = cnt_dec.get((dec, lead), 0) + 1
+        c['it'] = m
+        c['tier'] = ''
+        c['streams'] = 0
+        dec_keep.append(c)
+    print('  ' + ' '.join(f'{d}er={n}' for d, n in sorted(per_dec.items())), flush=True)
+else:
+    print('  keine yearcharts.json - uebersprungen (tools/fetch_yearcharts.py)', flush=True)
+
 names, index = {}, []
 
 
@@ -185,9 +241,17 @@ def aid(n):
     return names[k]
 
 
+def all_candidates():
+    for tier, _, _ in TIERS:
+        for c in out_tiers[tier]:
+            yield tier, c
+    for c in dec_keep:
+        yield '', c
+
+
 songs, seen = [], set()
-for tier, _, _ in TIERS:
-    for c in out_tiers[tier]:
+if True:
+    for tier, c in all_candidates():
         it = c['it']
         raw = set()
         for a in c['artists']:
@@ -216,20 +280,27 @@ for tier, _, _ in TIERS:
             's': c['streams'], 'd': tier,
             'p': it['previewUrl'], 'c': it['artworkUrl100'],
         })
+        if c.get('rank'):
+            songs[-1]['r'] = c['rank']
+            # iTunes gibt bei Neuauflagen gern das Jahr der Wiederveroeffentlichung
+            # an; liegt es weit weg vom Chartjahr, gilt das Chartjahr.
+            if abs(songs[-1]['y'] - c['year']) > 2:
+                songs[-1]['y'] = c['year']
 
 # kworb fuehrt denselben Track manchmal zweimal mit leicht verschiedenen
 # Streamzahlen; der Schluessel oben faengt das nicht, sobald sich eine
 # Kuenstler-ID unterscheidet. Deshalb zum Schluss zusammenfuehren.
 songs, merged = merge_duplicates(songs)
+add_fame(songs)
 if merged:
     print(f'{len(merged)} Doppeleintraege zusammengefuehrt')
 songs.sort(key=lambda x: -x['s'])
-data = {'v': 1, 'built': time.strftime('%Y-%m-%d'),
+data = {'v': 2, 'built': time.strftime('%Y-%m-%d'),
         'tiers': [t[0] for t in TIERS], 'artists': index, 'songs': songs}
 json.dump(data, open('songs.json', 'w'), ensure_ascii=False, separators=(',', ':'))
 per = {}
 for s in songs:
-    per[s['d']] = per.get(s['d'], 0) + 1
+    per[s['d'] or 'nur Jahrzehnte'] = per.get(s['d'] or 'nur Jahrzehnte', 0) + 1
 print('\nsongs.json:', f'{os.path.getsize("songs.json")/1024:.0f} KB')
 print('Songs:', len(songs), per)
 print('Kuenstler:', len(index))

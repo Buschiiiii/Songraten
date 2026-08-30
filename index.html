@@ -37,6 +37,15 @@
 
   <section class="col col-main">
 
+    <div id="decadeBar" class="decade-bar" hidden>
+      <button id="decPrev" class="dec-arrow" aria-label="Ein Jahrzehnt zurück">‹</button>
+      <div class="dec-now">
+        <strong id="decLabel">2010er</strong>
+        <span id="decCount"></span>
+      </div>
+      <button id="decNext" class="dec-arrow" aria-label="Ein Jahrzehnt weiter">›</button>
+    </div>
+
     <div id="tabs" class="tabs"></div>
 
     <div id="stageBar" class="stage-bar"></div>
@@ -73,6 +82,7 @@
       <h2>Modus</h2>
       <div class="seg" id="modeSeg">
         <button data-v="charts" class="on">Charts &amp; Stufen</button>
+        <button data-v="decades">Jahrzehnte</button>
         <button data-v="playlist" disabled>Eigene Playlist</button>
       </div>
       <div class="pl-load">
