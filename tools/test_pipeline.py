@@ -123,10 +123,63 @@ def pipeline():
         shutil.rmtree(d, ignore_errors=True)
 
 
+def decades():
+    """add_decades.py mit vorgefuelltem Cache - laeuft ohne eine einzige Anfrage."""
+    d = tempfile.mkdtemp(prefix='songraten-dec-')
+    try:
+        os.makedirs(os.path.join(d, 'data'))
+        os.makedirs(os.path.join(d, '.cache'))
+        bestand = {
+            'v': 2, 'built': '2026-01-01', 'tiers': ['easy', 'medium', 'hard', 'expert', 'impossible'],
+            'artists': ['Sia'],
+            'songs': [{'t': 'Unstoppable', 'a': 'Sia', 'ar': [0], 'al': 'This Is Acting', 'y': 2016,
+                       'g': 'Pop', 's': 2_030_000_000, 'd': 'easy',
+                       'p': 'https://audio/u', 'c': 'https://art/u/100x100bb.jpg'}],
+        }
+        json.dump(bestand, open(os.path.join(d, 'data/songs.json'), 'w', encoding='utf-8'))
+        rows = [{'year': 1982, 'rank': 3, 'title': 'Africa', 'artist': 'Toto'},
+                {'year': 1985, 'rank': 2, 'title': 'Take On Me', 'artist': 'a-ha'},
+                {'year': 1999, 'rank': 9, 'title': 'Gibtsnicht', 'artist': 'Niemand'}]
+        json.dump(rows, open(os.path.join(d, 'data/yearcharts.json'), 'w', encoding='utf-8'))
+
+        # Wie ein frueherer Lauf: zwei Treffer, ein Fehlschlag. Der Schluessel
+        # ist derselbe wie im Skript: normalisierter Titel|Kuenstler.
+        cache = {
+            'africa|toto': {'t': 'Africa', 'a': 'TOTO', 'al': 'Toto IV', 'y': 1982, 'g': 'Rock',
+                            's': 0, 'r': 3, 'd': '', 'p': 'https://audio/a', 'c': 'https://art/a/100x100bb.jpg'},
+            'take on me|a ha': {'t': 'Take On Me', 'a': 'a-ha', 'al': 'Hunting High', 'y': 1985, 'g': 'Pop',
+                                's': 0, 'r': 2, 'd': '', 'p': 'https://audio/t', 'c': 'https://art/t/100x100bb.jpg'},
+            'gibtsnicht|niemand': None,
+        }
+        json.dump(cache, open(os.path.join(d, '.cache/decade_lookup.json'), 'w', encoding='utf-8'))
+
+        r = run('add_decades.py', '20', cwd=d)
+        check(r.returncode == 0, 'add_decades.py laeuft durch' + ('' if r.returncode == 0 else ': ' + r.stderr.strip()[-300:]))
+        check('0 Anfragen' in r.stdout, 'nichts Bekanntes wird neu angefragt')
+
+        data = json.load(open(os.path.join(d, 'data/songs.json'), encoding='utf-8'))
+        songs = {s['t']: s for s in data['songs']}
+        check(len(data['songs']) == 3, f'zwei Songs dazu (jetzt {len(data["songs"])})')
+        check(songs['Africa']['r'] == 3 and songs['Africa']['d'] == '',
+              'mit Jahresplatz und ohne Stufe eingetragen')
+        check(songs['Africa']['f'] > 95 and songs['Unstoppable']['f'] == 100,
+              'Bekanntheit fuer alle neu gerechnet')
+        check('Gibtsnicht' not in songs, 'was Apple nicht kennt, bleibt draussen')
+
+        # Ein zweiter Lauf darf nichts doppeln.
+        r2 = run('add_decades.py', '20', cwd=d)
+        data2 = json.load(open(os.path.join(d, 'data/songs.json'), encoding='utf-8'))
+        check(len(data2['songs']) == 3, f'ein zweiter Lauf doppelt nichts (jetzt {len(data2["songs"])})')
+    finally:
+        shutil.rmtree(d, ignore_errors=True)
+
+
 if __name__ == '__main__':
     print('Selbsttests der Skripte')
     selftests()
     print('\nDurchlauf der Pipeline')
     pipeline()
+    print('\nJahrzehnte nachtragen')
+    decades()
     print('\n' + (f'{len(fails)} Fehler' if fails else 'Pipeline in Ordnung'))
     sys.exit(1 if fails else 0)
