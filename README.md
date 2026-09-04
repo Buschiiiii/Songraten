@@ -6,7 +6,7 @@ nach echten Spotify-Streamzahlen sortiert.
 Die Seite ist reines HTML/CSS/JavaScript. Kein Server, kein Build, keine Anmeldung,
 keine Bibliotheken. Alles läuft im Browser.
 
-**Fünf Arten zu spielen**
+**Sechs Arten zu spielen**
 
 | Modus | Woraus gespielt wird |
 |---|---|
@@ -15,6 +15,7 @@ keine Bibliotheken. Alles läuft im Browser.
 | Genres | ein Genre, Stufen relativ dazu vergeben |
 | Künstler | alle Songs eines Künstlers samt Gastauftritten, fünf zufällige davon |
 | Eigene Playlist | ein eigener Export, fünf zufällige Songs daraus |
+| Eigene Musik | Dateien vom eigenen Gerät, fünf zufällige davon |
 
 Dazu Filter für Genre, Künstler, Jahrzehnt und Instrumentals, die sich
 kombinieren lassen.
@@ -70,6 +71,32 @@ als fünf brauchbare Songs hat, lässt sich nicht auswählen.
 
 Die letzten zwölf Kataloge bleiben im Browser gespeichert, ein zweiter Besuch
 geht ohne Warten. Mit den Pfeilen oben springst du zwischen ihnen hin und her.
+
+## Mit der eigenen Musik spielen
+
+Rechts unter **Eigene Musik** auf *Ordner wählen* – oder den Ordner einfach
+ins Fenster ziehen. **Hochgeladen wird nichts**: die Dateien bleiben auf dem
+Gerät, der Browser darf sie nur lesen. Gelesen werden MP3, M4A/AAC, FLAC,
+Ogg, Opus, WAV und AIFF; Titel, Künstler, Album, Jahr, Genre und Titelbild
+kommen aus den Tags, notfalls aus dem Dateinamen und dem Ordner
+(„Künstler/Album/03 - Titel.flac").
+
+Gespielt werden fünf zufällige Songs, ohne Stufen. Die Filter gelten hier
+genauso und mit eigenen Regeln – die Voreinstellung räumt Karaoke- und
+Instrumentalfassungen weg, die ein gezogenes Album gern mitbringt. Unter fünf
+Songs bleibt der Modus gesperrt. Die Auflösung zeigt die Datei und öffnet sie
+auf Klick.
+
+Als einziger Modus fängt dieser wirklich **am Anfang des Songs** an (die
+Stille davor wird übersprungen) – Apples Previews sind Ausschnitte aus der
+Mitte, da geht das nicht. Unter *Songstart* lässt sich stattdessen eine
+zufällige Stelle wählen.
+
+**Bleibt die Musik nach dem Neuladen da?** In Chrome und Edge ja: der Ordner
+wird gemerkt, beim nächsten Besuch fragt die Seite höchstens einmal nach der
+Freigabe. Safari und Firefox erlauben das nicht – dort den Ordner erneut
+wählen. Die gelesenen Tags bleiben trotzdem gespeichert, deshalb dauert das
+zweite Mal Sekunden statt Minuten.
 
 ## Nachhören, egal bei welchem Dienst
 

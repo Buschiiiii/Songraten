@@ -23,20 +23,24 @@ let DB = null;            /* { artists:[], songs:[] } */
 let PL = null;            /* aufgeloeste Playlist, gleiche Form wie DB */
 let mode = 'charts';      /* 'charts' | 'decades' | 'genres' | 'artist' | 'playlist' */
 let AR = null;            /* geladener Kuenstlerkatalog, Form wie DB */
+let LO = null;            /* eigene Musik vom Geraet, Form wie DB */
 let pickFiltered = [];    /* Songs des gewaehlten Jahrzehnts bzw. Genres */
 let byTier = {};
 let filtered = [];        /* alles, was nach den Filtern uebrig bleibt */
 let chartFiltered = [];   /* davon die mit fester Stufe - nur die spielen die Charts */
 let plFiltered = [];      /* dasselbe fuer die Playlist */
+let loFiltered = [];      /* dasselbe fuer die eigene Musik */
 let filterMode = 'nur';   /* Wirkung, die ein Klick in den Listen bekommt */
 
 /* Jeder Modus hat seinen eigenen Regelsatz: eine importierte Playlist bringt
    andere Genres und Kuenstler mit als die Charts, und wer dort „nur 1960er"
    gesetzt hat, soll seine Playlist nicht leer vorfinden. */
 const activeFilters = () => (mode === 'playlist' ? settings.plFilters
+  : mode === 'local' ? settings.loFilters
   : mode === 'artist' ? settings.arFilters : settings.filters);
 function setFilters(list) {
   if (mode === 'playlist') settings.plFilters = list;
+  else if (mode === 'local') settings.loFilters = list;
   else if (mode === 'artist') settings.arFilters = list;
   else settings.filters = list;
   save('settings', settings);
@@ -52,6 +56,7 @@ let settings = load('settings', {
   artist: null,           /* zuletzt gespielter Kuenstler (Apple-ID) */
   service: Links.DEFAULT, /* Lieblingsdienst zum Nachhoeren */
   arFilters: Filters.DEFAULT.map(r => ({ ...r })),
+  loFilters: Filters.DEFAULT.map(r => ({ ...r })),
   hard: false,
 });
 /* Zusammengefasste Genres: alte Regeln auf den neuen Namen ziehen. */
@@ -123,7 +128,9 @@ function barStops(segs) {
 
 const slots = () => (usesTiers() ? TIERS : FLAT_SLOTS);
 /* Vorschlaege im Suchfeld: aus der eigenen Liste, wo es eine gibt. */
-const pool = () => (mode === 'playlist' && PL ? PL : mode === 'artist' && AR ? AR : DB);
+const pool = () => (mode === 'playlist' && PL ? PL
+  : mode === 'local' && LO ? LO
+  : mode === 'artist' && AR ? AR : DB);
 
 /* ---------------------------------------------------------------- Start */
 
@@ -146,6 +153,8 @@ async function boot() {
   newRound();
   $('#boot').remove();
   $('#app').hidden = false;
+  /* Laeuft nebenher: der gemerkte Musikordner braucht kein Warten. */
+  restoreLocal().catch(() => {});
 }
 
 /* ------------------------------------------------------------- Oberflaeche */
@@ -176,8 +185,12 @@ function buildChrome() {
       settings.start = b.dataset.v;
       save('settings', settings);
       $('#startMode').querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b));
-      round.forEach(r => {
-        if (r.status === 'playing' && !r.guesses.length && r.stage === 0) r.offset = newOffset();
+      round.forEach((r, i) => {
+        if (r.status !== 'playing' || r.guesses.length || r.stage !== 0) return;
+        /* Bei eigenen Dateien steckt die Stelle im Ausschnitt selbst - der
+           muss also noch einmal aus der Datei geschnitten werden. */
+        if (r.song && r.song.file) { r.buffer = null; preload(i); }
+        else r.offset = newOffset();
       });
       focusSearch();
     };
@@ -266,6 +279,7 @@ function buildChrome() {
 
   buildPlaylistUI();
   buildArtistUI();
+  buildLocalUI();
   buildServiceUI();
   buildFilterUI();
   renderStats();
@@ -309,6 +323,9 @@ function remapStages(before) {
 }
 
 function newOffset() {
+  /* Lokale Dateien bringen ihren Anfang selbst mit: dort wird schon beim
+     Dekodieren an der richtigen Stelle geschnitten. */
+  if (mode === 'local') return 0;
   const st = enabledStages();
   const maxOff = Math.max(0, 30 - st[st.length - 1] - 0.5);
   return settings.start === 'random' ? Math.random() * maxOff : 0;
@@ -367,7 +384,7 @@ function newRound() {
       error: false,
     };
   });
-  if (mode !== 'playlist') {
+  if (mode !== 'playlist' && mode !== 'local') {
     recent = [...round.map(r => r.song && r.song.i).filter(x => x != null), ...recent].slice(0, RECENT_MAX);
     save('recent', recent);
   }
@@ -376,17 +393,37 @@ function newRound() {
   render();
   resetBar();
   focusSearch();
-  round.forEach((r, i) => preload(i));
+  /* Lokale Dateien werden ganz dekodiert, bevor der Ausschnitt herausfaellt.
+     Fuenf davon gleichzeitig sprengen den Speicher, also nacheinander. */
+  if (mode === 'local') {
+    const meins = ++roundToken;
+    (async () => { for (let i = 0; i < round.length; i++) { if (meins !== roundToken) return; await preload(i); } })();
+  } else round.forEach((r, i) => preload(i));
 }
+
+let roundToken = 0;
 
 async function preload(i) {
   const r = round[i];
   if (!r.song || r.buffer) return;
   try {
-    r.buffer = await Audio2.load(r.song.p);
+    if (r.song.file) {
+      /* Aus der Datei wird gleich beim Dekodieren der gebrauchte Ausschnitt
+         geschnitten - der ganze Song bliebe sonst im Speicher liegen. */
+      /* Immer nach der laengsten Stufe schneiden, nicht nach der gerade
+         eingeschalteten - sonst fehlt Ton, wenn mitten in der Runde eine
+         laengere Stufe dazukommt. */
+      const laenge = STAGES[STAGES.length - 1] + 8;
+      const cut = await Audio2.loadFile(r.song.file, { start: settings.start, seconds: laenge });
+      r.buffer = cut.buffer;
+      r.at = cut.start;
+      r.offset = 0;
+      if (!r.song.dur && cut.duration) r.song.dur = cut.duration;
+    } else r.buffer = await Audio2.load(r.song.p);
   } catch (e) {
-    /* Apple nimmt Previews gelegentlich offline. Statt eine tote Kachel
-       stehen zu lassen, wird einmal ein anderer Song gezogen. */
+    /* Apple nimmt Previews gelegentlich offline, und nicht jeder Browser
+       dekodiert jedes Format. Statt eine tote Kachel stehen zu lassen, wird
+       einmal ein anderer Song gezogen. */
     if (!r.swapped && r.status === 'playing' && !r.guesses.length) {
       r.swapped = true;
       const used = new Set(round.map(x => x.song && x.song.i).filter(x => x != null));
@@ -686,6 +723,7 @@ function finish(r, won) {
     if (stats.streak > (stats.bestStreak || 0)) stats.bestStreak = stats.streak;
   } else stats.streak = 0;
   const key = mode === 'playlist' ? 'playlist'
+    : mode === 'local' ? 'local'
     : PICKED.includes(mode) ? mode.slice(0, 3) + '-' + ((currentPick() || {}).value)
     : r.tier.id;
   const bt = stats.byTier[key] || { p: 0, w: 0 };
@@ -701,12 +739,46 @@ function finish(r, won) {
 
 let revealed = null;
 
+/* Objekt-URLs auf lokale Dateien wieder freigeben, sonst haelt der Browser
+   die Daten bis zum Neuladen fest. */
+let localUrls = [];
+function freeLocalUrls() {
+  localUrls.forEach(u => { try { URL.revokeObjectURL(u); } catch (e) {} });
+  localUrls = [];
+}
+const localUrl = blobOrFile => {
+  try {
+    const u = URL.createObjectURL(blobOrFile);
+    localUrls.push(u);
+    return u;
+  } catch (e) { return ''; }
+};
+
 function showReveal(r, won) {
   const s = r.song;
   revealed = r;
+  freeLocalUrls();
   const art = $('#revealArt');
   art.hidden = !s.c;
   if (s.c) art.src = s.c.replace('100x100bb', '400x400bb');
+  /* Eigene Musik: das Titelbild steckt in der Datei und wird erst jetzt
+     herausgeschnitten - tausend Cover im Voraus waeren Unsinn. */
+  if (!s.c && s.file && s.pic) {
+    Tags.cover(s.file, s.pic).then(url => {
+      if (!url) return;
+      if (revealed !== r) { try { URL.revokeObjectURL(url); } catch (e) {} return; }
+      localUrls.push(url);
+      art.src = url;
+      art.hidden = false;
+    });
+  }
+  const datei = $('#revealFile');
+  datei.hidden = !s.file;
+  if (s.file) {
+    datei.textContent = s.path || s.file.name;
+    datei.href = localUrl(s.file);
+    datei.title = 'Datei im Browser öffnen';
+  }
   $('#revealTitle').textContent = s.t;
   $('#revealArtist').textContent = s.a;
   $('#revealMeta').textContent = [s.al, s.y || null,
@@ -771,6 +843,7 @@ function playFull(r) {
 
 function closeReveal() {
   Audio2.stop();
+  freeLocalUrls();
   $('#reveal').hidden = true;
   const next = round.findIndex(r => r.status === 'playing');
   if (next >= 0) switchTo(next);
@@ -865,6 +938,7 @@ function render() {
   $('#search').placeholder = r && !r.song ? 'Kein Song passt zu den Filtern'
     : r && r.error ? 'Song nicht ladbar – Cmd+Enter würfelt neu'
     : mode === 'playlist' ? 'Song aus der Playlist suchen …'
+    : mode === 'local' ? 'Song aus deiner Musik suchen …'
     : mode === 'artist' && currentPick() ? `Song von ${currentPick().text} suchen …`
     : 'Song suchen …';
   $('#roundScore').textContent = round.reduce((a, b) => a + b.points, 0);
@@ -880,6 +954,7 @@ function statGroups() {
     ['Genres', k => k.startsWith('gen-')],
     ['Künstler', k => k.startsWith('art-')],
     ['Playlist', k => k === 'playlist'],
+    ['Eigene Musik', k => k === 'local'],
   ];
   return groups.map(([label, test]) => {
     let p = 0, w = 0;
@@ -910,6 +985,7 @@ function renderStats() {
 
 const PICKED = ['decades', 'genres', 'artist'];   /* Modi mit Auswahlleiste oben */
 const activePool = () => (mode === 'playlist' ? plFiltered
+  : mode === 'local' ? loFiltered
   : PICKED.includes(mode) ? pickFiltered : chartFiltered);
 
 /* Ein Jahrzehnt oder Genre braucht genug Songs, sonst ist die Runde nach zwei
@@ -1011,6 +1087,7 @@ function applyFilters() {
      die Charts lassen sie aus, im Jahrzehntmodus spielen sie mit. */
   chartFiltered = filtered.filter(s => s.d);
   plFiltered = PL ? Filters.apply(PL.songs, settings.plFilters, PL) : [];
+  loFiltered = LO ? Filters.apply(LO.songs, settings.loFilters, LO) : [];
 
   if (mode === 'artist') {
     /* Der Kuenstlerkatalog kommt nicht aus songs.json, sondern von Apple. */
@@ -1182,6 +1259,7 @@ function renderFilters() {
   const rules = activeFilters();
   const now = PICKED.includes(mode) ? currentPick() : null;
   $('#filterPanel').querySelector('h2').textContent = mode === 'playlist' ? 'Songauswahl · Playlist'
+    : mode === 'local' ? 'Songauswahl · Eigene Musik'
     : now ? 'Songauswahl · ' + now.text : 'Songauswahl';
 
   const box = $('#filterList');
@@ -1207,6 +1285,11 @@ function renderFilters() {
     if (!n) msg = 'Kein Song der Playlist passt zu den Filtern.';
     else if (n < PL_MIN) msg = `Nur ${n} von ${total} Songs übrig – für eine Runde braucht es ${PL_MIN}.`;
     else { msg = `${n} von ${total} Songs der Playlist`; warn = false; }
+  } else if (mode === 'local') {
+    const total = LO ? LO.songs.length : 0;
+    if (!n) msg = 'Kein Song deiner Musik passt zu den Filtern.';
+    else if (n < Local.MIN) msg = `Nur ${n} von ${total} Songs übrig – für eine Runde braucht es ${Local.MIN}.`;
+    else { msg = `${n} von ${total} eigenen Songs`; warn = false; }
   } else if (PICKED.includes(mode)) {
     const what = now ? now.text : '–';
     if (!n) msg = `Kein Song aus ${what} passt zu den Filtern.`;
@@ -1320,6 +1403,137 @@ async function pickArtist(h) {
   }
 }
 
+/* ---------------------------------------------------------- Eigene Musik */
+
+/* Die Dateien bleiben auf dem Geraet - der Browser darf sie lesen, mehr
+   passiert nicht. Wo es geht (Chrome, Edge), wird der Ordner gemerkt und
+   beim naechsten Besuch wieder geoeffnet; sonst muss man ihn erneut waehlen,
+   das laesst sich nicht umgehen. Die gelesenen Tags bleiben trotzdem
+   gespeichert, damit das zweite Mal Sekunden statt Minuten dauert. */
+
+let loBusy = false;
+let loStop = false;
+
+const loPlayable = () => !!LO && LO.songs.length >= Local.MIN;
+
+function loNote(msg) { $('#loStatus').textContent = msg; }
+
+function buildLocalUI() {
+  const dir = $('#loDir'), files = $('#loFiles');
+
+  $('#loPickDir').onclick = async () => {
+    if (loBusy) return;
+    if (!Local.supported()) return dir.click();
+    try {
+      const handle = await Local.pickDirectory();
+      await scanHandle(handle);
+    } catch (e) {
+      /* Abbrechen im Dateidialog ist kein Fehler. */
+      if (e && e.name !== 'AbortError') loNote('Der Ordner ließ sich nicht öffnen.');
+    }
+  };
+  dir.onchange = () => { const f = [...dir.files]; dir.value = ''; if (f.length) scanFiles(f); };
+  $('#loPickFiles').onclick = () => files.click();
+  files.onchange = () => { const f = [...files.files]; files.value = ''; if (f.length) scanFiles(f, 'Eigene Musik'); };
+
+  $('#loCancel').onclick = () => { loStop = true; loNote('Wird abgebrochen …'); };
+
+  $('#loGrant').onclick = async () => {
+    const handle = await Local.getHandle();
+    if (!handle) return;
+    const st = await Local.permission(handle, true);
+    if (st === 'granted') scanHandle(handle);
+    else loNote('Ohne Freigabe kann der Ordner nicht gelesen werden.');
+  };
+
+  $('#loClear').onclick = () => {
+    LO = null;
+    Local.forget();
+    Local.dropHandle();
+    if (mode === 'local') setMode('charts');
+    applyFilters();
+    renderLocal();
+    loNote('');
+  };
+
+  renderLocal();
+}
+
+function renderLocal() {
+  $('#loPickDir').hidden = loBusy;
+  $('#loPickFiles').hidden = loBusy;
+  $('#loCancel').hidden = !loBusy;
+  $('#loClear').hidden = loBusy || !LO;
+  if (loBusy || LO) $('#loGrant').hidden = true;
+  if (!loBusy && LO) {
+    loNote(`${LO.name}: ${LO.songs.length} Songs`
+      + (loPlayable() ? '' : ` – für eine Runde braucht es ${Local.MIN}`));
+  }
+  renderModes();
+}
+
+async function scanHandle(handle) {
+  if (loBusy) return;
+  loBusy = true;
+  loStop = false;
+  renderLocal();
+  loNote('Ordner wird durchsucht …');
+  let files = [];
+  try {
+    files = await Local.filesFromHandle(handle, () => loStop);
+  } catch (e) {
+    loBusy = false;
+    renderLocal();
+    return loNote('Der Ordner ließ sich nicht lesen.');
+  }
+  loBusy = false;
+  if (!files.length) { renderLocal(); return loNote('In dem Ordner steckt keine Musik.'); }
+  await scanFiles(files, handle.name, { handle: true });
+}
+
+async function scanFiles(list, name, opts) {
+  if (loBusy) return;
+  opts = opts || {};
+  loBusy = true;
+  loStop = false;
+  renderLocal();
+  loNote(`${list.length} Dateien werden gelesen …`);
+  const res = await Local.scan(list, {
+    name,
+    stop: () => loStop,
+    onProgress: (n, t) => loNote(`${n} von ${t} gelesen …`),
+  });
+  LO = buildPlaylist(res, 'local');
+  loBusy = false;
+  applyFilters();
+  renderLocal();
+  if (!LO) return loNote('Keine brauchbare Musikdatei dabei.');
+  if (loStop) loNote(`Abgebrochen bei ${LO.songs.length} Songs – sie sind trotzdem da.`);
+  /* Beim Wiederherstellen nach dem Neuladen bleibt der Modus, wo er war. */
+  if (loPlayable() && mode !== 'local' && (!opts.silent || settings.mode === 'local')) setMode('local');
+  else if (mode === 'local') newRound();
+}
+
+/* Beim Start: den gemerkten Ordner wieder oeffnen, wenn der Browser das kann
+   und die Freigabe noch steht. */
+async function restoreLocal() {
+  const last = Local.lastKnown();
+  if (!Local.supported()) {
+    if (last && last.count) loNote(`Zuletzt: ${last.name} mit ${last.count} Songs – Ordner erneut wählen, dann geht es sofort.`);
+    return;
+  }
+  const handle = await Local.getHandle();
+  if (!handle) return;
+  const st = await Local.permission(handle, false);
+  if (st === 'granted') {
+    const files = await Local.filesFromHandle(handle, () => loStop).catch(() => []);
+    if (files.length) await scanFiles(files, handle.name, { silent: true });
+  } else {
+    $('#loGrant').hidden = false;
+    loNote(`${handle.name}${last ? ` mit ${last.count} Songs` : ''}: einmal freigeben, dann ist alles wieder da.`);
+  }
+}
+
 /* ------------------------------------------------------------- Playlist */
 
 const PL_MIN = 5;
@@ -1328,7 +1542,7 @@ const PL_MIN = 5;
    nichts - er faerbt hoechstens einen Tipp gelb, der es sonst nicht waere. */
 const SPLIT_ARTIST = /\s*(?:,|&|\/|\bfeat\.?\b|\bft\.?\b|\bfeaturing\b|\bwith\b|\bx\b|\bvs\.?\b)\s*/i;
 
-function buildPlaylist(pl) {
+function buildPlaylist(pl, kind) {
   if (!pl || !pl.songs || !pl.songs.length) return null;
   const artists = [], byName = new Map();
   const idOf = name => {
@@ -1338,7 +1552,7 @@ function buildPlaylist(pl) {
     return byName.get(n);
   };
   const songs = pl.songs.map((raw, i) => {
-    const s = { ...raw, i, d: 'playlist' };
+    const s = { ...raw, i, d: kind || 'playlist' };
     const ids = new Set();
     const add = x => { const id = idOf(x); if (id >= 0) ids.add(id); };
     add(s.a);
@@ -1349,7 +1563,8 @@ function buildPlaylist(pl) {
     s.na = s.ar.map(a => norm(artists[a])).join(' ');
     return s;
   });
-  return { name: pl.name || 'Playlist', artists, songs, missed: pl.missed || [] };
+  return { name: pl.name || (kind === 'local' ? 'Eigene Musik' : 'Playlist'),
+           artists, songs, missed: pl.missed || [] };
 }
 
 const plPlayable = () => !!PL && PL.songs.length >= PL_MIN;
@@ -1400,11 +1615,16 @@ function buildPlaylistUI() {
   /* Datei irgendwo aufs Fenster ziehen reicht. */
   document.addEventListener('dragover', e => { e.preventDefault(); document.body.classList.add('dragging'); });
   document.addEventListener('dragleave', e => { if (!e.relatedTarget) document.body.classList.remove('dragging'); });
-  document.addEventListener('drop', e => {
+  document.addEventListener('drop', async e => {
     e.preventDefault();
     document.body.classList.remove('dragging');
-    const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
-    if (f) readPlaylistFile(f);
+    const dt = e.dataTransfer;
+    if (!dt) return;
+    /* Nach dem ersten await ist dataTransfer leer - also jetzt alles holen. */
+    const erste = dt.files && dt.files[0];
+    const musik = await Local.fromDrop(dt);
+    if (musik.length) return scanFiles(musik);
+    if (erste) readPlaylistFile(erste);
   });
 
   renderPlaylist();
@@ -1466,12 +1686,25 @@ async function runResolve(name, tracks) {
 
 function plNote(msg) { $('#plStatus').textContent = msg; }
 
-function renderPlaylist() {
+/* Welcher Modus ueberhaupt zur Wahl steht, haengt am Bestand: ohne Playlist
+   keine Playlist, ohne geladenen Kuenstler kein Kuenstlermodus. */
+function renderModes() {
+  /* Bei einer Preview meint "Anfang" den Anfang des 30-Sekunden-Ausschnitts,
+     bei einer eigenen Datei den Anfang des Songs - das ist ein Unterschied,
+     also steht es auch anders da. */
+  const eigen = mode === 'local';
+  const hook = $('#startMode [data-v="hook"]');
+  if (hook) hook.textContent = eigen ? 'Anfang des Songs' : 'Anfang des Ausschnitts';
   $('#modeSeg').querySelectorAll('button').forEach(b => {
     b.classList.toggle('on', b.dataset.v === mode);
     b.disabled = (b.dataset.v === 'playlist' && !plPlayable())
+      || (b.dataset.v === 'local' && !loPlayable())
       || (PICKED.includes(b.dataset.v) && !listFor(b.dataset.v).length);
   });
+}
+
+function renderPlaylist() {
+  renderModes();
   if ($('#arHits')) renderArtists();
   $('#plPick').disabled = plBusy;
   $('#plPick').hidden = plBusy;
@@ -1493,6 +1726,7 @@ function renderPlaylist() {
 function setMode(m) {
   if (m === mode) return;
   if (m === 'playlist' && !plPlayable()) return;
+  if (m === 'local' && !loPlayable()) return;
   if (PICKED.includes(m) && !listFor(m).length) return;
   mode = m;
   settings.mode = m;

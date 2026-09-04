@@ -101,6 +101,7 @@
         <button data-v="genres">Genres</button>
         <button data-v="artist" disabled>Künstler</button>
         <button data-v="playlist" disabled>Eigene Playlist</button>
+        <button data-v="local" disabled>Eigene Musik</button>
       </div>
       <div class="pl-load">
         <input id="plFile" type="file" accept=".csv,.tsv,.txt,.json,.m3u,.m3u8,text/csv,text/plain,application/json" hidden>
@@ -136,6 +137,24 @@
       </label>
       <p class="note">Ein verpasster Song beendet die Runde – und gespielt wird
         strikt der Reihe nach.</p>
+    </div>
+
+    <div class="panel" id="localPanel">
+      <h2>Eigene Musik</h2>
+      <input id="loDir" type="file" webkitdirectory directory multiple hidden>
+      <input id="loFiles" type="file" multiple hidden
+             accept="audio/*,.mp3,.m4a,.m4b,.flac,.ogg,.oga,.opus,.wav,.aac,.aif,.aiff">
+      <div class="pl-load">
+        <button id="loPickDir" class="btn-ghost">Ordner wählen</button>
+        <button id="loPickFiles" class="pl-link">oder einzelne Dateien</button>
+        <button id="loGrant" class="btn-ghost" hidden>Ordner wieder freigeben</button>
+        <button id="loCancel" class="btn-ghost" hidden>Abbrechen</button>
+      </div>
+      <p id="loStatus" class="note"></p>
+      <button id="loClear" class="pl-link" hidden>Eigene Musik entfernen</button>
+      <p class="note">Nichts wird hochgeladen – die Dateien bleiben auf dem Gerät.
+        Titel und Künstler kommen aus den Tags, sonst aus dem Dateinamen.
+        Ordner lassen sich auch einfach ins Fenster ziehen.</p>
     </div>
 
     <div class="panel">
@@ -207,6 +226,7 @@
     <h3 id="revealTitle"></h3>
     <p id="revealArtist"></p>
     <p id="revealMeta" class="meta"></p>
+    <a id="revealFile" class="reveal-file" target="_blank" rel="noopener noreferrer" hidden></a>
     <div id="revealBadge" class="badge"></div>
     <p class="svc-head">Nachhören bei</p>
     <div id="revealLinks" class="svc-row"></div>
@@ -225,6 +245,8 @@
 </div>
 
 <script src="assets/links.js"></script>
+<script src="assets/tags.js"></script>
+<script src="assets/local.js"></script>
 <script src="assets/audio.js"></script>
 <script src="assets/playlist.js"></script>
 <script src="assets/filters.js"></script>

@@ -35,6 +35,22 @@ const CATALOG = {
 const sortKey = s => s.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim().split(' ').sort().join(' ');
 let itunesCalls = 0;
 
+/* Ein Puffer, wie ihn decodeAudioData liefern wuerde. Niedrige Abtastrate,
+   damit drei Minuten Testton nicht 60 MB belegen. */
+function fakeBuffer(secs, silent, chans, rate, leer) {
+  rate = rate || 8000;
+  chans = chans || 2;
+  const len = Math.max(1, Math.round(secs * rate));
+  const data = [];
+  for (let c = 0; c < chans; c++) {
+    const a = new Float32Array(len);
+    if (!leer) for (let i = Math.round((silent || 0) * rate); i < len; i++) a[i] = 0.4;
+    data.push(a);
+  }
+  return { duration: len / rate, sampleRate: rate, length: len, numberOfChannels: chans,
+           getChannelData: c => data[c] };
+}
+
 function makeWindow(store, patchDb) {
   const w = new JSDOM(read('index.html'), { runScripts: 'outside-only', url: 'https://example.org/' }).window;
 
@@ -46,11 +62,24 @@ function makeWindow(store, patchDb) {
   /* jsdom kennt kein Layout: scrollIntoView nur mitzaehlen. */
   w.Element.prototype.scrollIntoView = function () { w.__scrolls = (w.__scrolls || 0) + 1; };
   w.cancelAnimationFrame = id => clearTimeout(id);
+  /* Objekt-URLs gibt es in jsdom nicht - hier reicht ein Zaehler. */
+  let urlNr = 0;
+  w.__urls = new Set();
+  w.URL.createObjectURL = () => { const u = 'blob:test/' + (++urlNr); w.__urls.add(u); return u; };
+  w.URL.revokeObjectURL = u => w.__urls.delete(u);
+
   w.AudioContext = class {
     constructor() { this.state = 'running'; this.currentTime = 0; this.destination = {}; }
     createGain() { return { gain: { value: 1, setValueAtTime() {}, linearRampToValueAtTime() {} }, connect() {} }; }
     createBufferSource() { const s = { buffer: null, connect() {}, start() {}, stop() {}, onended: null }; setTimeout(() => s.onended && s.onended(), 0); return s; }
-    decodeAudioData() { return Promise.resolve({ duration: 30 }); }
+    /* Previews kommen als Acht-Byte-Attrappe herein, lokale Dateien sind
+       echte Bytes - daran unterscheidet der Test die beiden Wege. Der
+       "Song" beginnt mit 2,5 s Stille, damit firstSound() etwas zu tun hat. */
+    decodeAudioData(buf) {
+      const gross = buf && buf.byteLength > 16;
+      return Promise.resolve(fakeBuffer(gross ? 180 : 30, gross ? 2.5 : 0));
+    }
+    createBuffer(ch, len, rate) { return fakeBuffer(len / rate, 0, ch, rate, true); }
     resume() {}
   };
 
@@ -107,8 +136,8 @@ function makeWindow(store, patchDb) {
     return { ok: true, status: 200, arrayBuffer: async () => new ArrayBuffer(8) };  /* Preview */
   };
 
-  w.eval(['assets/links.js', 'assets/audio.js', 'assets/playlist.js', 'assets/filters.js',
-    'assets/artist.js', 'assets/app.js']
+  w.eval(['assets/links.js', 'assets/tags.js', 'assets/local.js', 'assets/audio.js',
+    'assets/playlist.js', 'assets/filters.js', 'assets/artist.js', 'assets/app.js']
     .map(read).join('\n;\n')
     + '\n;window.__ev = s => eval(s);');
   return w;
@@ -792,6 +821,157 @@ const dummy = n => ({ t: 'Song ' + n, a: 'Kuenstler ' + n, al: 'Album', y: 2020,
   w2.__ev("setMode('charts')"); await tick(30);
   assert(JSON.stringify(w2.__ev('settings.filters')) === chartRules && !/Playlist/.test(w2.document.querySelector('#filterPanel h2').textContent),
     'Playlist-Filter: zurück im Chartsmodus gelten wieder die alten Regeln');
+
+  /* -------------------------------------------------- Eigene Musik */
+  /* Dateien vom Geraet: nichts wird hochgeladen, Titel und Kuenstler kommen
+     aus den Tags. Gebaut werden sie mit denselben Bausteinen wie in
+     tools/test_tags.js. */
+  const B = require('./test_tags.js');
+  const w5 = makeWindow({});
+  const L = n => w5.__ev(n), l$ = q => w5.document.querySelector(q);
+  await waitFor(() => !w5.document.querySelector('#app').hidden);
+
+  const mkFile = (bytes, name, pfad, mtime) => {
+    const f = new w5.File([bytes], name, { lastModified: mtime || 1700000000000 });
+    if (pfad) Object.defineProperty(f, 'webkitRelativePath', { value: pfad });
+    return f;
+  };
+  const mitTags = (titel, kuenstler, album, jahr, genre) => B.mp3([
+    B.id3v2Frame('TIT2', titel, 3), B.id3v2Frame('TPE1', kuenstler, 3),
+    B.id3v2Frame('TALB', album, 3), B.id3v2Frame('TYER', String(jahr), 3),
+    B.id3v2Frame('TCON', genre, 3),
+  ], 3);
+
+  const musik = [
+    mkFile(mitTags('Erster Song', 'Testband', 'Testalbum', 1994, 'Rock'), '01.mp3', 'Musik/Testband/01.mp3'),
+    mkFile(mitTags('Zweiter Song', 'Testband', 'Testalbum', 1994, 'Rock'), '02.mp3', 'Musik/Testband/02.mp3'),
+    mkFile(mitTags('Dritter Song', 'Andere Band', 'Zweitalbum', 2015, 'Pop'), '03.mp3', 'Musik/Andere Band/03.mp3'),
+    mkFile(mitTags('Vierter Song', 'Andere Band', 'Zweitalbum', 2015, 'Pop'), '04.mp3', 'Musik/Andere Band/04.mp3'),
+    mkFile(mitTags('Fuenfter Song (Karaoke Version)', 'Andere Band', 'Zweitalbum', 2015, 'Pop'), '05.mp3', 'Musik/Andere Band/05.mp3'),
+    mkFile(B.flac(['TITLE=Flacsong', 'ARTIST=Dritte Band', 'DATE=2003', 'GENRE=Jazz']), '06.flac', 'Musik/Dritte Band/06.flac'),
+    mkFile(new Uint8Array(600), '07 - Vierte Band - Ohne Tags.mp3', 'Musik/Vierte Band/07 - Vierte Band - Ohne Tags.mp3'),
+    mkFile(new Uint8Array(400), 'cover.jpg', 'Musik/Vierte Band/cover.jpg'),
+  ];
+
+  assert(l$('#modeSeg [data-v="local"]').disabled, 'Eigene Musik: ohne Dateien ist der Modus gesperrt');
+
+  await w5.__ev('scanFiles')(musik, 'Musik');
+  await waitFor(() => w5.__ev('mode') === 'local', 8000);
+  assert(L('mode') === 'local', 'Eigene Musik: nach dem Einlesen laeuft der Modus');
+  assert(L('LO.songs.length') === 7, 'Eigene Musik: das Bild wird nicht eingelesen (' + L('LO.songs.length') + ' Songs)');
+  assert(L("LO.songs.some(s => s.t === 'Erster Song' && s.a === 'Testband')"),
+    'Eigene Musik: Titel und Kuenstler kommen aus den Tags');
+  assert(L("LO.songs.find(s => s.t === 'Erster Song').y") === 1994
+    && L("LO.songs.find(s => s.t === 'Erster Song').g") === 'Rock',
+    'Eigene Musik: Jahr und Genre ebenfalls');
+  assert(L("LO.songs.some(s => s.t === 'Flacsong' && s.a === 'Dritte Band')"),
+    'Eigene Musik: FLAC wird genauso gelesen');
+  assert(L("LO.songs.some(s => s.t === 'Ohne Tags' && s.a === 'Vierte Band')"),
+    'Eigene Musik: ohne Tags springt der Dateiname ein');
+  assert(L("LO.songs.every(s => s.file && s.path)"), 'Eigene Musik: jede Zeile kennt ihre Datei');
+
+  /* Die Standardregel raeumt Karaokefassungen weg - genau dafuer ist sie da. */
+  assert(L('loFiltered.length') === 6 && L("loFiltered.every(s => !/Karaoke/.test(s.t))"),
+    'Eigene Musik: die Karaokefassung faellt von Haus aus raus (' + L('loFiltered.length') + ')');
+
+  assert(L('slots().length') === 5 && !L('usesTiers()') && L('round')[0].tier.mult === 1,
+    'Eigene Musik: fuenf gleichwertige Plaetze, keine Stufen');
+  assert(new Set(L('round').map(r => r.song.i)).size === 5, 'Eigene Musik: fuenf verschiedene Songs');
+  assert(L("round.every(r => loFiltered.some(x => x.i === r.song.i))"), 'Eigene Musik: alle aus dem eigenen Bestand');
+
+  L("suggest('song')");
+  assert(L('sugAll').length > 0 && L("sugAll.every(s => LO.songs.some(x => x.t === s.t))"),
+    'Eigene Musik: die Vorschlaege kommen nur aus der eigenen Musik');
+
+  /* Abgespielt wird ein Ausschnitt, nicht der ganze Song im Speicher. */
+  await waitFor(() => w5.__ev('round[0].buffer') != null, 8000);
+  const puffer = L('round[0].buffer');
+  const laenge = L('STAGES[STAGES.length - 1] + 8');
+  assert(Math.abs(puffer.duration - laenge) < 0.1,
+    'Eigene Musik: nur der gebrauchte Ausschnitt bleibt im Speicher (' + puffer.duration + ' s statt 180)');
+  assert(L('round[0].offset') === 0, 'Eigene Musik: der Ausschnitt faengt bei null an');
+  assert(Math.abs(L('round[0].at') - 2.47) < 0.1,
+    'Eigene Musik: die Stille am Anfang wird uebersprungen (ab ' + L('round[0].at') + ' s)');
+
+  await w5.__ev('playCurrent')();
+  assert(L('round[0].song.dur') > 100, 'Eigene Musik: die Spielzeit steht nach dem Dekodieren fest');
+
+  /* Aufloesung: Datei anklickbar, Dienste trotzdem daneben */
+  w5.__ev('showReveal(round[0], false)');
+  assert(!l$('#revealFile').hidden && /Musik\//.test(l$('#revealFile').textContent),
+    'Eigene Musik: die Aufloesung nennt die Datei (' + l$('#revealFile').textContent + ')');
+  assert(/^blob:/.test(l$('#revealFile').getAttribute('href')),
+    'Eigene Musik: und laesst sie sich oeffnen');
+  assert(l$('#revealLinks').querySelectorAll('a').length > 5,
+    'Eigene Musik: nachhoeren kann man sie trotzdem woanders');
+  const offen = w5.__urls.size;
+  w5.__ev('closeReveal()'); await tick(20);
+  assert(offen > 0 && w5.__urls.size === 0, 'Eigene Musik: die Objekt-URL wird wieder freigegeben');
+
+  /* Der Songstart heisst hier anders und schneidet neu */
+  assert(l$('#startMode [data-v="hook"]').textContent === 'Anfang des Songs',
+    'Eigene Musik: der Songstart meint hier den Anfang des Songs');
+  l$('#startMode [data-v="random"]').click();
+  await waitFor(() => w5.__ev('round[0].buffer') != null, 8000);
+  assert(L('round[0].at') > 3, 'Eigene Musik: zufaellige Stelle schneidet den Ausschnitt neu (ab ' + L('round[0].at') + ' s)');
+  l$('#startMode [data-v="hook"]').click();
+  await waitFor(() => w5.__ev('round[0].buffer') != null, 8000);
+
+  /* Eigener Regelsatz */
+  const loVorher = L('loFiltered.length');
+  L(`settings.loFilters.push({ mode: 'ohne', type: 'genre', value: 'pop', text: 'Pop' }); applyFilters()`);
+  assert(L('loFiltered').length < loVorher && L("loFiltered.every(s => s.g !== 'Pop')"),
+    'Eigene Musik: eigene Filter greifen');
+  assert(L("settings.filters.every(r => r.type !== 'genre')"),
+    'Eigene Musik: die Chartsregeln bleiben unberuehrt');
+  L(`settings.loFilters = settings.loFilters.filter(r => r.type !== 'genre'); applyFilters()`);
+
+  /* Eine Runde zu Ende spielen: die Statistik zaehlt unter einem Schluessel */
+  for (let i = 0; i < 5; i++) { L('choose(round[active].song); submit()'); await tick(10); L('closeReveal()'); await tick(10); }
+  assert(L('stats.byTier.local') != null && L('stats.byTier.pl1') == null,
+    'Eigene Musik: die Statistik zaehlt sie getrennt');
+  assert(L("statGroups().some(g => g[0] === 'Eigene Musik' && g[1] === 5)"),
+    'Eigene Musik: sie steht als eigene Zeile in der Aufschluesselung');
+  l$('#summaryNext').click(); await tick(30);
+
+  /* Gemerkte Tags: dieselben Dateien, aber ohne Inhalt - trotzdem stimmt alles */
+  const gemerkt = w5.localStorage.getItem('songrate:localmeta');
+  assert(gemerkt && JSON.parse(gemerkt).tracks.length === 7, 'Eigene Musik: die gelesenen Tags werden gemerkt');
+
+  const w6 = makeWindow({ 'songrate:localmeta': gemerkt });
+  await waitFor(() => !w6.document.querySelector('#app').hidden);
+  const leer = musik.slice(0, 7).map(f => {
+    const g = new w6.File([new Uint8Array(f.size)], f.name, { lastModified: 1700000000000 });
+    Object.defineProperty(g, 'webkitRelativePath', { value: f.webkitRelativePath });
+    return g;
+  });
+  await w6.__ev('scanFiles')(leer, 'Musik');
+  await waitFor(() => w6.__ev('mode') === 'local', 8000);
+  assert(w6.__ev("LO.songs.some(s => s.t === 'Erster Song' && s.a === 'Testband')"),
+    'Neustart: die Tags kommen aus dem Speicher, die Dateien werden nicht neu gelesen');
+
+  /* Ein Ordner voller Musik, ins Fenster gezogen */
+  const w7 = makeWindow({});
+  await waitFor(() => !w7.document.querySelector('#app').hidden);
+  const dt = { files: [], items: musik.slice(0, 7).map(f => ({ webkitGetAsEntry: () => null })) };
+  dt.files = musik.slice(0, 7).map(f => {
+    const g = new w7.File([new Uint8Array(f.size)], f.name, { lastModified: 1700000000000 });
+    Object.defineProperty(g, 'webkitRelativePath', { value: f.webkitRelativePath });
+    return g;
+  });
+  const ev = new w7.Event('drop');
+  Object.defineProperty(ev, 'dataTransfer', { value: dt });
+  w7.document.dispatchEvent(ev);
+  await waitFor(() => w7.__ev('mode') === 'local', 8000);
+  assert(w7.__ev('mode') === 'local' && w7.__ev('LO.songs.length') === 7,
+    'Ziehen und Ablegen: Musikdateien landen in der eigenen Mediathek');
+  assert(w7.__ev('PL') === null, 'Ziehen und Ablegen: sie werden nicht als Playlist gelesen');
+
+  /* Wieder weg damit */
+  w7.document.querySelector('#loClear').click(); await tick(30);
+  assert(w7.__ev('LO') === null && w7.__ev('mode') === 'charts'
+    && w7.document.querySelector('#modeSeg [data-v="local"]').disabled,
+    'Eigene Musik: entfernen schaltet zurueck und sperrt den Modus');
 
   /* ------------------------------------- Grosse Songliste bleibt flott */
   /* Nach ein paar Datenlaeufen stehen statt 2000 vielleicht 8000 Songs in der

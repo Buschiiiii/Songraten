@@ -63,6 +63,57 @@ const Audio2 = (() => {
     return p;
   }
 
+  /* ---------------------------------------------------- Lokale Dateien */
+
+  /* Eine lokale Datei ist ein ganzer Song, keine 30-Sekunden-Preview. Fuenf
+     davon komplett dekodiert sind schnell ein halbes Gigabyte - eine Minute
+     Stereo belegt als Float rund 20 MB. Deshalb wird zwar die ganze Datei
+     dekodiert (aus einem Ausschnitt der Rohdatei bekaeme man bei FLAC oder
+     AAC nichts Brauchbares heraus), aber sofort auf den gebrauchten
+     Ausschnitt zusammengeschnitten. Der grosse Puffer faellt danach weg. */
+  function excerpt(full, from, seconds) {
+    if (!full || !full.getChannelData) return full;
+    const rate = full.sampleRate || 44100;
+    const start = Math.max(0, Math.min(from, Math.max(0, full.duration - 0.05)));
+    const at = Math.floor(start * rate);
+    const len = Math.max(1, Math.min(Math.ceil(seconds * rate), full.length - at));
+    const out = ensure().createBuffer(full.numberOfChannels, len, rate);
+    for (let ch = 0; ch < full.numberOfChannels; ch++) {
+      out.getChannelData(ch).set(full.getChannelData(ch).subarray(at, at + len));
+    }
+    return out;
+  }
+
+  /* Viele Aufnahmen fangen mit Stille an - 0,01 s davon waeren als Raetsel
+     eine Zumutung. Also bis zum ersten hoerbaren Ton vorspulen. */
+  function firstSound(full) {
+    if (!full || !full.getChannelData) return 0;
+    const rate = full.sampleRate || 44100;
+    const data = full.getChannelData(0);
+    const bis = Math.min(data.length, rate * 90);
+    for (let i = 0; i < bis; i += 8) {
+      if (Math.abs(data[i]) > 0.02) return Math.max(0, i / rate - 0.03);
+    }
+    return 0;
+  }
+
+  /* Zufaellige Stelle, aber nicht im Ausklang und nicht im Vorspann. */
+  function randomStart(full, seconds) {
+    const dur = full.duration || 0;
+    const von = Math.min(dur * 0.1, 30);
+    const bis = Math.max(von, dur * 0.85 - seconds);
+    return von + Math.random() * Math.max(0, bis - von);
+  }
+
+  async function loadFile(file, opts) {
+    opts = opts || {};
+    const seconds = opts.seconds || 20;
+    const buf = await file.arrayBuffer();
+    const full = await decode(ensure(), buf);
+    const start = opts.start === 'random' ? randomStart(full, seconds) : firstSound(full);
+    return { buffer: excerpt(full, start, seconds), start, duration: full.duration || 0 };
+  }
+
   function stop() {
     if (current) {
       try { current.stop(); } catch (e) {}
@@ -101,5 +152,6 @@ const Audio2 = (() => {
 
   function warm(url) { load(url).catch(() => {}); }
 
-  return { load, play, stop, setVolume, warm, ensure, unlock, state: () => (ctx ? ctx.state : 'none') };
+  return { load, loadFile, excerpt, firstSound, play, stop, setVolume, warm, ensure, unlock,
+           state: () => (ctx ? ctx.state : 'none') };
 })();

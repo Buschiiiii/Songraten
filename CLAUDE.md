@@ -275,6 +275,78 @@ Modus gesperrt. Künstler-IDs werden hier lokal vergeben: der komplette
 Künstlerstring plus die Einzelnamen — ein falscher Schnitt färbt hier
 höchstens einen Tipp gelb, anders als in der Pipeline.
 
+## Eigene Musik vom Gerät
+
+Sechster Modus, unabhängig von allem anderen: gespielt wird aus Dateien, die
+auf dem Gerät liegen. **Hochgeladen wird nichts** — der Browser darf die
+gewählten Dateien lesen, das reicht, und genau deshalb passt der Modus zur
+harten Randbedingung.
+
+Zwei Wege hinein, weil nicht jeder Browser beide kann:
+
+1. `showDirectoryPicker()` (Chrome, Edge): der Ordner-Handle landet in
+   IndexedDB (`songraten` → `handles` → `dir`) und wird beim nächsten Besuch
+   wieder geöffnet. Steht die Freigabe noch (`queryPermission` = `granted`),
+   ist die Mediathek einfach da; sonst erscheint *Ordner wieder freigeben* —
+   `requestPermission` braucht eine Nutzergeste, das lässt sich nicht umgehen.
+2. `<input webkitdirectory>`, einzelne Dateien und Ziehen-und-Ablegen
+   (überall, auch Safari und Firefox). Nach dem Neuladen muss der Ordner
+   erneut gewählt werden; der Browser gibt keine Dateirechte über die Sitzung
+   hinaus.
+
+Damit der zweite Weg nicht jedes Mal Minuten kostet, liegen die gelesenen
+Tags in `songrate:localmeta`. Erkannt wird eine Datei an Pfad, Größe und
+Änderungsdatum — dann muss sie nicht noch einmal geöffnet werden.
+
+### Tags selbst lesen
+
+`assets/tags.js` zerlegt ID3v2 (2.2/2.3/2.4, auch unsynchronisiert und
+UTF-16), ID3v1, die Atome von MP4/M4A, Vorbis-Kommentare in FLAC, Ogg und
+Opus sowie die INFO-Liste in WAV. Ein Paket dafür wäre bequemer, ist aber
+verboten. Gelesen wird immer nur der Anfang der Datei über `slice()` — ein
+Album FLACs sind schnell zwei Gigabyte.
+
+Das Titelbild wird **nicht** mitgeschleppt, sondern nur seine Lage gemerkt
+(`{off, len, type}`) und erst bei der Auflösung herausgeschnitten. Tausend
+Cover im Speicher wären sonst der Preis für eine Mediathek.
+
+Findet sich nichts, entscheidet der Pfad: „Künstler/Album/03 - Titel.flac"
+sagt genug. Die führende Titelnummer fällt nur weg, wenn sie sich als solche
+zu erkennen gibt (führende Null oder ein Trennzeichen) — sonst verlöre
+„99 Luftballons" seinen Namen.
+
+`tools/test_tags.js` baut sich zu jedem Format eine Datei und prüft das
+Ergebnis; die Bausteine nutzt `test_ui.js` mit.
+
+### Warum der Ausschnitt gleich beim Dekodieren fällt
+
+Eine lokale Datei ist ein ganzer Song, keine 30-Sekunden-Preview. Eine Minute
+Stereo belegt dekodiert rund 20 MB — fünf Songs einer Runde wären ein halbes
+Gigabyte. `Audio2.loadFile()` dekodiert deshalb zwar die ganze Datei (aus
+einem Ausschnitt der **Rohdatei** bekäme man bei FLAC oder AAC nichts
+Brauchbares), schneidet aber sofort auf 23 Sekunden zusammen und lässt den
+großen Puffer fallen. Aus demselben Grund wird im Modus **nacheinander**
+geladen, nicht alle fünf gleichzeitig (`roundToken` bricht ab, wenn
+zwischendurch eine neue Runde beginnt).
+
+Geschnitten wird immer nach der längsten Stufe, nicht nach der gerade
+eingeschalteten — sonst fehlt Ton, wenn mitten in der Runde eine längere
+Stufe dazukommt.
+
+`firstSound()` überspringt die Stille am Anfang: 0,01 s Rauschen wären als
+Rätsel eine Zumutung. Damit spielt der Modus als einziger tatsächlich „ab
+Songanfang" wie das Original — mit Apples Previews geht das nicht.
+
+### Sonst wie die Playlist
+
+Keine Stufen, fünf zufällige Songs, eigener Regelsatz (`settings.loFilters`),
+Vorschläge nur aus der eigenen Musik, eigene Zeile in der Statistik
+(`local`). Die Voreinstellung *ohne Instrumental* räumt Karaoke- und
+Instrumentalfassungen weg, die ein gezogenes Album gern mitbringt. Unter
+`Local.MIN` (5) Songs bleibt der Modus gesperrt. Die Auflösung nennt die
+Datei und öffnet sie auf Klick über eine Objekt-URL, die beim Schließen
+wieder freigegeben wird.
+
 ## Nachhören: Links statt eines Dienstes
 
 Die Auflösung verlinkte früher nur zu Apple Music. Abfragen lässt sich keiner
@@ -340,8 +412,8 @@ Frontend hält ein fehlendes Feld zusätzlich aus.
 
 Links Kopfzeile (Marke, Stufenliste, Neuwürfeln, Rundenpunkte) und darunter
 die Panels *Stufen* und *Statistik*; in der Mitte das Spielfeld; rechts
-*Modus*, *Künstler*, *Nachhören bei*, *Spielweise*, *Songstart*, *Lautstärke*
-und ganz unten die *Songauswahl*.
+*Modus*, *Künstler*, *Eigene Musik*, *Nachhören bei*, *Spielweise*,
+*Songstart*, *Lautstärke* und ganz unten die *Songauswahl*.
 
 Auf schmalen Bildschirmen wird `.col-left` zu `display:contents`, damit
 `.left-head` (order 1) oben bleibt und `.left-panels` (order 4) hinter das
@@ -403,7 +475,8 @@ vorbeiscrollen, um den Abspielknopf zu sehen.
    `songrate:stats`,
    `songrate:recent` (letzte 60 Songs, gegen Wiederholungen),
    `songrate:playlist` (aufgelöste Playlist), `songrate:artists`
-   (geladene Künstlerkataloge), `songrate:plcache`
+   (geladene Künstlerkataloge), `songrate:localmeta` (gelesene Tags der
+   eigenen Musik), `songrate:plcache`
    (Titel → iTunes-Treffer), `songrate:plqueue` (Titelliste eines noch nicht
    fertigen Laufs). Das Präfix bleibt
    `songrate:`, obwohl die Seite Songraten heißt — Umbenennen würde alle
@@ -418,19 +491,38 @@ Streamgrenzen, Jahrescharts-Songs ohne Stufe mit Jahresplatz, Künstler-IDs,
 Bekanntheit, zusammengeführte Doppel. Dazu laufen die `--selftest`-Parser aller
 Skripte. Beide Workflows starten damit, bevor sie irgendwo anfragen.
 
+## Testen der Tags ohne Musikdateien
+
+`node tools/test_tags.js` baut sich zu jedem Format eine Datei im Speicher
+(ID3v2.2/2.3/2.4, ID3v1, M4A, FLAC, Ogg, Opus, WAV, dazu kaputte Tags und
+Dateinamen) und prüft, was `assets/tags.js` daraus macht — auch, ob die
+gemerkte Stelle des Titelbilds wirklich das Bild trifft. Läuft ohne jsdom.
+Die Bausteine exportiert die Datei, `test_ui.js` baut damit die Testmediathek.
+
 ## Testen ohne Browser
 
 Es gibt keinen Browser in der Entwicklungsumgebung, aber jsdom reicht und hat
 bisher jeden Fehler gefunden: `index.html` laden, `AudioContext` mocken,
-`fetch` auf die lokale `songs.json` biegen, dann `audio.js`, `playlist.js`,
-`filters.js` und `app.js` auswerten und die Handler direkt aufrufen. Genau das macht `tools/test_ui.js`
-(`npm i jsdom`, dann `node tools/test_ui.js`) — es spielt eine Runde in beiden
-Modi durch. Zwei Stolpersteine dabei: alle vier
-Skripte in **einem** `eval` zusammenhängen (sonst sieht `app.js` weder `Audio2`
-noch `Playlist` oder `Filters`), und `getContext` für das Konfetti-Canvas stubben. Vor jeder
-Auslieferung einmal durchspielen: Runde starten, raten, überspringen, auflösen,
-neue Runde, Stufen umschalten, Neuwürfeln, Filter setzen und entfernen,
-Playlist laden, im Playlist-Modus eine Runde beenden, zurückschalten.
+`fetch` auf die lokale `songs.json` biegen, dann alle Skripte auswerten und
+die Handler direkt aufrufen. Genau das macht `tools/test_ui.js` (`npm i
+jsdom`, dann `node tools/test_ui.js`) — es spielt jeden Modus einmal durch.
+
+Vier Stolpersteine dabei:
+
+1. **Alle** Skripte müssen in **einem** `eval` zusammenhängen, sonst sieht
+   `app.js` weder `Audio2` noch `Playlist`, `Filters`, `Links`, `Tags`,
+   `Local` oder `Artist`.
+2. `getContext` für das Konfetti-Canvas stubben.
+3. `URL.createObjectURL` gibt es in jsdom nicht — der Test zählt stattdessen
+   mit, was geöffnet und wieder freigegeben wurde.
+4. `decodeAudioData` muss einen echten Puffer nachbilden (Kanäle, Rate,
+   `getChannelData`), sonst lässt sich der Ausschnitt für eigene Dateien
+   nicht prüfen. Am Byteumfang unterscheidet der Mock Preview von Datei.
+
+Vor jeder Auslieferung einmal durchspielen: Runde starten, raten,
+überspringen, auflösen, neue Runde, Stufen umschalten, Neuwürfeln, Filter
+setzen und entfernen, Playlist laden, im Playlist-Modus eine Runde beenden,
+Künstler laden, eigene Musik einlesen, zurückschalten.
 
 ## Automatische Aktualisierung
 
