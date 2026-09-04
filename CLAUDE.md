@@ -375,10 +375,13 @@ zeigt es.
 
 ## Offene Punkte
 
-1. **kworb-Parser ungetestet am echten Objekt.** `fetch_kworb.py` erzeugt die
-   Vorstufe wieder selbst, die HTML-Struktur ist aber aus der Ferne geraten und
-   nur gegen nachgebaute Tabellen geprüft. Erkennt es zu wenig, bricht es ab —
-   der erste echte Lauf von *Charts neu bauen* zeigt, ob es passt.
+1. **Apple drosselt den Katalog-Schritt.** *Charts neu bauen* lief durch, aber
+   in 25 Minuten kamen nicht alle Kataloge zusammen — der erste Neubau hatte
+   35 Chartsongs weniger, „Bohemian Rhapsody" verlor dabei seine Stufe. Die
+   Prüfung lässt so einen Lauf inzwischen nicht mehr durch (weniger als 99 %
+   der bisherigen Chartsongs = kein Commit), aber der eigentliche Weg zu einem
+   vollständigen Bestand sind mehrere Läufe hintereinander: der Cache behält
+   die Kataloge.
 2. **Playlist-Modus.** Steht (siehe oben). Offen bleibt: die Trefferquote der
    iTunes-Suche ist bei Remixen und Live-Versionen mager. Wie lange Apple nach
    einem 403 wirklich dichthält, ist nicht dokumentiert — die Wartestufen sind
