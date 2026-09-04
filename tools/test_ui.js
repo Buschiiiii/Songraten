@@ -538,7 +538,11 @@ const dummy = n => ({ t: 'Song ' + n, a: 'Kuenstler ' + n, al: 'Album', y: 2020,
   add('nur', 'decade', duenn);
   assert(F('activePool()').length < 30 && $$('#filterCount').classList.contains('warn')
     && /Nur \d+ Songs/.test($$('#filterCount').textContent), 'Filter: kleiner Pool warnt (' + $$('#filterCount').textContent + ')');
-  assert(F('TIERS.some(t => byTier[t.id].length === 0)'), 'Filter: dabei bleibt mindestens eine Stufe leer');
+  /* Ob eine Stufe wirklich leer laeuft, haengt am Datenstand - die Regel
+     dahinter laesst sich aber direkt pruefen: eine leere Stufe holt Ersatz. */
+  F("byTier.impossible = []; newRound()");
+  await tick(30);
+  assert(F('round').every(r => r.song), 'Filter: eine leere Stufe bekommt trotzdem einen Song');
 
   F('newRound()'); await tick(30);
   const small = new Set(F('chartFiltered').map(s => s.i));
