@@ -161,10 +161,11 @@ print(f'  {time.time()-t0:.0f}s', flush=True)
 
 
 def year_candidates():
-    """Kandidaten aus yearcharts.json, sofern vorhanden."""
-    if not os.path.exists('yearcharts.json'):
+    """Kandidaten aus den Jahrescharts, sofern vorhanden."""
+    path = next((p for p in ('data/yearcharts.json', 'yearcharts.json') if os.path.exists(p)), None)
+    if not path:
         return []
-    rows = json.load(open('yearcharts.json', encoding='utf-8'))
+    rows = json.load(open(path, encoding='utf-8'))
     known = {norm(k): k for k in CAT}
     best = {}
     for r in rows:

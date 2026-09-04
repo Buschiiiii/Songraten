@@ -29,7 +29,7 @@ import urllib.parse
 import urllib.request
 
 CACHE = '.cache/yearcharts'
-OUT = 'yearcharts.json'
+OUT = 'data/yearcharts.json'
 UA = {'User-Agent': 'Songraten/1.0 (statisches Songratespiel; Kontakt ueber GitHub)'}
 API = 'https://en.wikipedia.org/w/api.php'
 
@@ -157,6 +157,7 @@ if __name__ == '__main__':
         all_rows += rows
         print(f'  {year}: {len(rows)} Songs', flush=True)
 
+    os.makedirs(os.path.dirname(OUT), exist_ok=True)
     all_rows.sort(key=lambda r: (r['year'], r['rank']))
     json.dump(all_rows, open(OUT, 'w', encoding='utf-8'), ensure_ascii=False)
     years = sorted({r['year'] for r in all_rows})

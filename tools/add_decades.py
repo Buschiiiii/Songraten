@@ -34,7 +34,7 @@ from dedupe import merge_duplicates
 from fame import add_fame
 
 SONGS = 'data/songs.json'
-YEARS = 'yearcharts.json'
+YEARS = 'data/yearcharts.json'
 CACHE = '.cache/decade_lookup.json'
 PAUSE = 0.26
 UA = {'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)'}

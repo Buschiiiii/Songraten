@@ -88,11 +88,20 @@ Unter 130 Mio. wird es unfair statt schwer. Der Pool je Stufe wird mit festem
 Seed gemischt, nicht nach Streams sortiert — sonst füllt sich jede Stufe nur
 vom oberen Rand ihres Bereichs.
 
-## Jahrzehnte-Modus
+## Jahrzehnte- und Genremodus
 
-Dritter Modus neben Charts und Playlist. Oben in der Mitte stehen Pfeile, die
-durch die Jahrzehnte springen; gespielt wird nur aus dem gewählten. Jahrzehnte
-mit weniger als `DEC_MIN` (10) Songs stehen gar nicht erst zur Wahl.
+Zwei Modi mit derselben Bedienung: oben in der Mitte stehen Pfeile (`#pickBar`),
+die durch die Jahrzehnte bzw. Genres springen; gespielt wird nur aus dem
+gewählten. Der Code hält beide zusammen — `PICKED`, `listFor(modus)`,
+`currentPick()`, `stepPick()` —, unterschieden wird nur beim Zählen und
+Vergleichen (`inPick`). Zu dünn Besetztes steht gar nicht erst zur Wahl:
+`DEC_MIN` (10) für Jahrzehnte, `GEN_MIN` (20) für Genres, die sich nicht über
+die Zeit verteilen.
+
+**Unter `TIER_MIN × 5` Songs fallen die Stufen weg.** Fünf Schwierigkeitsstufen
+aus zwölf Songs sind keine Stufen, sondern eine Verlosung — dann wird gespielt
+wie in der Playlist: fünf zufällige Songs, Faktor 1,0, Plätze statt Stufen
+(`usesTiers()`, `FLAT_SLOTS`). Die Leiste schreibt „ohne Stufen" dazu.
 
 **Die Stufen sind hier relativ.** Die Chartsstufen hängen an absoluten
 Streamzahlen — für ein einzelnes Jahrzehnt taugt das nicht, Spotify zählt erst
@@ -131,6 +140,18 @@ Skripte holen das nach, beide unabhängig von der kworb-Pipeline:
 Wer die volle Pipeline neu baut, bekommt dasselbe über `match_local.py` — es
 liest `yearcharts.json` mit, wenn sie da ist, und `fetch_catalogs.py` holt die
 Kataloge der zusätzlichen Künstler.
+
+## Genres zusammenfassen
+
+Apple vergibt für dasselbe mehrere Genres: „Hip-Hop/Rap" (349 Songs),
+„Hip-Hop" (14) und „Rap" (4) standen nebeneinander, wer Rap loswerden wollte,
+musste drei Häkchen setzen. `GENRE_ALIAS` in `filters.js` zieht solche Fälle
+zusammen (`Filters.genreOf()`), aus 43 Genres werden 35. Zusammengefasst wird
+nur, was wirklich dasselbe meint — „Latin" und „Latin Urban" bleiben getrennt.
+
+Gespeicherte Regeln zeigen sonst ins Leere, deshalb `Filters.migrate()`: beim
+Start werden Genre-Regeln auf den neuen Namen gezogen und dabei entstehende
+Doppel entfernt.
 
 ## Songauswahl (Filter)
 
@@ -219,6 +240,8 @@ höchstens einen Tipp gelb, anders als in der Pipeline.
 ## Spielregeln
 
 - 5 Songs pro Runde, einer je Stufe, jeder mit eigenem Fortschritt.
+- Auf der letzten Stufe heißt der Knopf **Aufgeben**, nicht Überspringen —
+  dort wird ja nichts mehr übersprungen.
 - Falscher Tipp **oder** Überspringen schaltet eine Stufe weiter.
 - Anzahl Versuche = Anzahl aktiver Stufen. Eine Stufe abzuschalten kostet
   deshalb auch einen Versuch, das ist Absicht.
@@ -251,7 +274,14 @@ kworb geprüft, plus die `NEVER_SPLIT`-Liste in `match_local.py`.
    wie die bisherige. Nie `newRound()` aus einer Einstellung heraus aufrufen.
 3. **`.stage-progress` darf in `render()` nicht mitgelöscht werden.** `render()`
    entfernt gezielt nur `.stage-seg`, sonst reißt die laufende Animation ab.
-4. **Der helle Balken muss die Zeit umrechnen, nicht linear wachsen.** Die
+4. **Abgeschaltete Stufen bekommen keinen eigenen Kasten.** Ihre Sekunden
+   gehören zur nächsten aktiven Stufe, die sie ja mitspielt — ein grauer Kasten
+   mit Trennlinie würde eine Grenze zeigen, die es beim Hören nicht gibt.
+   `segmentWidths()` schlägt die Breite deshalb der folgenden Stufe zu.
+   `barStops()` setzt für die verschluckten Stufen trotzdem Stützpunkte, sonst
+   kröche der Balken innerhalb eines verschmolzenen Kastens linear statt
+   logarithmisch.
+5. **Der helle Balken muss die Zeit umrechnen, nicht linear wachsen.** Die
    Leiste ist logarithmisch geteilt, die Zeit läuft gleichmäßig — ein linear
    wachsender Balken hängt fast die ganze Wiedergabe zu weit links, weil er
    sich durch die kurzen Abschnitte quält. `sweepBar()` rechnet deshalb pro
@@ -259,10 +289,10 @@ kworb geprüft, plus die `NEVER_SPLIT`-Liste in `match_local.py`.
    er genau auf der 0,01s-Kante, nach 2 s auf der 2s-Kante. Stufen unter 0,4 s
    laufen optisch über 0,4 s ab, sonst sieht man nichts — die Breite bleibt
    korrekt, nur das Tempo ist gestreckt.
-5. **Der Cursor steht dauerhaft im Suchfeld.** Kürzel dürfen deshalb keine
+6. **Der Cursor steht dauerhaft im Suchfeld.** Kürzel dürfen deshalb keine
    Schriftzeichen sein: ↑ spielt ab, Enter rät, Shift+Enter überspringt,
    ←→ wechselt die Stufe (nur bei leerem Feld), Cmd+Enter würfelt neu.
-6. **Die Vorschlagsliste wird häppchenweise gezeichnet** (`SUG_PAGE`), sonst
+7. **Die Vorschlagsliste wird häppchenweise gezeichnet** (`SUG_PAGE`), sonst
    sind bei „billie" zwar 30 Treffer da, aber nur die ersten acht erreichbar.
    Nachgeladen wird beim Scrollen ans Ende, beim Klick auf „n weitere" und
    wenn man mit ↓ unten anstößt; die Auswahl scrollt über `scrollIntoView`
@@ -271,7 +301,7 @@ kworb geprüft, plus die `NEVER_SPLIT`-Liste in `match_local.py`.
    globale Klick-Handler muss `isConnected` prüfen — der „weitere"-Knopf
    verschwand sonst beim Klick aus dem DOM und galt als Klick daneben, was
    die Liste sofort wieder schloss.
-7. localStorage-Schlüssel: `songrate:settings` (enthält auch `filters`),
+8. localStorage-Schlüssel: `songrate:settings` (enthält auch `filters`),
    `songrate:stats`,
    `songrate:recent` (letzte 60 Songs, gegen Wiederholungen),
    `songrate:playlist` (aufgelöste Playlist), `songrate:plcache`
@@ -294,12 +324,28 @@ Auslieferung einmal durchspielen: Runde starten, raten, überspringen, auflösen
 neue Runde, Stufen umschalten, Neuwürfeln, Filter setzen und entfernen,
 Playlist laden, im Playlist-Modus eine Runde beenden, zurückschalten.
 
+## Automatische Aktualisierung
+
+`.github/workflows/update-songs.yml` läuft monatlich (und auf Knopfdruck über
+*Actions → Songs aktualisieren → Run workflow*): Jahrescharts holen, Titel bei
+Apple suchen, Doppelte zusammenführen, `data/` committen. `.cache` liegt im
+Actions-Cache, ein Lauf macht also dort weiter, wo der letzte aufhörte.
+
+Vor dem Commit prüft ein Schritt die Datei: mindestens 1900 Songs, jeder mit
+Titel und Preview, und nie weniger als vorher. Lieber nichts committen als eine
+halbe `songs.json` ausliefern — die Seite bliebe weiß.
+
+**Das erweitert nur den Jahrzehnte- und Genrebestand.** Der Chartsmodus hängt
+an kworb, und dessen Vorstufe (`artists_top.json`, `candidates.json`, die
+HTML-Schnappschüsse in `.cache`) liegt nicht im Repo. Ob Apple und Wikipedia
+aus GitHubs Rechenzentren überhaupt antworten, ist ungetestet — der erste Lauf
+zeigt es.
+
 ## Offene Punkte
 
-1. **Automatische Aktualisierung.** `songs.json` ist ein Schnappschuss, neue
-   Releases fehlen. Geplant: GitHub Actions, das monatlich beide Scripte laufen
-   lässt und die neue `songs.json` selbst committet. Vorher prüfen, ob Apple
-   und kworb Anfragen aus GitHubs Rechenzentren durchlassen.
+1. **Chartsdaten.** Für einen frischen Chartsbestand fehlt ein Skript, das
+   kworb selbst abgreift und `artists_top.json` und `candidates.json` erzeugt.
+   Ohne das lässt sich `match_local.py` nirgends neu starten.
 2. **Playlist-Modus.** Steht (siehe oben). Offen bleibt: die Trefferquote der
    iTunes-Suche ist bei Remixen und Live-Versionen mager. Wie lange Apple nach
    einem 403 wirklich dichthält, ist nicht dokumentiert — die Wartestufen sind

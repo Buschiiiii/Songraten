@@ -1,0 +1,85 @@
+# Holt neue Songs fuer den Jahrzehnte- und Genremodus und committet sie.
+#
+# Warum ueberhaupt automatisch: die Titelsuche bei Apple braucht viele
+# Anfragen, und Apple drosselt nach einigen hundert. Ueber mehrere Laeufe
+# verteilt faellt das nicht auf - der Cache im Repo-Cache haelt fest, was
+# schon gefragt wurde.
+#
+# Der Lauf laesst sich jederzeit von Hand starten:
+#   Repo -> Actions -> "Songs aktualisieren" -> Run workflow
+
+name: Songs aktualisieren
+
+on:
+  schedule:
+    - cron: '17 4 1 * *'      # jeden Ersten um 4:17 UTC
+  workflow_dispatch:
+    inputs:
+      seconds:
+        description: 'Sekunden fuer die Titelsuche bei Apple'
+        default: '1500'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: update-songs
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      # Gefundene Titel und geladene Wikipedia-Seiten ueberleben so den Lauf.
+      - name: Cache
+        uses: actions/cache@v4
+        with:
+          path: .cache
+          key: songraten-cache-${{ github.run_id }}
+          restore-keys: songraten-cache-
+
+      - name: Jahrescharts von Wikipedia
+        run: python3 tools/fetch_yearcharts.py
+
+      - name: Titel bei Apple suchen
+        run: python3 tools/add_decades.py ${{ github.event.inputs.seconds || 1500 }}
+
+      - name: Doppelte zusammenfuehren
+        run: python3 tools/clean_songs.py
+
+      # Lieber nichts committen als eine halbe Datei ausliefern: die Seite
+      # bleibt weiss, wenn songs.json kaputt ist.
+      - name: Datei pruefen
+        run: |
+          python3 - <<'PY'
+          import json, subprocess, sys
+          d = json.load(open('data/songs.json', encoding='utf-8'))
+          songs = d['songs']
+          assert len(songs) >= 1900, f'nur {len(songs)} Songs - das kann nicht stimmen'
+          assert all(s.get('p') and s.get('t') for s in songs), 'Songs ohne Titel oder Preview'
+          alt = subprocess.run(['git', 'show', 'HEAD:data/songs.json'],
+                               capture_output=True, text=True).stdout
+          vorher = len(json.loads(alt)['songs']) if alt else 0
+          assert len(songs) >= vorher, f'{vorher} -> {len(songs)} Songs, es wurden welche verloren'
+          print(f'{vorher} -> {len(songs)} Songs')
+          PY
+
+      - name: Committen
+        run: |
+          if git diff --quiet -- data/; then
+            echo "nichts Neues"
+            exit 0
+          fi
+          git config user.name  'github-actions[bot]'
+          git config user.email 'github-actions[bot]@users.noreply.github.com'
+          git add data/
+          git commit -m "Songs aktualisiert ($(date +%Y-%m-%d))"
+          git push

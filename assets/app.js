@@ -12,15 +12,19 @@ const POINTS = { 0.01: 1000, 0.1: 850, 0.5: 700, 2: 500, 8: 300, 15: 150 };
 const RECENT_MAX = 60;
 /* Im Playlist-Modus gibt es keine Schwierigkeitsstufen, sondern fuenf
    zufaellige Songs aus der eigenen Liste - alle mit demselben Faktor. */
-const PL_SLOTS = [1, 2, 3, 4, 5].map(n => ({ id: 'pl' + n, label: 'Song ' + n, short: String(n), mult: 1.0 }));
+/* Fuenf gleichwertige Plaetze statt der Schwierigkeitsstufen - fuer die
+   Playlist und fuer Jahrzehnte oder Genres, in denen zu wenige Songs fuer eine
+   sinnvolle Stufenleiter stecken. */
+const FLAT_SLOTS = [1, 2, 3, 4, 5].map(n => ({ id: 'pl' + n, label: 'Song ' + n, short: String(n), mult: 1.0 }));
+const TIER_MIN = 5;       /* so viele Songs braucht jede Stufe mindestens */
 
 const $ = s => document.querySelector(s);
 const el = (t, c, x) => { const n = document.createElement(t); if (c) n.className = c; if (x != null) n.textContent = x; return n; };
 
 let DB = null;            /* { artists:[], songs:[] } */
 let PL = null;            /* aufgeloeste Playlist, gleiche Form wie DB */
-let mode = 'charts';      /* 'charts' | 'decades' | 'playlist' */
-let decFiltered = [];     /* Songs des gewaehlten Jahrzehnts nach Filtern */
+let mode = 'charts';      /* 'charts' | 'decades' | 'genres' | 'playlist' */
+let pickFiltered = [];    /* Songs des gewaehlten Jahrzehnts bzw. Genres */
 let byTier = {};
 let filtered = [];        /* alles, was nach den Filtern uebrig bleibt */
 let chartFiltered = [];   /* davon die mit fester Stufe - nur die spielen die Charts */
@@ -31,18 +35,89 @@ let filterMode = 'nur';   /* Wirkung, die ein Klick in den Listen bekommt */
    andere Genres und Kuenstler mit als die Charts, und wer dort „nur 1960er"
    gesetzt hat, soll seine Playlist nicht leer vorfinden. */
 const activeFilters = () => (mode === 'playlist' ? settings.plFilters : settings.filters);
-const activePool = () => (mode === 'playlist' ? plFiltered : mode === 'decades' ? decFiltered : chartFiltered);
-/* Ein Jahrzehnt braucht genug Songs, sonst ist die Runde nach zwei Partien
-   auswendig gelernt. Was darunter liegt, steht gar nicht erst zur Wahl. */
+const PICKED = ['decades', 'genres'];   /* Modi mit Auswahlleiste oben */
+const activePool = () => (mode === 'playlist' ? plFiltered
+  : PICKED.includes(mode) ? pickFiltered : chartFiltered);
+
+/* Ein Jahrzehnt oder Genre braucht genug Songs, sonst ist die Runde nach zwei
+   Partien auswendig gelernt. Genres brauchen mehr, weil sie sich nicht ueber
+   die Zeit verteilen. */
 const DEC_MIN = 10;
-const decadesAvailable = () => {
-  const cnt = new Map();
-  filtered.forEach(s => {
-    const d = Filters.decadeOf(s);
-    if (d) cnt.set(d, (cnt.get(d) || 0) + 1);
-  });
-  return [...cnt].filter(([, n]) => n >= DEC_MIN).map(([d]) => d).sort((a, b) => a - b);
-};
+const GEN_MIN = 20;
+
+/* Die Auswahl fuer einen Modus als [{ value, text }]. */
+function listFor(m) {
+  const cnt = new Map(), label = new Map();
+  const collect = (key, text) => {
+    if (!key) return;
+    cnt.set(key, (cnt.get(key) || 0) + 1);
+    label.set(key, text);
+  };
+  if (m === 'decades') {
+    filtered.forEach(s => { const d = Filters.decadeOf(s); collect(d, d + 'er'); });
+    return [...cnt].filter(([, n]) => n >= DEC_MIN).sort((a, b) => a[0] - b[0])
+      .map(([v]) => ({ value: v, text: label.get(v) }));
+  }
+  if (m === 'genres') {
+    filtered.forEach(s => { const g = Filters.genreOf(s); collect(norm(g), g); });
+    return [...cnt].filter(([, n]) => n >= GEN_MIN).sort((a, b) => b[1] - a[1])
+      .map(([v]) => ({ value: v, text: label.get(v) }));
+  }
+  return [];
+}
+
+const pickList = () => listFor(mode);
+const pickSetting = () => (mode === 'genres' ? settings.genre : settings.decade);
+const inPick = (s, value) => (mode === 'decades'
+  ? Filters.decadeOf(s) === value
+  : norm(Filters.genreOf(s)) === value);
+
+/* Fuenf Stufen brauchen genug Songs. Reicht es nicht, wird das Jahrzehnt oder
+   Genre wie eine Playlist gespielt: fuenf zufaellige Songs, keine Stufen. */
+const usesTiers = () => (mode === 'charts'
+  || (PICKED.includes(mode) && pickFiltered.length >= TIER_MIN * TIERS.length));
+
+/* Das gespeicherte Jahrzehnt oder Genre kann durch Filter oder neue Daten
+   wegfallen - dann greift das naechstliegende. */
+function currentPick() {
+  const list = pickList();
+  if (!list.length) return null;
+  const want = pickSetting();
+  const hit = list.find(o => String(o.value) === String(want));
+  if (hit) return hit;
+  if (mode === 'decades') {
+    return list.reduce((best, o) =>
+      Math.abs(o.value - want) < Math.abs(best.value - want) ? o : best, list[0]);
+  }
+  return list[0];
+}
+
+function stepPick(dir) {
+  const list = pickList();
+  if (list.length < 2) return;
+  const now = currentPick();
+  const i = list.findIndex(o => String(o.value) === String(now.value));
+  const next = list[(i + dir + list.length) % list.length].value;
+  if (mode === 'genres') settings.genre = next; else settings.decade = next;
+  save('settings', settings);
+  applyFilters();
+  renderSlots();
+  newRound();
+}
+
+function renderPicker() {
+  const bar = $('#pickBar');
+  if (!bar) return;
+  bar.hidden = !PICKED.includes(mode);
+  if (bar.hidden) return;
+  const now = currentPick();
+  $('#pickLabel').textContent = now ? now.text : '–';
+  $('#pickCount').textContent = `${pickFiltered.length} Songs`
+    + (usesTiers() ? '' : ' · ohne Stufen');
+  const only = pickList().length < 2;
+  $('#pickPrev').disabled = only;
+  $('#pickNext').disabled = only;
+}
 function setFilters(list) {
   if (mode === 'playlist') settings.plFilters = list; else settings.filters = list;
   save('settings', settings);
@@ -54,8 +129,12 @@ let settings = load('settings', {
   filters: Filters.DEFAULT.map(r => ({ ...r })),
   plFilters: Filters.DEFAULT.map(r => ({ ...r })),
   decade: 2010,
+  genre: 'pop',
 });
-let stats = load('stats', { rounds: 0, solved: 0, played: 0, best: 0, byTier: {} });
+/* Zusammengefasste Genres: alte Regeln auf den neuen Namen ziehen. */
+settings.filters = Filters.migrate(settings.filters);
+settings.plFilters = Filters.migrate(settings.plFilters);
+let stats = load('stats', { rounds: 0, solved: 0, played: 0, best: 0, streak: 0, bestStreak: 0, byTier: {} });
 let recent = load('recent', []);
 let pick = null;          /* aktuell im Suchfeld gewaehlter Song */
 let sugAll = [];          /* alle Treffer der aktuellen Eingabe */
@@ -73,7 +152,45 @@ const norm = s => (s || '').toLowerCase()
   .replace(/[^a-z0-9]+/g, ' ').trim();
 
 const enabledStages = () => STAGES.filter((_, i) => settings.stages[i]);
-const slots = () => (mode === 'playlist' ? PL_SLOTS : TIERS);
+
+/* Breite einer Stufe auf der logarithmischen Leiste. */
+const logW = i => Math.log10(STAGES[i] * 1000 + 1) - (i ? Math.log10(STAGES[i - 1] * 1000 + 1) : 0);
+
+/* Breiten der sichtbaren Kaesten. Eine abgeschaltete Stufe bekommt keinen
+   eigenen Kasten - ihre Sekunden gehoeren zur naechsten aktiven Stufe, die sie
+   ja mitspielt. Ein grauer Kasten mit Trennlinie wuerde eine Grenze zeigen,
+   die es beim Hoeren nicht gibt. */
+function segmentWidths() {
+  const out = [];
+  let carry = 0;
+  STAGES.forEach((_, i) => {
+    if (settings.stages[i]) { out.push(logW(i) + carry); carry = 0; }
+    else carry += logW(i);
+  });
+  return out;
+}
+
+/* Stuetzpunkte fuer den laufenden Balken: Sekunde -> Pixel. Auch die
+   abgeschalteten Stufen bekommen einen Punkt, obwohl sie keinen eigenen
+   Kasten haben - sonst kroche der Balken innerhalb eines verschmolzenen
+   Kastens wieder linear statt logarithmisch. */
+function barStops(segs) {
+  const stops = [];
+  let si = 0, carry = [];
+  STAGES.forEach((t, i) => {
+    if (!settings.stages[i]) { carry.push({ t, w: logW(i) }); return; }
+    const seg = segs[si++];
+    if (!seg) return;
+    const x0 = seg.offsetLeft, span = seg.offsetWidth;
+    const sum = carry.reduce((a, c) => a + c.w, 0) + logW(i);
+    let acc = 0;
+    carry.forEach(c => { acc += c.w; stops.push({ t: c.t, x: x0 + span * acc / sum }); });
+    stops.push({ t, x: x0 + span });
+    carry = [];
+  });
+  return stops;
+}
+const slots = () => (usesTiers() ? TIERS : FLAT_SLOTS);
 const pool = () => (mode === 'playlist' && PL ? PL : DB);
 
 /* ---------------------------------------------------------------- Start */
@@ -90,7 +207,7 @@ async function boot() {
   plQueue = Playlist.restoreQueue();
   applyFilters();                       /* erst rechnen, dann den Modus waehlen */
   if (plPlayable() && settings.mode === 'playlist') mode = 'playlist';
-  else if (settings.mode === 'decades' && decadesAvailable().length) mode = 'decades';
+  else if (PICKED.includes(settings.mode) && listFor(settings.mode).length) mode = settings.mode;
   applyFilters();                       /* im Jahrzehntmodus sind die Stufen andere */
   buildChrome();
   newRound();
@@ -169,7 +286,9 @@ function buildChrome() {
     }
     if ((e.key === 'ArrowLeft' || e.key === 'ArrowRight') && !inp.value) {
       e.preventDefault();
-      switchTo((active + (e.key === 'ArrowRight' ? 1 : -1) + slots().length) % slots().length);
+      const dir = e.key === 'ArrowRight' ? 1 : -1;
+      if (e.shiftKey) stepPick(dir);
+      else switchTo((active + dir + slots().length) % slots().length);
       return;
     }
     if (e.key === 'Enter') {
@@ -269,8 +388,8 @@ function drawSong(tier, used) {
   return arr[Math.floor(Math.random() * arr.length)];
 }
 
-function drawPlaylist() {
-  const src = plFiltered.slice();
+function shuffled(list) {
+  const src = list.slice();
   for (let i = src.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
     [src[i], src[j]] = [src[j], src[i]];
@@ -282,7 +401,7 @@ function newRound() {
   Audio2.stop();
   clearTimeout(sweepTimer);
   cancelAnimationFrame(sweepRaf);
-  const picked = mode === 'playlist' ? drawPlaylist() : null;
+  const picked = usesTiers() ? null : shuffled(activePool());
   const used = new Set();
   round = slots().map((t, idx) => {
     const song = picked ? (picked[idx] || null) : drawSong(t.id, used);
@@ -316,6 +435,18 @@ async function preload(i) {
   try {
     r.buffer = await Audio2.load(r.song.p);
   } catch (e) {
+    /* Apple nimmt Previews gelegentlich offline. Statt eine tote Kachel
+       stehen zu lassen, wird einmal ein anderer Song gezogen. */
+    if (!r.swapped && r.status === 'playing' && !r.guesses.length) {
+      r.swapped = true;
+      const used = new Set(round.map(x => x.song && x.song.i).filter(x => x != null));
+      const next = usesTiers() ? drawSong(r.tier.id, used)
+        : shuffled(activePool()).find(x => !used.has(x.i));
+      if (next) {
+        r.song = next;
+        return preload(i);
+      }
+    }
     r.error = true;
   }
   if (i === active) render();
@@ -383,9 +514,9 @@ function sweepBar(secs) {
   const bar = $('#stageBar');
   const ov = bar.querySelector('.stage-progress');
   const segs = [...bar.querySelectorAll('.stage-seg')];
-  if (!ov || segs.length !== STAGES.length) return;
+  if (!ov || segs.length !== enabledStages().length) return;
 
-  const stops = STAGES.map((t, i) => ({ t, x: segs[i].offsetLeft + segs[i].offsetWidth }));
+  const stops = barStops(segs);
   const dur = Math.max(secs, 0.4) * 1000;
   const t0 = performance.now();
 
@@ -525,10 +656,15 @@ function clearPick() {
   $('#search').focus();
 }
 
+/* Auf der letzten Stufe geht es nirgends mehr weiter - dort heisst der Knopf
+   Aufgeben, weil genau das passiert. */
 function setAction() {
   const b = $('#actionBtn');
+  const r = round[active];
+  const last = !!r && r.stage >= enabledStages().length - 1;
   b.classList.toggle('skip', !pick);
-  b.querySelector('.txt').textContent = pick ? 'Raten' : 'Überspringen';
+  b.classList.toggle('giveup', !pick && last);
+  b.querySelector('.txt').textContent = pick ? 'Raten' : last ? 'Aufgeben' : 'Überspringen';
 }
 
 /* ------------------------------------------------------------- Rateversuch */
@@ -577,8 +713,14 @@ function finish(r, won) {
   Audio2.stop();
   clearPick();
   stats.played++;
-  if (won) stats.solved++;
-  const key = mode === 'playlist' ? 'playlist' : mode === 'decades' ? 'dec-' + currentDecade() : r.tier.id;
+  if (won) {
+    stats.solved++;
+    stats.streak = (stats.streak || 0) + 1;
+    if (stats.streak > (stats.bestStreak || 0)) stats.bestStreak = stats.streak;
+  } else stats.streak = 0;
+  const key = mode === 'playlist' ? 'playlist'
+    : PICKED.includes(mode) ? mode.slice(0, 3) + '-' + ((currentPick() || {}).value)
+    : r.tier.id;
   const bt = stats.byTier[key] || { p: 0, w: 0 };
   bt.p++; if (won) bt.w++;
   stats.byTier[key] = bt;
@@ -612,6 +754,8 @@ function showReveal(r, won) {
     badge.className = 'badge miss';
     badge.textContent = 'Nicht erkannt';
   }
+  const link = $('#revealLink');
+  link.href = 'https://music.apple.com/de/search?term=' + encodeURIComponent(s.t + ' ' + s.a);
   const last = round.every(x => x.status !== 'playing');
   $('#revealNext').textContent = last ? 'Ergebnis' : 'Weiter';
   $('#reveal').hidden = false;
@@ -675,15 +819,11 @@ function render() {
   const bar = $('#stageBar');
   bar.querySelectorAll('.stage-seg').forEach(n => n.remove());
   if (!bar.querySelector('.stage-progress')) bar.appendChild(el('div', 'stage-progress'));
-  STAGES.forEach((s, i) => {
+  segmentWidths().forEach((w, pos) => {
     const seg = el('div', 'stage-seg');
-    seg.style.flex = Math.log10(s * 1000 + 1);
-    if (!settings.stages[i]) seg.classList.add('off');
-    else {
-      const pos = stages.indexOf(s);
-      if (r && pos < r.stage) seg.classList.add('filled');
-      if (r && pos === r.stage) seg.classList.add('current');
-    }
+    seg.style.flex = w;
+    if (r && pos < r.stage) seg.classList.add('filled');
+    if (r && pos === r.stage) seg.classList.add('current');
     bar.appendChild(seg);
   });
 
@@ -720,7 +860,9 @@ function renderStats() {
   const d = $('#stats');
   d.innerHTML = '';
   const rate = stats.played ? Math.round(stats.solved / stats.played * 100) : 0;
-  const rows = [['Runden', stats.rounds], ['Songs erraten', `${stats.solved}/${stats.played}`], ['Quote', rate + ' %'], ['Bestes Ergebnis', stats.best]];
+  const rows = [['Runden', stats.rounds], ['Songs erraten', `${stats.solved}/${stats.played}`],
+    ['Quote', rate + ' %'], ['Serie', `${stats.streak || 0} (best ${stats.bestStreak || 0})`],
+    ['Bestes Ergebnis', stats.best]];
   rows.forEach(([k, v]) => { d.appendChild(el('dt', null, k)); d.appendChild(el('dd', null, v)); });
 }
 
@@ -735,17 +877,17 @@ function applyFilters() {
   chartFiltered = filtered.filter(s => s.d);
   plFiltered = PL ? Filters.apply(PL.songs, settings.plFilters, PL) : [];
 
-  if (mode === 'decades') {
-    const dec = currentDecade();
-    decFiltered = filtered.filter(s => Filters.decadeOf(s) === dec);
-    relativeTiers(decFiltered);
+  if (PICKED.includes(mode)) {
+    const now = currentPick();
+    pickFiltered = now ? filtered.filter(s => inPick(s, now.value)) : [];
+    relativeTiers(pickFiltered);
   } else {
-    decFiltered = [];
+    pickFiltered = [];
     TIERS.forEach(t => byTier[t.id] = chartFiltered.filter(s => s.d === t.id));
   }
 
   rebuildFilterLists();
-  renderDecades();
+  renderPicker();
   renderFilters();
 }
 
@@ -770,39 +912,6 @@ function relativeTiers(list) {
   });
 }
 
-/* Das gespeicherte Jahrzehnt kann nach einem Datenlauf oder durch Filter
-   wegfallen - dann wird das naechstliegende genommen. */
-function currentDecade() {
-  const list = decadesAvailable();
-  if (!list.length) return settings.decade;
-  if (list.includes(settings.decade)) return settings.decade;
-  return list.reduce((best, d) =>
-    Math.abs(d - settings.decade) < Math.abs(best - settings.decade) ? d : best, list[0]);
-}
-
-function stepDecade(dir) {
-  const list = decadesAvailable();
-  if (!list.length) return;
-  const i = list.indexOf(currentDecade());
-  settings.decade = list[(i + dir + list.length) % list.length];
-  save('settings', settings);
-  applyFilters();
-  newRound();
-}
-
-function renderDecades() {
-  const bar = $('#decadeBar');
-  if (!bar) return;
-  bar.hidden = mode !== 'decades';
-  if (bar.hidden) return;
-  const dec = currentDecade();
-  $('#decLabel').textContent = dec + 'er';
-  $('#decCount').textContent = `${decFiltered.length} Songs`;
-  const list = decadesAvailable();
-  $('#decPrev').disabled = list.length < 2;
-  $('#decNext').disabled = list.length < 2;
-}
-
 /* Die Auswahllisten kommen aus dem Pool, der gerade gilt - in der Playlist
    stehen also ihre Genres und Kuenstler, nicht die der Charts. */
 function rebuildFilterLists() {
@@ -813,6 +922,7 @@ function rebuildFilterLists() {
   /* Im Jahrzehntmodus waehlt die Leiste oben das Jahrzehnt - eine zweite
      Stelle dafuer koennte den Pool nur widerspruechlich machen. */
   $('#gDecade').hidden = mode === 'decades';
+  $('#gGenre').hidden = mode === 'genres';
 }
 
 function buildFilterUI() {
@@ -930,8 +1040,9 @@ function markRules() {
 
 function renderFilters() {
   const rules = activeFilters();
+  const now = PICKED.includes(mode) ? currentPick() : null;
   $('#filterPanel').querySelector('h2').textContent = mode === 'playlist' ? 'Songauswahl · Playlist'
-    : mode === 'decades' ? 'Songauswahl · ' + currentDecade() + 'er' : 'Songauswahl';
+    : now ? 'Songauswahl · ' + now.text : 'Songauswahl';
 
   const box = $('#filterList');
   box.innerHTML = '';
@@ -956,10 +1067,11 @@ function renderFilters() {
     if (!n) msg = 'Kein Song der Playlist passt zu den Filtern.';
     else if (n < PL_MIN) msg = `Nur ${n} von ${total} Songs übrig – für eine Runde braucht es ${PL_MIN}.`;
     else { msg = `${n} von ${total} Songs der Playlist`; warn = false; }
-  } else if (mode === 'decades') {
-    if (!n) msg = 'Kein Song aus diesem Jahrzehnt passt zu den Filtern.';
-    else if (n < Filters.MIN_POOL) msg = `Nur ${n} Songs aus den ${currentDecade()}ern – das wird schnell vorhersehbar.`;
-    else { msg = `${n} Songs aus den ${currentDecade()}ern`; warn = false; }
+  } else if (PICKED.includes(mode)) {
+    const what = now ? now.text : '–';
+    if (!n) msg = `Kein Song aus ${what} passt zu den Filtern.`;
+    else if (n < Filters.MIN_POOL) msg = `Nur ${n} Songs in ${what} – das wird schnell vorhersehbar.`;
+    else { msg = `${n} Songs in ${what}`; warn = false; }
   } else {
     const empty = TIERS.filter(t => !(byTier[t.id] || []).length).map(t => t.label);
     if (!n) msg = 'Kein Song passt zu den Filtern.';
@@ -1045,8 +1157,8 @@ function buildPlaylistUI() {
   $('#modeSeg').querySelectorAll('button').forEach(b => {
     b.onclick = () => setMode(b.dataset.v);
   });
-  $('#decPrev').onclick = () => stepDecade(-1);
-  $('#decNext').onclick = () => stepDecade(1);
+  $('#pickPrev').onclick = () => stepPick(-1);
+  $('#pickNext').onclick = () => stepPick(1);
 
   /* Datei irgendwo aufs Fenster ziehen reicht. */
   document.addEventListener('dragover', e => { e.preventDefault(); document.body.classList.add('dragging'); });
@@ -1121,7 +1233,7 @@ function renderPlaylist() {
   $('#modeSeg').querySelectorAll('button').forEach(b => {
     b.classList.toggle('on', b.dataset.v === mode);
     b.disabled = (b.dataset.v === 'playlist' && !plPlayable())
-      || (b.dataset.v === 'decades' && !decadesAvailable().length);
+      || (PICKED.includes(b.dataset.v) && !listFor(b.dataset.v).length);
   });
   $('#plPick').disabled = plBusy;
   $('#plPick').hidden = plBusy;
@@ -1143,7 +1255,7 @@ function renderPlaylist() {
 function setMode(m) {
   if (m === mode) return;
   if (m === 'playlist' && !plPlayable()) return;
-  if (m === 'decades' && !decadesAvailable().length) return;
+  if (PICKED.includes(m) && !listFor(m).length) return;
   mode = m;
   settings.mode = m;
   save('settings', settings);
@@ -1154,8 +1266,8 @@ function setMode(m) {
   pick = null;
   $('#search').value = '';
   $('#clearPick').hidden = true;
-  renderSlots();
-  applyFilters();
+  applyFilters();      /* erst der Pool, dann die Plaetze: ein kleines */
+  renderSlots();       /* Jahrzehnt spielt ohne Stufen */
   renderPlaylist();
   newRound();
 }
