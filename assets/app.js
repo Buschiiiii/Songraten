@@ -21,7 +21,8 @@ const el = (t, c, x) => { const n = document.createElement(t); if (c) n.classNam
 
 let DB = null;            /* { artists:[], songs:[] } */
 let PL = null;            /* aufgeloeste Playlist, gleiche Form wie DB */
-let mode = 'charts';      /* 'charts' | 'decades' | 'genres' | 'playlist' */
+let mode = 'charts';      /* 'charts' | 'decades' | 'genres' | 'artist' | 'playlist' */
+let AR = null;            /* geladener Kuenstlerkatalog, Form wie DB */
 let pickFiltered = [];    /* Songs des gewaehlten Jahrzehnts bzw. Genres */
 let byTier = {};
 let filtered = [];        /* alles, was nach den Filtern uebrig bleibt */
@@ -32,9 +33,12 @@ let filterMode = 'nur';   /* Wirkung, die ein Klick in den Listen bekommt */
 /* Jeder Modus hat seinen eigenen Regelsatz: eine importierte Playlist bringt
    andere Genres und Kuenstler mit als die Charts, und wer dort „nur 1960er"
    gesetzt hat, soll seine Playlist nicht leer vorfinden. */
-const activeFilters = () => (mode === 'playlist' ? settings.plFilters : settings.filters);
+const activeFilters = () => (mode === 'playlist' ? settings.plFilters
+  : mode === 'artist' ? settings.arFilters : settings.filters);
 function setFilters(list) {
-  if (mode === 'playlist') settings.plFilters = list; else settings.filters = list;
+  if (mode === 'playlist') settings.plFilters = list;
+  else if (mode === 'artist') settings.arFilters = list;
+  else settings.filters = list;
   save('settings', settings);
 }
 let round = [];           /* 5 Songstaende */
@@ -45,6 +49,8 @@ let settings = load('settings', {
   plFilters: Filters.DEFAULT.map(r => ({ ...r })),
   decade: 2010,
   genre: 'pop',
+  artist: null,           /* zuletzt gespielter Kuenstler (Apple-ID) */
+  arFilters: Filters.DEFAULT.map(r => ({ ...r })),
   hard: false,
 });
 /* Zusammengefasste Genres: alte Regeln auf den neuen Namen ziehen. */
@@ -113,7 +119,8 @@ function barStops(segs) {
 }
 
 const slots = () => (usesTiers() ? TIERS : FLAT_SLOTS);
-const pool = () => (mode === 'playlist' && PL ? PL : DB);
+/* Vorschlaege im Suchfeld: aus der eigenen Liste, wo es eine gibt. */
+const pool = () => (mode === 'playlist' && PL ? PL : mode === 'artist' && AR ? AR : DB);
 
 /* ---------------------------------------------------------------- Start */
 
@@ -255,6 +262,7 @@ function buildChrome() {
   });
 
   buildPlaylistUI();
+  buildArtistUI();
   buildFilterUI();
   renderStats();
 }
@@ -812,7 +820,9 @@ function render() {
   $('#playBtn').classList.toggle('loading', !!r && !r.buffer && !r.error);
   $('#search').placeholder = r && !r.song ? 'Kein Song passt zu den Filtern'
     : r && r.error ? 'Song nicht ladbar – Cmd+Enter würfelt neu'
-    : mode === 'playlist' ? 'Song aus der Playlist suchen …' : 'Song suchen …';
+    : mode === 'playlist' ? 'Song aus der Playlist suchen …'
+    : mode === 'artist' && currentPick() ? `Song von ${currentPick().text} suchen …`
+    : 'Song suchen …';
   $('#roundScore').textContent = round.reduce((a, b) => a + b.points, 0);
   setAction();
 }
@@ -824,6 +834,7 @@ function statGroups() {
     ['Charts', k => TIERS.some(t => t.id === k)],
     ['Jahrzehnte', k => k.startsWith('dec-')],
     ['Genres', k => k.startsWith('gen-')],
+    ['Künstler', k => k.startsWith('art-')],
     ['Playlist', k => k === 'playlist'],
   ];
   return groups.map(([label, test]) => {
@@ -853,7 +864,7 @@ function renderStats() {
 
 /* ---- Auswahl im Jahrzehnte- und Genremodus ---- */
 
-const PICKED = ['decades', 'genres'];   /* Modi mit Auswahlleiste oben */
+const PICKED = ['decades', 'genres', 'artist'];   /* Modi mit Auswahlleiste oben */
 const activePool = () => (mode === 'playlist' ? plFiltered
   : PICKED.includes(mode) ? pickFiltered : chartFiltered);
 
@@ -881,19 +892,27 @@ function listFor(m) {
     return [...cnt].filter(([, n]) => n >= GEN_MIN).sort((a, b) => b[1] - a[1])
       .map(([v]) => ({ value: v, text: label.get(v) }));
   }
+  if (m === 'artist') {
+    /* Die geladenen Kataloge, zuletzt geholter zuerst. */
+    return Artist.all().filter(a => a.songs.length >= Artist.MIN_SONGS)
+      .map(a => ({ value: a.id, text: a.name }));
+  }
   return [];
 }
 
 const pickList = () => listFor(mode);
-const pickSetting = () => (mode === 'genres' ? settings.genre : settings.decade);
+const pickSetting = () => (mode === 'genres' ? settings.genre
+  : mode === 'artist' ? settings.artist : settings.decade);
 const inPick = (s, value) => (mode === 'decades'
   ? Filters.decadeOf(s) === value
   : norm(Filters.genreOf(s)) === value);
 
 /* Fuenf Stufen brauchen genug Songs. Reicht es nicht, wird das Jahrzehnt oder
-   Genre wie eine Playlist gespielt: fuenf zufaellige Songs, keine Stufen. */
+   Genre wie eine Playlist gespielt: fuenf zufaellige Songs, keine Stufen.
+   Im Kuenstlermodus gibt es nie Stufen - wer einen Kuenstler mit einem
+   grossen Hit waehlt, haette den sonst als Easy sofort auf dem Tisch. */
 const usesTiers = () => (mode === 'charts'
-  || (PICKED.includes(mode) && pickFiltered.length >= TIER_MIN * TIERS.length));
+  || (PICKED.includes(mode) && mode !== 'artist' && pickFiltered.length >= TIER_MIN * TIERS.length));
 
 /* Das gespeicherte Jahrzehnt oder Genre kann durch Filter oder neue Daten
    wegfallen - dann greift das naechstliegende. */
@@ -916,7 +935,9 @@ function stepPick(dir) {
   const now = currentPick();
   const i = list.findIndex(o => String(o.value) === String(now.value));
   const next = list[(i + dir + list.length) % list.length].value;
-  if (mode === 'genres') settings.genre = next; else settings.decade = next;
+  if (mode === 'genres') settings.genre = next;
+  else if (mode === 'artist') settings.artist = next;
+  else settings.decade = next;
   save('settings', settings);
   applyFilters();
   newRound();
@@ -947,7 +968,12 @@ function applyFilters() {
   chartFiltered = filtered.filter(s => s.d);
   plFiltered = PL ? Filters.apply(PL.songs, settings.plFilters, PL) : [];
 
-  if (PICKED.includes(mode)) {
+  if (mode === 'artist') {
+    /* Der Kuenstlerkatalog kommt nicht aus songs.json, sondern von Apple. */
+    const now = currentPick();
+    AR = now ? buildPlaylist(Artist.fromCache(now.value)) : null;
+    pickFiltered = AR ? Filters.apply(AR.songs, settings.arFilters, AR) : [];
+  } else if (PICKED.includes(mode)) {
     const now = currentPick();
     pickFiltered = now ? filtered.filter(s => inPick(s, now.value)) : [];
     relativeTiers(pickFiltered);
@@ -1153,6 +1179,103 @@ function renderFilters() {
   c.classList.toggle('warn', warn);
 }
 
+/* ---------------------------------------------------------- Kuenstler */
+
+let arBusy = false;
+let arTimer = null;
+
+function buildArtistUI() {
+  const inp = $('#arSearch');
+  inp.oninput = () => {
+    clearTimeout(arTimer);
+    const q = inp.value.trim();
+    if (q.length < 2) return renderArtists();
+    /* Erst die schon geladenen zeigen, dann bei Apple nachfragen - aber nicht
+       bei jedem Tastendruck. */
+    renderArtists(localArtists(q));
+    arTimer = setTimeout(() => searchArtists(q), 450);
+  };
+  inp.onkeydown = e => {
+    if (e.key !== 'Enter') return;
+    e.preventDefault();
+    clearTimeout(arTimer);
+    if (inp.value.trim().length >= 2) searchArtists(inp.value.trim());
+  };
+  renderArtists();
+}
+
+/* Kuenstler, deren Katalog schon im Browser liegt. */
+function localArtists(q) {
+  const n = norm(q);
+  return Artist.all().filter(a => norm(a.name).includes(n))
+    .map(a => ({ id: a.id, name: a.name, songs: a.songs.length }));
+}
+
+async function searchArtists(q) {
+  if (arBusy) return;
+  arBusy = true;
+  arNote('Wird gesucht …');
+  try {
+    const hits = await Artist.find(q);
+    const drin = new Set(Artist.all().map(a => String(a.id)));
+    renderArtists(hits.map(h => ({ ...h, songs: drin.has(String(h.id))
+      ? Artist.fromCache(h.id).songs.length : null })));
+    arNote(hits.length ? '' : 'Keinen Künstler mit diesem Namen gefunden.');
+  } catch (e) {
+    arNote(e.throttled ? 'Apple bremst gerade – in ein paar Minuten nochmal.'
+      : 'Die Suche hat nicht geklappt.');
+  }
+  arBusy = false;
+}
+
+function renderArtists(hits) {
+  const box = $('#arHits');
+  box.innerHTML = '';
+  const liste = hits || Artist.all().map(a => ({ id: a.id, name: a.name, songs: a.songs.length }));
+  if (!liste.length) {
+    box.appendChild(el('p', 'fnote', 'Namen eingeben und Enter drücken.'));
+    return;
+  }
+  const jetzt = String((currentPick() || {}).value);
+  liste.slice(0, 12).forEach(h => {
+    const row = el('button', 'arhit' + (String(h.id) === jetzt ? ' on' : ''));
+    row.appendChild(el('span', 'nm', h.name));
+    row.appendChild(el('span', 'sub', h.songs != null ? h.songs + ' Songs'
+      : h.genre || 'laden'));
+    row.onclick = () => pickArtist(h);
+    box.appendChild(row);
+  });
+}
+
+function arNote(msg) { $('#arStatus').textContent = msg; }
+
+/* Katalog holen (oder aus dem Speicher nehmen) und in den Modus wechseln. */
+async function pickArtist(h) {
+  if (arBusy) return;
+  arBusy = true;
+  arNote(`${h.name}: Songs werden geholt …`);
+  try {
+    const entry = await Artist.load({ id: h.id, name: h.name },
+      { onProgress: t => arNote(`${h.name}: ${t}`) });
+    if (entry.songs.length < Artist.MIN_SONGS) {
+      arNote(`${h.name}: nur ${entry.songs.length} Songs gefunden – zu wenig für eine Runde.`);
+      arBusy = false;
+      return;
+    }
+    settings.artist = entry.id;
+    save('settings', settings);
+    arBusy = false;
+    if (mode === 'artist') { applyFilters(); newRound(); }
+    else setMode('artist');
+    arNote(`${entry.name}: ${entry.songs.length} Songs`);
+    renderArtists();
+  } catch (e) {
+    arNote(e.throttled ? 'Apple bremst gerade – in ein paar Minuten nochmal.'
+      : 'Der Katalog liess sich nicht laden.');
+    arBusy = false;
+  }
+}
+
 /* ------------------------------------------------------------- Playlist */
 
 const PL_MIN = 5;
@@ -1305,6 +1428,7 @@ function renderPlaylist() {
     b.disabled = (b.dataset.v === 'playlist' && !plPlayable())
       || (PICKED.includes(b.dataset.v) && !listFor(b.dataset.v).length);
   });
+  if ($('#arHits')) renderArtists();
   $('#plPick').disabled = plBusy;
   $('#plPick').hidden = plBusy;
   $('#plPasteToggle').hidden = plBusy;

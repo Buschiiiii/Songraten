@@ -99,6 +99,7 @@
         <button data-v="charts" class="on">Charts &amp; Stufen</button>
         <button data-v="decades">Jahrzehnte</button>
         <button data-v="genres">Genres</button>
+        <button data-v="artist" disabled>Künstler</button>
         <button data-v="playlist" disabled>Eigene Playlist</button>
       </div>
       <div class="pl-load">
@@ -114,6 +115,16 @@
       <button id="plClear" class="pl-link" hidden>Playlist entfernen</button>
       <p class="note">CSV, TSV, TXT, M3U oder JSON aus Exportify, TuneMyMusic, Soundiiz,
         der Musik-App oder Google Takeout – Datei hierher ziehen geht auch.</p>
+    </div>
+
+    <div class="panel" id="artistPanel">
+      <h2>Künstler</h2>
+      <input id="arSearch" type="text" placeholder="Künstler suchen …" autocomplete="off" spellcheck="false">
+      <div id="arHits" class="fopts"></div>
+      <p id="arStatus" class="note"></p>
+      <p class="note">Alle Songs kommen direkt von Apple, Gastauftritte
+        eingeschlossen. Gespielt werden fünf zufällige davon, ohne Stufen –
+        sonst wäre der größte Hit sofort das Easy.</p>
     </div>
 
     <div class="panel">
@@ -208,6 +219,7 @@
 <script src="assets/audio.js"></script>
 <script src="assets/playlist.js"></script>
 <script src="assets/filters.js"></script>
+<script src="assets/artist.js"></script>
 <script src="assets/app.js"></script>
 </body>
 </html>

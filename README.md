@@ -6,13 +6,14 @@ nach echten Spotify-Streamzahlen sortiert.
 Die Seite ist reines HTML/CSS/JavaScript. Kein Server, kein Build, keine Anmeldung,
 keine Bibliotheken. Alles läuft im Browser.
 
-**Vier Arten zu spielen**
+**Fünf Arten zu spielen**
 
 | Modus | Woraus gespielt wird |
 |---|---|
 | Charts & Stufen | die ganze Songliste, Easy bis Impossible nach Spotify-Streams |
 | Jahrzehnte | ein Jahrzehnt, Stufen relativ dazu vergeben |
 | Genres | ein Genre, Stufen relativ dazu vergeben |
+| Künstler | alle Songs eines Künstlers samt Gastauftritten, fünf zufällige davon |
 | Eigene Playlist | ein eigener Export, fünf zufällige Songs daraus |
 
 Dazu Filter für Genre, Künstler, Jahrzehnt und Instrumentals, die sich
@@ -54,6 +55,21 @@ fünf zufällige Songs aus der Auswahl. Die Leiste schreibt es dazu.
 
 Zu dünn besetzte Jahrzehnte und Genres stehen gar nicht erst zur Wahl. Wie du
 mehr Songs bekommst, steht unter *Songs nachladen*.
+
+## Nach einem Künstler spielen
+
+Rechts im Feld **Künstler** den Namen eintippen und Enter drücken. Es kommt
+eine Auswahl, ein Klick darauf lädt den Katalog direkt bei Apple – den eigenen
+und die Gastauftritte, also auch das Feature auf einer fremden Platte. Remixe,
+Live- und Karaokefassungen bleiben draußen, von mehreren Ausgaben desselben
+Songs bleibt die älteste.
+
+Gespielt werden **fünf zufällige Songs ohne Stufen**. Bei einem Künstler mit
+einem einzigen großen Hit wäre der als Easy sonst sofort geraten. Wer weniger
+als fünf brauchbare Songs hat, lässt sich nicht auswählen.
+
+Die letzten zwölf Kataloge bleiben im Browser gespeichert, ein zweiter Besuch
+geht ohne Warten. Mit den Pfeilen oben springst du zwischen ihnen hin und her.
 
 ## Songs nachladen (alte Jahrzehnte)
 

@@ -275,6 +275,22 @@ main{
 
 #filterCount.warn{color:var(--yellow)}
 
+/* ---------- Kuenstlermodus ---------- */
+#artistPanel input{
+  width:100%;padding:8px 11px;border-radius:9px;background:var(--panel-2);
+  border:1px solid var(--line);color:var(--text);font:inherit;font-size:12.5px;outline:none;
+}
+#artistPanel input:focus{border-color:var(--green-dim)}
+#artistPanel .fopts{max-height:220px;margin-top:6px}
+.arhit{
+  display:flex;align-items:baseline;gap:8px;width:100%;text-align:left;
+  padding:7px 6px;border-radius:8px;font-size:12.5px;color:var(--muted);transition:.12s;
+}
+.arhit:hover{background:var(--panel-2);color:var(--text)}
+.arhit.on{color:var(--green)}
+.arhit .nm{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.arhit .sub{font-size:11px;color:var(--grey);white-space:nowrap}
+
 /* ---------- Playlist ---------- */
 .pl-load{display:flex;flex-direction:column;gap:6px;margin-top:10px}
 .pl-load .btn-ghost{margin-top:0}

@@ -63,6 +63,41 @@ function makeWindow(store, patchDb) {
       if (patchDb) patchDb(db);
       return { ok: true, status: 200, json: async () => db };
     }
+    if (url.includes('itunes.apple.com/search') && url.includes('entity=musicArtist')) {
+      itunesCalls++;
+      const term = decodeURIComponent(url.split('term=')[1].split('&')[0]).toLowerCase();
+      const alle = [{ artistId: 1, artistName: 'Testband', primaryGenreName: 'Rock' },
+                    { artistId: 2, artistName: 'Testband Zwei', primaryGenreName: 'Pop' }];
+      const treffer = alle.filter(a => a.artistName.toLowerCase().includes(term.replace(/\+/g, ' ')));
+      return { ok: true, status: 200, json: async () => ({ results: treffer }) };
+    }
+    if (url.includes('itunes.apple.com/search') && url.includes('attribute=artistTerm')) {
+      itunesCalls++;
+      const songs = [];
+      for (let i = 1; i <= 9; i++) {
+        songs.push({ trackName: 'Katalogsong ' + i, artistName: 'Testband', collectionName: 'Album',
+                     releaseDate: '2015-01-01', primaryGenreName: 'Rock', trackId: 100 + i,
+                     previewUrl: 'https://audio/k' + i, artworkUrl100: 'https://art/k/100x100bb.jpg' });
+      }
+      /* Dubletten und Fassungen, die nichts im Spiel zu suchen haben */
+      songs.push({ ...songs[0], collectionName: 'Album (Deluxe)', releaseDate: '2019-01-01', trackId: 900 });
+      songs.push({ trackName: 'Katalogsong 1 (Live)', artistName: 'Testband', collectionName: 'Live',
+                   releaseDate: '2016-01-01', trackId: 901, previewUrl: 'https://audio/live' });
+      songs.push({ trackName: 'Ohne Preview', artistName: 'Testband', trackId: 902 });
+      return { ok: true, status: 200, json: async () => ({ results: songs }) };
+    }
+    /* Gastauftritte: entity=song ohne attribute. Die Playlist-Suche sieht
+       fast gleich aus, haengt aber media=music davor. */
+    if (url.includes('itunes.apple.com/search') && url.includes('entity=song')
+        && !url.includes('attribute=') && !url.includes('media=music')) {
+      itunesCalls++;
+      return { ok: true, status: 200, json: async () => ({ results: [
+        { trackName: 'Gastsong (feat. Testband)', artistName: 'Andere Band', collectionName: 'X',
+          releaseDate: '2018-01-01', primaryGenreName: 'Pop', trackId: 500,
+          previewUrl: 'https://audio/g1', artworkUrl100: 'https://art/g/100x100bb.jpg' },
+        { trackName: 'Fremder Song', artistName: 'Ganz Andere', trackId: 501, previewUrl: 'https://audio/g2' },
+      ] }) };
+    }
     if (url.includes('itunes.apple.com/search')) {
       itunesCalls++;
       const term = sortKey(decodeURIComponent(url.split('term=')[1]));
@@ -72,7 +107,8 @@ function makeWindow(store, patchDb) {
     return { ok: true, status: 200, arrayBuffer: async () => new ArrayBuffer(8) };  /* Preview */
   };
 
-  w.eval(['assets/audio.js', 'assets/playlist.js', 'assets/filters.js', 'assets/app.js'].map(read).join('\n;\n')
+  w.eval(['assets/audio.js', 'assets/playlist.js', 'assets/filters.js', 'assets/artist.js', 'assets/app.js']
+    .map(read).join('\n;\n')
     + '\n;window.__ev = s => eval(s);');
   return w;
 }
@@ -352,6 +388,71 @@ const dummy = n => ({ t: 'Song ' + n, a: 'Kuenstler ' + n, al: 'Album', y: 2020,
   $('#hardMode').dispatchEvent(new w.Event('change'));
   assert(G('settings.hard') === false && !G('locked(3)'), 'Hardmode: ausgeschaltet ist wieder alles offen');
   G('newRound()'); await tick(30);
+
+  /* ---------------------------------------------------- Kuenstler-Modus */
+  const w4 = makeWindow({});
+  const K = n => w4.__ev(n), k$ = q => w4.document.querySelector(q);
+  await waitFor(() => !w4.document.querySelector('#app').hidden);
+
+  assert(k$('#modeSeg [data-v="artist"]').disabled,
+    'Kuenstler: ohne geladenen Katalog ist der Modus gesperrt');
+
+  const suche = k$('#arSearch');
+  suche.value = 'testband';
+  suche.dispatchEvent(new w4.KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+  await waitFor(() => k$('#arHits').querySelectorAll('.arhit').length > 0, 5000);
+  const namen = [...k$('#arHits').querySelectorAll('.arhit')].map(r => r.querySelector('.nm').textContent);
+  assert(namen.includes('Testband'), 'Kuenstler: die Suche liefert eine Auswahl (' + namen.join(', ') + ')');
+
+  k$('#arHits').querySelector('.arhit').click();
+  await waitFor(() => w4.__ev('mode') === 'artist', 8000);
+  assert(K('mode') === 'artist', 'Kuenstler: ein Klick laedt den Katalog und startet den Modus');
+  assert(K('AR.songs').length === 10,
+    'Kuenstler: Katalog und Gastauftritt zusammen, ohne Dubletten (' + K('AR.songs').length + ')');
+  assert(K("AR.songs.some(s => /Gastsong/.test(s.t))"), 'Kuenstler: der Gastauftritt ist dabei');
+  assert(K("AR.songs.every(s => !/\\(Live\\)/.test(s.t))"), 'Kuenstler: Livefassungen fliegen raus');
+  assert(K("AR.songs.every(s => s.p)"), 'Kuenstler: alles hat eine Preview');
+  assert(K("AR.songs.filter(s => s.t === 'Katalogsong 1').length") === 1,
+    'Kuenstler: dieselbe Nummer steht nur einmal drin');
+  assert(K("AR.songs.find(s => s.t === 'Katalogsong 1').al") === 'Album',
+    'Kuenstler: davon die aelteste Fassung');
+
+  /* Immer fuenf zufaellige Songs, keine Stufen */
+  assert(!K('usesTiers()') && K('slots()').length === 5 && K('round')[0].tier.mult === 1,
+    'Kuenstler: fuenf gleichwertige Plaetze statt Stufen');
+  assert(new Set(K('round').map(r => r.song.i)).size === 5, 'Kuenstler: fuenf verschiedene Songs');
+  assert(K("round.every(r => pickFiltered.some(x => x.i === r.song.i))"),
+    'Kuenstler: alle aus dem Katalog');
+  assert(!k$('#pickBar').hidden && /Testband/.test(k$('#pickLabel').textContent),
+    'Kuenstler: die Leiste oben nennt den Namen');
+
+  /* Vorschlaege kommen aus dem Katalog */
+  K("suggest('katalog')");
+  assert(K('sugAll').length > 0 && K("sugAll.every(s => AR.songs.some(x => x.t === s.t))"),
+    'Kuenstler: die Vorschlaege kommen nur aus seinem Katalog');
+
+  /* Ein zweiter Besuch kostet keine Anfrage */
+  const vorher = itunesCalls;
+  k$('#arSearch').value = 'testband';
+  k$('#arSearch').dispatchEvent(new w4.Event('input'));
+  await tick(80);
+  const gespeichert = [...k$('#arHits').querySelectorAll('.arhit')]
+    .find(r => r.querySelector('.nm').textContent === 'Testband');
+  gespeichert.click();
+  await tick(200);
+  assert(itunesCalls === vorher, 'Kuenstler: ein zweiter Besuch kommt aus dem Speicher');
+  assert(K("Artist.all().length") === 1, 'Kuenstler: der Katalog liegt gespeichert vor');
+
+  /* Filter wirken auch hier, mit eigenem Regelsatz */
+  const arN0 = K('pickFiltered').length;
+  K(`settings.arFilters.push({ mode: 'ohne', type: 'genre', value: 'pop', text: 'Pop' }); applyFilters()`);
+  assert(K('pickFiltered').length < arN0 && K("pickFiltered.every(s => s.g !== 'Pop')"),
+    'Kuenstler: eigene Filter greifen');
+  assert(K("settings.filters.every(r => r.type !== 'genre')"),
+    'Kuenstler: die Chartsregeln bleiben unberuehrt');
+
+  w4.__ev("setMode('charts')"); await tick(40);
+  assert(K('mode') === 'charts' && k$('#pickBar').hidden, 'Kuenstler: zurueck zu den Charts');
 
   /* --------------------------------------------------------- Genre-Modus */
   $('#modeSeg [data-v="genres"]').click(); await tick(40);

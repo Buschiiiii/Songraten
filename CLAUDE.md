@@ -211,6 +211,34 @@ spielbar bleibt. In der Playlist ist die Schwelle `PL_MIN` (5) — so viele
 braucht eine Runde; bleiben weniger übrig, sind die restlichen Plätze leer und
 die Warnung sagt es.
 
+## Künstlermodus
+
+Vierter Modus. Man tippt einen Namen ins Feld *Künstler*, bekommt eine Auswahl
+und mit einem Klick eine Runde aus dessen Songs. Der Katalog kommt **nicht**
+aus `songs.json` — dort stehen pro Künstler nur die paar Songs, die es in die
+Streamlisten geschafft haben. `assets/artist.js` fragt stattdessen Apple:
+
+1. `entity=musicArtist` für die Auswahlliste — „billie" soll Künstler zeigen,
+   keine wilde Songsuche.
+2. `entity=song&attribute=artistTerm&limit=200` für den eigenen Katalog.
+3. `entity=song&limit=200` ohne `attribute` für die Gastauftritte — so kommt
+   „Gastsong (feat. …)" mit, der unter fremdem Künstlernamen läuft. Fällt diese
+   zweite Anfrage aus, wird trotzdem gespielt, der Katalog allein reicht.
+
+`tidy()` räumt auf: ohne `previewUrl` fliegt raus, ebenso alles, was nach
+Remix, Live, Karaoke, Remaster, Sped Up, Cover oder Medley klingt (`BAD`) —
+sonst besteht die halbe Runde aus Fassungen desselben Songs. Von Dubletten
+bleibt die **älteste** Fassung, das ist meistens das Original. Danach müssen
+mindestens `MIN_SONGS` (5) übrig sein, sonst bleibt der Modus gesperrt.
+
+**Keine Stufen, fünf zufällige Songs.** Nach Bekanntheit sortieren ginge nur
+über die Streamzahlen, die es hier nicht gibt — und wäre auch falsch: bei einem
+Künstler mit einem einzigen großen Hit wäre der als Easy sofort geraten.
+
+Geladene Kataloge liegen in `songrate:artists` (die letzten 12), ein zweiter
+Besuch kostet keine Anfrage. Die Pfeile oben springen durch die geladenen
+Künstler. Eigener Regelsatz: `settings.arFilters`.
+
 ## Playlist-Modus
 
 Direkt bei Spotify, Apple Music oder YouTube nachfragen geht nicht: alle drei
@@ -291,7 +319,7 @@ Frontend hält ein fehlendes Feld zusätzlich aus.
 
 Links Kopfzeile (Marke, Stufenliste, Neuwürfeln, Rundenpunkte) und darunter
 die Panels *Stufen* und *Statistik*; in der Mitte das Spielfeld; rechts
-*Modus*, *Spielweise*, *Songstart*, *Lautstärke* und ganz unten die
+*Modus*, *Künstler*, *Spielweise*, *Songstart*, *Lautstärke* und ganz unten die
 *Songauswahl*.
 
 Auf schmalen Bildschirmen wird `.col-left` zu `display:contents`, damit
@@ -353,7 +381,8 @@ vorbeiscrollen, um den Abspielknopf zu sehen.
 10. localStorage-Schlüssel: `songrate:settings` (enthält auch `filters`),
    `songrate:stats`,
    `songrate:recent` (letzte 60 Songs, gegen Wiederholungen),
-   `songrate:playlist` (aufgelöste Playlist), `songrate:plcache`
+   `songrate:playlist` (aufgelöste Playlist), `songrate:artists`
+   (geladene Künstlerkataloge), `songrate:plcache`
    (Titel → iTunes-Treffer), `songrate:plqueue` (Titelliste eines noch nicht
    fertigen Laufs). Das Präfix bleibt
    `songrate:`, obwohl die Seite Songraten heißt — Umbenennen würde alle
