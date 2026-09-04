@@ -273,6 +273,15 @@ Das Aufspalten ist die gefährliche Stelle: `Simon & Garfunkel`,
 Schutz: der komplette String wird gegen ~3000 kanonische Künstlernamen von
 kworb geprüft, plus die `NEVER_SPLIT`-Liste in `match_local.py`.
 
+## Jeder Song braucht `ar`
+
+Die Künstler-IDs sind kein Beiwerk: `boot()` baut daraus den Suchindex und
+stolpert über `s.ar.map(...)`, wenn das Feld fehlt — die Seite bleibt dann
+**weiß**. Genau das ist passiert, als der erste Actions-Lauf Songs ohne `ar`
+committet hat. `tools/artistids.py` vergibt sie jetzt beim Einfügen
+(`add_decades.py`) und repariert bestehende Dateien (`clean_songs.py`); das
+Frontend hält ein fehlendes Feld zusätzlich aus.
+
 ## Fallstricke im Frontend
 
 1. **`[hidden]{display:none !important}` in `style.css` muss bleiben.**
@@ -361,6 +370,16 @@ Actions-Cache, ein Lauf macht also dort weiter, wo der letzte aufhörte.
 Vor dem Commit prüft ein Schritt die Datei: mindestens 1900 Songs, jeder mit
 Titel und Preview, und nie weniger als vorher. Lieber nichts committen als eine
 halbe `songs.json` ausliefern — die Seite bliebe weiß.
+
+Was der erste echte Lauf gezeigt hat:
+
+- **Wikipedia** drosselt nach etwa zehn schnellen Anfragen mit 429. Weil ein
+  Fehlschlag ohne Pause zum nächsten Jahr sprang, kamen nur 1959–1968 an.
+  Seitdem wird bei 429 gewartet und wiederholt.
+- **Apple blockt aus GitHubs Rechenzentren viel härter als von zu Hause**: 56
+  Anfragen in 17 Minuten, der Rest der Zeit war Warten. Deshalb läuft der
+  Workflow täglich statt monatlich — und lokal geht es um ein Vielfaches
+  schneller.
 
 **Das erweitert nur den Jahrzehnte- und Genrebestand.** Der Chartsmodus hängt
 an kworb, und dessen Vorstufe (`artists_top.json`, `candidates.json`, die
