@@ -50,12 +50,15 @@ let settings = load('settings', {
   decade: 2010,
   genre: 'pop',
   artist: null,           /* zuletzt gespielter Kuenstler (Apple-ID) */
+  service: Links.DEFAULT, /* Lieblingsdienst zum Nachhoeren */
   arFilters: Filters.DEFAULT.map(r => ({ ...r })),
   hard: false,
 });
 /* Zusammengefasste Genres: alte Regeln auf den neuen Namen ziehen. */
 settings.filters = Filters.migrate(settings.filters);
 settings.plFilters = Filters.migrate(settings.plFilters);
+/* Ein gespeicherter Dienst, den es nicht mehr gibt, faellt zurueck. */
+if (!Links.has(settings.service)) settings.service = Links.DEFAULT;
 let stats = load('stats', { rounds: 0, solved: 0, played: 0, best: 0, streak: 0, bestStreak: 0, byTier: {} });
 let recent = load('recent', []);
 let pick = null;          /* aktuell im Suchfeld gewaehlter Song */
@@ -263,6 +266,7 @@ function buildChrome() {
 
   buildPlaylistUI();
   buildArtistUI();
+  buildServiceUI();
   buildFilterUI();
   renderStats();
 }
@@ -719,12 +723,44 @@ function showReveal(r, won) {
     badge.className = 'badge miss';
     badge.textContent = 'Nicht erkannt';
   }
-  const link = $('#revealLink');
-  link.href = 'https://music.apple.com/de/search?term=' + encodeURIComponent(s.t + ' ' + s.a);
+  renderServiceLinks(s);
   const last = round.every(x => x.status !== 'playing');
   $('#revealNext').textContent = last ? 'Ergebnis' : 'Weiter';
   $('#reveal').hidden = false;
   playFull(r);
+}
+
+/* Die Dienste unter der Aufloesung. Der Lieblingsdienst steht vorn und wird
+   hervorgehoben; gibt es Apples Track-ID, kommt der Sammellink davor, der auf
+   die richtige Aufnahme bei allen Diensten zeigt statt auf eine Suche. */
+function renderServiceLinks(song) {
+  const box = $('#revealLinks');
+  box.innerHTML = '';
+  Links.forSong(song, settings.service).forEach((l, i) => {
+    const a = el('a', 'svc' + (l.all ? ' all' : i === 0 || (l.id === settings.service) ? ' on' : ''));
+    a.href = l.url;
+    a.target = '_blank';
+    a.rel = 'noopener noreferrer';
+    a.textContent = l.name;
+    if (l.hint) a.title = l.hint;
+    box.appendChild(a);
+  });
+}
+
+function buildServiceUI() {
+  const box = $('#svcSeg');
+  box.innerHTML = '';
+  Links.SERVICES.forEach(sv => {
+    const b = el('button', 'svc' + (sv.id === settings.service ? ' on' : ''));
+    b.textContent = sv.name;
+    b.onclick = () => {
+      settings.service = sv.id;
+      save('settings', settings);
+      buildServiceUI();
+      if (revealed) renderServiceLinks(revealed.song);
+    };
+    box.appendChild(b);
+  });
 }
 
 /* Nach der Aufloesung laeuft der Ausschnitt in voller Laenge, damit man hoert,
@@ -754,6 +790,14 @@ function showSummary() {
     dot.style.background = `var(--t-${r.tier.id})`;
     row.appendChild(dot);
     row.appendChild(el('span', 's-title', r.song ? r.song.t : '–'));
+    if (r.song) {
+      const a = el('a', 's-link', Links.name(settings.service));
+      a.href = Links.one(r.song, settings.service);
+      a.target = '_blank';
+      a.rel = 'noopener noreferrer';
+      a.title = 'Bei ' + Links.name(settings.service) + ' nachhören';
+      row.appendChild(a);
+    }
     row.appendChild(el('span', 's-pts', r.status === 'won' ? '+' + r.points : '—'));
     list.appendChild(row);
   });

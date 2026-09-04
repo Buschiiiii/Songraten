@@ -103,12 +103,17 @@ def to_song(hit, row):
     # iTunes gibt bei Neuauflagen gern das Jahr der Wiederveroeffentlichung an.
     if abs(year - row['year']) > 2:
         year = row['year']
-    return {
+    out = {
         't': hit['trackName'], 'a': hit['artistName'],
         'al': hit.get('collectionName') or '', 'y': year,
         'g': hit.get('primaryGenreName') or '', 's': 0, 'r': row['rank'], 'd': '',
         'p': hit['previewUrl'], 'c': hit.get('artworkUrl100') or '',
     }
+    # Apples Track-ID: damit zeigt der Sammellink (song.link) auf die richtige
+    # Aufnahme statt auf eine Suche.
+    if hit.get('trackId'):
+        out['k'] = hit['trackId']
+    return out
 
 
 SAMPLE = [

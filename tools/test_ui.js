@@ -107,7 +107,8 @@ function makeWindow(store, patchDb) {
     return { ok: true, status: 200, arrayBuffer: async () => new ArrayBuffer(8) };  /* Preview */
   };
 
-  w.eval(['assets/audio.js', 'assets/playlist.js', 'assets/filters.js', 'assets/artist.js', 'assets/app.js']
+  w.eval(['assets/links.js', 'assets/audio.js', 'assets/playlist.js', 'assets/filters.js',
+    'assets/artist.js', 'assets/app.js']
     .map(read).join('\n;\n')
     + '\n;window.__ev = s => eval(s);');
   return w;
@@ -188,6 +189,10 @@ const dummy = n => ({ t: 'Song ' + n, a: 'Kuenstler ' + n, al: 'Album', y: 2020,
   assert(/\d+ von \d+ erraten/.test($('#summaryHits').textContent),
     'Rundenende: es steht da, wie viele erraten wurden (' + $('#summaryHits').textContent + ')');
   assert(G('stats.byTier.playlist') != null && G('stats.byTier.pl1') == null, 'Playlist: Statistik unter einem Schluessel');
+  const zeilen = [...$('#summaryList').querySelectorAll('.s-link')];
+  assert(zeilen.length === 5 && zeilen.every(a => /^https:\/\/music\.apple\.com/.test(a.href)),
+    'Rundenende: jede Zeile verlinkt zum Lieblingsdienst');
+  assert(G("PL.songs.every(s => s.k)"), 'Playlist: Apples Track-ID wird mitgenommen');
   $('#summaryNext').click(); await tick(30);
 
   const calls = itunesCalls;
@@ -296,10 +301,40 @@ const dummy = n => ({ t: 'Song ' + n, a: 'Kuenstler ' + n, al: 'Album', y: 2020,
   assert(!/Jahrzehnte/.test($('#stats').textContent),
     'Statistik: bei nur einem Modus bleibt die Aufschluesselung weg');
 
-  /* Bei Apple Music nachhoeren */
+  /* Nachhoeren: eine Zeile mit allen Diensten */
   G('showReveal(round[0], false)');
-  assert(/music\.apple\.com\/de\/search\?term=/.test($('#revealLink').href),
-    'Aufloesung: Link zu Apple Music mit Titel und Kuenstler');
+  const svc = [...$('#revealLinks').querySelectorAll('a')];
+  assert(svc.length === G('Links.SERVICES.length'),
+    'Aufloesung: alle Dienste stehen da (' + svc.length + ')');
+  assert(svc.every(a => a.target === '_blank' && /noopener/.test(a.rel)),
+    'Aufloesung: die Links gehen in einen neuen Tab und ohne Rueckkanal');
+  assert(svc.every(a => /^https:\/\//.test(a.href) && a.href.length > 30),
+    'Aufloesung: jeder Dienst bekommt eine Suchadresse');
+  const titel = encodeURIComponent(G('round[0].song.t')).replace(/%20/g, '');
+  assert(svc.some(a => /music\.apple\.com\/de\/search\?term=/.test(a.href))
+    && svc.some(a => /open\.spotify\.com\/search\//.test(a.href))
+    && svc.some(a => /listen\.tidal\.com/.test(a.href))
+    && svc.some(a => /qobuz\.com/.test(a.href))
+    && svc.some(a => /deezer\.com/.test(a.href)),
+    'Aufloesung: Apple, Spotify, Tidal, Qobuz und Deezer sind dabei');
+  assert(svc[0].classList.contains('on') && svc[0].textContent === 'Apple Music',
+    'Aufloesung: der Lieblingsdienst steht vorn');
+  assert(!$('#revealLinks').querySelector('.all'),
+    'Aufloesung: ohne Apple-ID kein Sammellink');
+
+  /* Ein anderer Lieblingsdienst */
+  [...$('#svcSeg').querySelectorAll('button')].find(b => b.textContent === 'Tidal').click();
+  assert(G('settings.service') === 'tidal', 'Nachhoeren: der Lieblingsdienst laesst sich waehlen');
+  assert($('#revealLinks').querySelector('a').textContent === 'Tidal',
+    'Nachhoeren: die offene Aufloesung zieht gleich nach');
+
+  /* Mit Apples Track-ID gibt es den Sammellink auf die richtige Aufnahme */
+  G('round[0].song.k = 1440857781; showReveal(round[0], false)');
+  const alle = $('#revealLinks').querySelector('.all');
+  assert(alle && alle.href === 'https://song.link/i/1440857781',
+    'Aufloesung: mit Track-ID kommt der Sammellink dazu');
+  G('delete round[0].song.k');
+  [...$('#svcSeg').querySelectorAll('button')].find(b => b.textContent === 'Apple Music').click();
   G('closeReveal()'); await tick(20);
   G('newRound()'); await tick(30);
 

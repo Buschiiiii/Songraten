@@ -71,6 +71,17 @@ als fünf brauchbare Songs hat, lässt sich nicht auswählen.
 Die letzten zwölf Kataloge bleiben im Browser gespeichert, ein zweiter Besuch
 geht ohne Warten. Mit den Pfeilen oben springst du zwischen ihnen hin und her.
 
+## Nachhören, egal bei welchem Dienst
+
+Unter jeder Auflösung steht eine Reihe von Links: Apple Music, Spotify,
+YouTube Music, YouTube, Deezer, Tidal, Qobuz, Amazon Music, SoundCloud,
+Bandcamp und Discogs. Welcher davon vorn steht – und an der Ergebnisliste
+hängt – wählst du rechts unter **Nachhören bei**.
+
+Kennt die Songliste Apples Track-ID, kommt zusätzlich ein grüner Knopf
+*Alle Dienste*. Der geht über song.link und landet nicht auf einer Suche,
+sondern auf genau dieser Aufnahme – beim Dienst, den du dort anklickst.
+
 ## Songs nachladen (alte Jahrzehnte)
 
 Die mitgelieferte Songliste kommt aus Spotify-Streamzahlen – und Spotify gibt

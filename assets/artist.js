@@ -61,6 +61,7 @@ const Artist = (() => {
       p: t.previewUrl,
       c: t.artworkUrl100 || '',
       id: t.trackId,
+      k: t.trackId,        /* Apples Track-ID: macht den Sammellink moeglich */
     };
   }
 

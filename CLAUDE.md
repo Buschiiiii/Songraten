@@ -275,6 +275,27 @@ Modus gesperrt. Künstler-IDs werden hier lokal vergeben: der komplette
 Künstlerstring plus die Einzelnamen — ein falscher Schnitt färbt hier
 höchstens einen Tipp gelb, anders als in der Pipeline.
 
+## Nachhören: Links statt eines Dienstes
+
+Die Auflösung verlinkte früher nur zu Apple Music. Abfragen lässt sich keiner
+der Dienste ohne registrierte App und Login, aber **jeder hat eine Suchseite,
+die sich per URL aufrufen lässt** — das reicht: Titel und Künstler
+hineinschreiben, der Rest ist Sache des Dienstes. Kostet keine Anfrage und
+funktioniert auch für Songs, die nur lokal auf der Platte liegen.
+`assets/links.js` hält die Liste (Apple, Spotify, YouTube Music, YouTube,
+Deezer, Tidal, Qobuz, Amazon Music, SoundCloud, Bandcamp, Discogs).
+
+Genauer geht es mit **`k`, Apples Track-ID**: `song.link/i/<k>` (Odesli) löst
+sie in einen Link je Dienst auf — auf die richtige Aufnahme statt auf eine
+Suche. Deshalb schreiben `match_local.py` und `add_decades.py` die ID mit, und
+Playlist wie Künstlerkatalog übernehmen sie von Apple. Fehlt sie (ältere
+`songs.json`, lokale Dateien), bleibt es bei der Suche — deshalb stehen die
+Einzellinks weiterhin daneben und nicht nur der Sammellink.
+
+Der Lieblingsdienst (`settings.service`) steht in der Auflösung vorn und hängt
+an jeder Zeile der Ergebnisliste. Ein gespeicherter Dienst, den es nicht mehr
+gibt, fällt beim Laden auf Apple zurück.
+
 ## Spielregeln
 
 - 5 Songs pro Runde, einer je Stufe, jeder mit eigenem Fortschritt.
@@ -319,8 +340,8 @@ Frontend hält ein fehlendes Feld zusätzlich aus.
 
 Links Kopfzeile (Marke, Stufenliste, Neuwürfeln, Rundenpunkte) und darunter
 die Panels *Stufen* und *Statistik*; in der Mitte das Spielfeld; rechts
-*Modus*, *Künstler*, *Spielweise*, *Songstart*, *Lautstärke* und ganz unten die
-*Songauswahl*.
+*Modus*, *Künstler*, *Nachhören bei*, *Spielweise*, *Songstart*, *Lautstärke*
+und ganz unten die *Songauswahl*.
 
 Auf schmalen Bildschirmen wird `.col-left` zu `display:contents`, damit
 `.left-head` (order 1) oben bleibt und `.left-panels` (order 4) hinter das

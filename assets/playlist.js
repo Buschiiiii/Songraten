@@ -232,6 +232,7 @@ const Playlist = (() => {
       p: c.previewUrl,
       c: c.artworkUrl100 || '',
       id: c.trackId,
+      k: c.trackId,        /* Apples Track-ID: macht den Sammellink moeglich */
     };
   }
 

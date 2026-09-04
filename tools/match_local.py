@@ -292,7 +292,12 @@ if True:
             'g': it.get('primaryGenreName') or '',
             's': c['streams'], 'd': tier,
             'p': it['previewUrl'], 'c': it['artworkUrl100'],
+            # Apples Track-ID: damit zeigt der Sammellink (song.link) auf die
+            # richtige Aufnahme statt auf eine Suche.
+            'k': it.get('trackId'),
         })
+        if not songs[-1]['k']:
+            del songs[-1]['k']
         if c.get('rank'):
             songs[-1]['r'] = c['rank']
             # iTunes gibt bei Neuauflagen gern das Jahr der Wiederveroeffentlichung
