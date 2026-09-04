@@ -92,6 +92,11 @@ def lookup(title, artist, country='US'):
         return [h for h in json.load(r).get('results', []) if h.get('previewUrl')]
 
 
+def save_cache(cache):
+    os.makedirs(os.path.dirname(CACHE), exist_ok=True)
+    json.dump(cache, open(CACHE, 'w', encoding='utf-8'), ensure_ascii=False)
+
+
 def to_song(hit, row):
     year = int((hit.get('releaseDate') or '0000')[:4] or 0)
     # iTunes gibt bei Neuauflagen gern das Jahr der Wiederveroeffentlichung an.
@@ -164,15 +169,31 @@ if __name__ == '__main__':
         hit = cache.get(key)
         if hit is None and key not in cache:
             try:
-                hits = lookup(row['title'], row['artist'])
+                hits = None
+                for versuch in range(3):
+                    try:
+                        hits = lookup(row['title'], row['artist'])
+                        break
+                    except Exception as e:
+                        drossel = '403' in str(e) or '429' in str(e)
+                        if not drossel or versuch == 2 or time.time() - t0 > budget:
+                            raise
+                        # Apple macht fuer ein paar Minuten dicht. Einmal warten
+                        # lohnt sich, danach lieber aufhoeren und spaeter weiter.
+                        wait = 60 * (versuch + 1)
+                        print(f'  Apple bremst, warte {wait}s', flush=True)
+                        save_cache(cache)
+                        time.sleep(wait)
                 best, bs = None, 0.0
-                for h in hits:
+                for h in hits or []:
                     v = score(h, row['title'], row['artist'])
                     if v > bs:
                         best, bs = h, v
                 hit = to_song(best, row) if bs >= MIN_SCORE else None
                 cache[key] = hit
                 asked += 1
+                if asked % 50 == 0:
+                    save_cache(cache)      # ein Abbruch soll nichts wegwerfen
             except Exception as e:
                 print(f'  Abbruch bei "{row["title"]}": {e}', flush=True)
                 break
@@ -190,8 +211,7 @@ if __name__ == '__main__':
         per_artist[(dec, lead)] = per_artist.get((dec, lead), 0) + 1
         added += 1
 
-    os.makedirs(os.path.dirname(CACHE), exist_ok=True)
-    json.dump(cache, open(CACHE, 'w', encoding='utf-8'), ensure_ascii=False)
+    save_cache(cache)
 
     if added:
         data['songs'], merged = merge_duplicates(data['songs'])
