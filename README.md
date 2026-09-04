@@ -6,6 +6,18 @@ nach echten Spotify-Streamzahlen sortiert.
 Die Seite ist reines HTML/CSS/JavaScript. Kein Server, kein Build, keine Anmeldung,
 keine Bibliotheken. Alles läuft im Browser.
 
+**Vier Arten zu spielen**
+
+| Modus | Woraus gespielt wird |
+|---|---|
+| Charts & Stufen | die ganze Songliste, Easy bis Impossible nach Spotify-Streams |
+| Jahrzehnte | ein Jahrzehnt, Stufen relativ dazu vergeben |
+| Genres | ein Genre, Stufen relativ dazu vergeben |
+| Eigene Playlist | ein eigener Export, fünf zufällige Songs daraus |
+
+Dazu Filter für Genre, Künstler, Jahrzehnt und Instrumentals, die sich
+kombinieren lassen.
+
 ---
 
 ## Website online stellen

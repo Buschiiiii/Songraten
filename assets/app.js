@@ -117,6 +117,7 @@ async function boot() {
   DB.songs.forEach((s, i) => {
     s.i = i;
     s.n = norm(s.t);
+    s.ar = s.ar || [];        /* aeltere Datenlaeufe kannten das Feld nicht */
     s.na = s.ar.map(a => norm(DB.artists[a])).join(' ');
   });
   PL = buildPlaylist(Playlist.restore());
@@ -244,12 +245,16 @@ function buildChrome() {
 }
 
 /* Die Leiste links und die Reiter oben zeigen die Schwierigkeitsstufen oder,
-   wo es keine gibt, fuenf gleichwertige Plaetze. */
+   wo es keine gibt, fuenf gleichwertige Plaetze. Gezeichnet wird nach der
+   laufenden Runde, nicht nach dem aktuellen Pool: sonst stuenden dort Plaetze,
+   waehrend noch eine Runde mit Stufen laeuft, weil ein Filter den Pool
+   zwischendurch unter die Schwelle gedrueckt hat. */
 function renderSlots() {
   const list = $('#tierList'), tabs = $('#tabs');
   list.innerHTML = '';
   tabs.innerHTML = '';
-  slots().forEach((t, i) => {
+  const shown = round.length ? round.map(r => r.tier) : slots();
+  shown.forEach((t, i) => {
     const b = el('button', 'tier-item', t.label);
     b.style.setProperty('--tc', `var(--t-${t.id})`);
     b.appendChild(el('span', 'dot'));
@@ -340,6 +345,7 @@ function newRound() {
     save('recent', recent);
   }
   active = 0;
+  renderSlots();
   render();
   resetBar();
   focusSearch();
@@ -597,9 +603,10 @@ function submit() {
   const guess = pick;
 
   if (guess) {
+    const ga = guess.ar || [], ta = target.ar || [];
     const correct = guess.i === target.i ||
-      (norm(guess.t) === norm(target.t) && guess.ar.some(a => target.ar.includes(a)));
-    const artist = !correct && guess.ar.some(a => target.ar.includes(a));
+      (norm(guess.t) === norm(target.t) && ga.some(a => ta.includes(a)));
+    const artist = !correct && ga.some(a => ta.includes(a));
     r.guesses.push({ t: guess.t, a: guess.a, kind: correct ? 'ok' : artist ? 'artist' : 'no' });
     if (correct) return win(r);
   } else {
@@ -715,6 +722,8 @@ function showSummary() {
     row.appendChild(el('span', 's-pts', r.status === 'won' ? '+' + r.points : '—'));
     list.appendChild(row);
   });
+  const geraten = round.filter(r => r.status === 'won').length;
+  $('#summaryHits').textContent = `${geraten} von ${round.filter(r => r.song).length} erraten`;
   $('#summaryScore').textContent = total;
   stats.rounds++;
   if (total > stats.best) stats.best = total;
@@ -779,6 +788,26 @@ function render() {
   setAction();
 }
 
+/* `stats.byTier` sammelt seit jeher pro Stufe, Jahrzehnt, Genre und Playlist -
+   angezeigt wurde es nie. Hier zusammengefasst, aber nur was bespielt wurde. */
+function statGroups() {
+  const groups = [
+    ['Charts', k => TIERS.some(t => t.id === k)],
+    ['Jahrzehnte', k => k.startsWith('dec-')],
+    ['Genres', k => k.startsWith('gen-')],
+    ['Playlist', k => k === 'playlist'],
+  ];
+  return groups.map(([label, test]) => {
+    let p = 0, w = 0;
+    Object.keys(stats.byTier || {}).forEach(k => {
+      if (!test(k)) return;
+      p += stats.byTier[k].p || 0;
+      w += stats.byTier[k].w || 0;
+    });
+    return [label, p, w];
+  }).filter(([, p]) => p > 0);
+}
+
 function renderStats() {
   const d = $('#stats');
   d.innerHTML = '';
@@ -786,6 +815,8 @@ function renderStats() {
   const rows = [['Runden', stats.rounds], ['Songs erraten', `${stats.solved}/${stats.played}`],
     ['Quote', rate + ' %'], ['Serie', `${stats.streak || 0} (best ${stats.bestStreak || 0})`],
     ['Bestes Ergebnis', stats.best]];
+  const groups = statGroups();
+  if (groups.length > 1) rows.push(...groups.map(([label, p, w]) => [label, `${w}/${p}`]));
   rows.forEach(([k, v]) => { d.appendChild(el('dt', null, k)); d.appendChild(el('dd', null, v)); });
 }
 
@@ -859,7 +890,6 @@ function stepPick(dir) {
   if (mode === 'genres') settings.genre = next; else settings.decade = next;
   save('settings', settings);
   applyFilters();
-  renderSlots();
   newRound();
 }
 
@@ -1277,9 +1307,8 @@ function setMode(m) {
   pick = null;
   $('#search').value = '';
   $('#clearPick').hidden = true;
-  applyFilters();      /* erst der Pool, dann die Plaetze: ein kleines */
-  renderSlots();       /* Jahrzehnt spielt ohne Stufen */
-  renderPlaylist();
+  applyFilters();      /* erst der Pool: ein kleines Jahrzehnt spielt ohne */
+  renderPlaylist();    /* Stufen, und das entscheidet newRound() */
   newRound();
 }
 

@@ -98,7 +98,7 @@ main{
 }
 .pick-arrow:hover{background:var(--panel-2);color:var(--text)}
 .pick-arrow:disabled{opacity:.3;cursor:default}
-.pick-now{min-width:150px;text-align:center}
+.pick-now{min-width:150px;max-width:340px;text-align:center;overflow-wrap:anywhere}
 .pick-now strong{display:block;font-size:20px;letter-spacing:-.01em}
 .pick-now span{color:var(--muted);font-size:12px}
 
@@ -330,6 +330,7 @@ body.dragging::after{
 .summary-row .s-title{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .summary-row .s-pts{margin-left:auto;font-family:var(--mono);color:var(--muted)}
 .summary-row.won .s-pts{color:var(--green)}
+.summary-hits{color:var(--muted);font-size:13px;margin:0 0 4px;text-align:left}
 .summary-total{display:flex;justify-content:space-between;align-items:baseline;padding:13px 0 20px;border-top:1px solid var(--line)}
 .summary-total strong{font-family:var(--mono);font-size:24px;color:var(--green)}
 

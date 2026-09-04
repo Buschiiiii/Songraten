@@ -1,8 +1,9 @@
 # Songraten
 
 Website zum Songraten, Nachbau von Songless. Fünf Songs pro Runde, einer je
-Schwierigkeitsstufe, Ausschnitte von 0,01 bis 15 Sekunden. Zweck: der Betreiber
-nimmt damit Shorts und TikToks auf.
+Schwierigkeitsstufe, Ausschnitte von 0,01 bis 15 Sekunden. Privates
+Spaßprojekt, keine Videoproduktion — Entscheidungen also nach Spielgefühl,
+nicht nach Aufnahmetauglichkeit.
 
 **Sprache: Deutsch.** Erklärungen knapp halten.
 
@@ -12,6 +13,9 @@ Rein statisch auf GitHub Pages. Kein Server, kein Build-Step, keine
 Paketabhängigkeiten, kein API-Key, kein Login. Jeder Lösungsvorschlag, der
 einen Proxy, ein Backend oder ein npm-Paket zur Laufzeit braucht, ist raus —
 lieber die Funktion anders schneiden.
+
+Die GitHub Actions sind kein Widerspruch dazu: sie erzeugen nur `songs.json`
+und committen sie. Ausgeliefert wird weiterhin, was im Repo liegt.
 
 ## Warum Apple-Previews
 
@@ -123,9 +127,9 @@ Chartsongs aus „Africa" den unbekanntesten Song der 80er. Fehlt `f` (ältere
 `songs.json`), entscheiden die Streams.
 
 Songs mit leerem `d` haben keine Stufe und damit keine Streamzahl — sie kommen
-aus den Jahrescharts und spielen **nur** im Jahrzehntmodus mit. `chartFiltered`
-hält sie aus den Charts heraus, `filtered` (und damit die Vorschlagsliste)
-enthält sie.
+aus den Jahrescharts und spielen in den Charts **nicht** mit, im Jahrzehnte-
+und Genremodus schon. `chartFiltered` hält sie aus den Charts heraus,
+`filtered` (und damit die Vorschlagsliste) enthält sie.
 
 ## Mehr Songs für alte Jahrzehnte
 
@@ -311,7 +315,11 @@ kworb geprüft, plus die `NEVER_SPLIT`-Liste in `match_local.py`.
    globale Klick-Handler muss `isConnected` prüfen — der „weitere"-Knopf
    verschwand sonst beim Klick aus dem DOM und galt als Klick daneben, was
    die Liste sofort wieder schloss.
-8. localStorage-Schlüssel: `songrate:settings` (enthält auch `filters`),
+8. **Die Statistik zeigt `stats.byTier` erst seit Kurzem.** Gesammelt wurde
+   immer schon pro Stufe (`easy`…), pro Jahrzehnt (`dec-1980`), Genre
+   (`gen-pop`) und für die Playlist — `statGroups()` fasst das zusammen und
+   zeigt es nur, wenn mehr als ein Modus bespielt wurde.
+9. localStorage-Schlüssel: `songrate:settings` (enthält auch `filters`),
    `songrate:stats`,
    `songrate:recent` (letzte 60 Songs, gegen Wiederholungen),
    `songrate:playlist` (aufgelöste Playlist), `songrate:plcache`
@@ -362,9 +370,10 @@ zeigt es.
 
 ## Offene Punkte
 
-1. **Chartsdaten.** Für einen frischen Chartsbestand fehlt ein Skript, das
-   kworb selbst abgreift und `artists_top.json` und `candidates.json` erzeugt.
-   Ohne das lässt sich `match_local.py` nirgends neu starten.
+1. **kworb-Parser ungetestet am echten Objekt.** `fetch_kworb.py` erzeugt die
+   Vorstufe wieder selbst, die HTML-Struktur ist aber aus der Ferne geraten und
+   nur gegen nachgebaute Tabellen geprüft. Erkennt es zu wenig, bricht es ab —
+   der erste echte Lauf von *Charts neu bauen* zeigt, ob es passt.
 2. **Playlist-Modus.** Steht (siehe oben). Offen bleibt: die Trefferquote der
    iTunes-Suche ist bei Remixen und Live-Versionen mager. Wie lange Apple nach
    einem 403 wirklich dichthält, ist nicht dokumentiert — die Wartestufen sind

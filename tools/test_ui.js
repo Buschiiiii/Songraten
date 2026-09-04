@@ -144,6 +144,8 @@ const dummy = n => ({ t: 'Song ' + n, a: 'Kuenstler ' + n, al: 'Album', y: 2020,
 
   for (let i = 0; i < 5; i++) { G('choose(round[active].song); submit()'); await tick(10); G('closeReveal()'); await tick(10); }
   assert(!$('#summary').hidden, 'Playlist: Rundenende zeigt das Ergebnis');
+  assert(/\d+ von \d+ erraten/.test($('#summaryHits').textContent),
+    'Rundenende: es steht da, wie viele erraten wurden (' + $('#summaryHits').textContent + ')');
   assert(G('stats.byTier.playlist') != null && G('stats.byTier.pl1') == null, 'Playlist: Statistik unter einem Schluessel');
   $('#summaryNext').click(); await tick(30);
 
@@ -198,18 +200,32 @@ const dummy = n => ({ t: 'Song ' + n, a: 'Kuenstler ' + n, al: 'Album', y: 2020,
   assert(!G("listFor('decades').map(o => o.value)").includes(1950), 'Jahrzehnte: die 1950er mit einem Song fallen weg');
   assert($('#gDecade').hidden, 'Jahrzehnte: die Jahrzehnt-Liste im Filterpanel ist hier ausgeblendet');
 
-  /* Ein duenn besetztes Jahrzehnt wird ohne Stufen gespielt */
-  G('settings.decade = 1960; applyFilters(); renderSlots(); newRound()'); await tick(40);
-  assert(G('(currentPick()||{}).value') === 1960, 'Jahrzehnte: die 1960er sind waehlbar');
-  assert(!G('usesTiers()') && G('slots()').length === 5 && G('round')[0].tier.mult === 1,
-    'Jahrzehnte: zu wenige Songs -> fuenf zufaellige statt Stufen (' + G('pickFiltered').length + ')');
-  assert(new Set(G('round').filter(r => r.song).map(r => r.song.i)).size === 5,
+  /* Ein duenn besetztes Jahrzehnt wird ohne Stufen gespielt. Wie viele Songs
+     welches Jahrzehnt hat, haengt am Datenstand - deshalb ein eigenes Fenster
+     mit einem gebauten Jahrzehnt knapp ueber DEC_MIN. */
+  const wThin = makeWindow({}, db => {
+    for (let i = 0; i < 12; i++) {
+      const v = db.songs[i];
+      db.songs.push({ ...v, t: 'Dreissiger ' + i, y: 1935, s: 1e6 * (i + 1), d: '', f: i * 8 });
+    }
+  });
+  const T = n => wThin.__ev(n), t$ = q => wThin.document.querySelector(q);
+  await waitFor(() => !wThin.document.querySelector('#app').hidden);
+  wThin.__ev("settings.decade = 1930; setMode('decades')");
+  await waitFor(() => wThin.__ev('mode') === 'decades');
+
+  assert(T('(currentPick()||{}).value') === 1930, 'Jahrzehnte: das kleine Jahrzehnt ist waehlbar');
+  assert(!T('usesTiers()') && T('slots()').length === 5 && T('round')[0].tier.mult === 1,
+    'Jahrzehnte: zu wenige Songs -> fuenf zufaellige statt Stufen (' + T('pickFiltered').length + ')');
+  assert(new Set(T('round').filter(r => r.song).map(r => r.song.i)).size === 5,
     'Jahrzehnte: dabei wiederholt sich kein Song');
-  assert(/ohne Stufen/.test($('#pickCount').textContent), 'Jahrzehnte: die Leiste sagt es dazu');
-  assert($('#tierList').children.length === 5 && $('#tierList').children[0].textContent.includes('Song'),
+  assert(/ohne Stufen/.test(t$('#pickCount').textContent), 'Jahrzehnte: die Leiste sagt es dazu');
+  assert(t$('#tierList').children.length === 5 && t$('#tierList').children[0].textContent.includes('Song'),
     'Jahrzehnte: die Leiste links zeigt Plaetze statt Stufen');
-  G('settings.decade = 2010; applyFilters(); renderSlots(); newRound()'); await tick(40);
-  assert(G('usesTiers()'), 'Jahrzehnte: ein grosses Jahrzehnt hat wieder Stufen');
+  wThin.__ev("settings.decade = 2010; applyFilters(); newRound()");
+  await tick(40);
+  assert(T('usesTiers()') && t$('#tierList').children[0].textContent.includes('Easy'),
+    'Jahrzehnte: ein grosses Jahrzehnt hat wieder Stufen, und die Leiste wandert mit');
 
   /* Statistik zaehlt die Serie mit */
   const streak0 = G('stats.streak') || 0;
@@ -220,6 +236,17 @@ const dummy = n => ({ t: 'Song ' + n, a: 'Kuenstler ' + n, al: 'Album', y: 2020,
   assert(G('stats.streak') === 0 && G('stats.bestStreak') >= streak0 + 1,
     'Statistik: Aufgeben setzt die Serie zurueck, die beste bleibt stehen');
   G('closeReveal()'); await tick(20);
+
+  /* Die Statistik schluesselt nach Modus auf, sobald mehr als einer bespielt ist */
+  G("stats.byTier = { easy: {p:4,w:3}, 'dec-1980': {p:2,w:1}, 'gen-pop': {p:1,w:0} }; renderStats()");
+  const statText = $('#stats').textContent;
+  assert(/Charts3\/4|Charts.*3\/4/.test(statText.replace(/\s+/g, '')) || /3\/4/.test(statText),
+    'Statistik: die Charts stehen mit ihrer Quote da');
+  assert(/Jahrzehnte/.test(statText) && /Genres/.test(statText),
+    'Statistik: Jahrzehnte und Genres ebenfalls');
+  G("stats.byTier = { easy: {p:4,w:3} }; renderStats()");
+  assert(!/Jahrzehnte/.test($('#stats').textContent),
+    'Statistik: bei nur einem Modus bleibt die Aufschluesselung weg');
 
   /* Bei Apple Music nachhoeren */
   G('showReveal(round[0], false)');
@@ -304,7 +331,7 @@ const dummy = n => ({ t: 'Song ' + n, a: 'Kuenstler ' + n, al: 'Album', y: 2020,
   /* Ein kleines Genre wird ohne Stufen gespielt: fuenf zufaellige Songs. */
   const tinyGenre = G("listFor('genres').map(o => o.value).find(v => filtered.filter(s => norm(Filters.genreOf(s)) === v).length < TIER_MIN * TIERS.length)");
   if (tinyGenre) {
-    G(`settings.genre = ${JSON.stringify(tinyGenre)}; applyFilters(); renderSlots(); newRound()`);
+    G(`settings.genre = ${JSON.stringify(tinyGenre)}; applyFilters(); newRound()`);
     await tick(40);
     assert(!G('usesTiers()') && G('slots()').length === 5 && G('round')[0].tier.mult === 1,
       'Genres: zu wenige Songs -> fuenf zufaellige statt Stufen');
@@ -482,15 +509,21 @@ const dummy = n => ({ t: 'Song ' + n, a: 'Kuenstler ' + n, al: 'Album', y: 2020,
   $$('#fReset').click();
   assert(F('settings.filters').length === 1 && $$('#fInst').checked, 'Filter: Zuruecksetzen laesst nur den Standard stehen');
 
-  /* Zu kleiner Pool warnt. Die 1960er haben ausserdem keine Impossible-Songs,
-     die Stufe muss also Ersatz aus dem Rest bekommen. */
-  add('nur', 'decade', '1960er');
-  assert(F('filtered').length < 30 && $$('#filterCount').classList.contains('warn')
+  /* Zu kleiner Pool warnt, und mindestens eine Stufe laeuft leer - welches
+     Jahrzehnt duenn genug ist, haengt am Datenstand, deshalb zur Laufzeit
+     gesucht. */
+  /* Nur Songs mit Stufe spielen in den Charts mit - danach wird gesucht. */
+  const duenn = F(`Filters.options('decade', DB).map(o => o.text)
+    .find(t => { const n = chartFiltered.filter(s => Filters.decadeOf(s) === +t.slice(0, 4)).length;
+                 return n >= 5 && n < 30; })`);
+  assert(!!duenn, 'Filter: ein duenn besetztes Jahrzehnt zum Pruefen gefunden (' + duenn + ')');
+  add('nur', 'decade', duenn);
+  assert(F('activePool()').length < 30 && $$('#filterCount').classList.contains('warn')
     && /Nur \d+ Songs/.test($$('#filterCount').textContent), 'Filter: kleiner Pool warnt (' + $$('#filterCount').textContent + ')');
-  assert(F('byTier.impossible').length === 0, 'Filter: die 1960er lassen Impossible leer');
+  assert(F('TIERS.some(t => byTier[t.id].length === 0)'), 'Filter: dabei bleibt mindestens eine Stufe leer');
 
   F('newRound()'); await tick(30);
-  const small = new Set(F('filtered').map(s => s.i));
+  const small = new Set(F('chartFiltered').map(s => s.i));
   assert(F('round').every(r => r.song && small.has(r.song.i)),
     'Filter: leere Stufen bekommen Ersatz aus dem Rest des Pools');
   assert(new Set(F('round').map(r => r.song.i)).size === 5, 'Filter: der Ersatz wiederholt keinen Song');
@@ -567,6 +600,38 @@ const dummy = n => ({ t: 'Song ' + n, a: 'Kuenstler ' + n, al: 'Album', y: 2020,
   w2.__ev("setMode('charts')"); await tick(30);
   assert(JSON.stringify(w2.__ev('settings.filters')) === chartRules && !/Playlist/.test(w2.document.querySelector('#filterPanel h2').textContent),
     'Playlist-Filter: zurück im Chartsmodus gelten wieder die alten Regeln');
+
+  /* ------------------------------------- Grosse Songliste bleibt flott */
+  /* Nach ein paar Datenlaeufen stehen statt 2000 vielleicht 8000 Songs in der
+     Datei. Der Test misst nur grob, faengt aber ein O(n²) ab, das sich
+     einschleicht. */
+  const t0 = Date.now();
+  const wBig = makeWindow({}, db => {
+    const vorlage = db.songs.slice(0, 400);
+    for (let i = 0; i < 6000; i++) {
+      const v = vorlage[i % vorlage.length];
+      db.songs.push({ ...v, t: v.t + ' #' + i, r: (i % 100) + 1, f: i % 100 });
+    }
+  });
+  await waitFor(() => !wBig.document.querySelector('#app').hidden, 20000);
+  const bootMs = Date.now() - t0;
+  assert(!wBig.document.querySelector('#app').hidden && bootMs < 15000,
+    `grosse Liste: Start mit ${wBig.__ev('DB.songs.length')} Songs in ${bootMs} ms`);
+
+  const tFilter = Date.now();
+  wBig.__ev("settings.filters.push({ mode: 'ohne', type: 'genre', value: 'pop', text: 'Pop' }); applyFilters()");
+  assert(Date.now() - tFilter < 3000, `grosse Liste: Filter greifen in ${Date.now() - tFilter} ms`);
+
+  const tSug = Date.now();
+  wBig.__ev("suggest('the')");
+  assert(Date.now() - tSug < 2000,
+    `grosse Liste: Vorschlaege in ${Date.now() - tSug} ms (${wBig.__ev('sugAll.length')} Treffer)`);
+  assert(wBig.document.querySelectorAll('#suggest .sug').length <= 12,
+    'grosse Liste: trotzdem nur eine Seite gezeichnet');
+
+  wBig.__ev("setMode('decades')");
+  assert(wBig.__ev('usesTiers()') && wBig.__ev('pickFiltered').length > 100,
+    'grosse Liste: der Jahrzehntmodus hat dann genug fuer Stufen');
 
   /* ------------------------------------------------------- Randfaelle */
   w = makeWindow({
