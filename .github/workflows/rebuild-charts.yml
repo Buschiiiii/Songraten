@@ -77,15 +77,23 @@ jobs:
           songs = d['songs']
           mit_stufe = [s for s in songs if s.get('d')]
           assert len(songs) >= 1900, f'nur {len(songs)} Songs'
-          assert len(mit_stufe) >= 1500, f'nur {len(mit_stufe)} Songs mit Stufe - Kataloge unvollstaendig?'
           assert all(s.get('p') and s.get('t') for s in songs), 'Songs ohne Titel oder Preview'
+          assert all(s.get('ar') is not None for s in songs), 'Songs ohne Kuenstler-IDs'
           for tier in d['tiers']:
               n = sum(1 for s in songs if s.get('d') == tier)
               assert n >= 150, f'Stufe {tier} hat nur {n} Songs'
+
           alt = subprocess.run(['git', 'show', 'HEAD:data/songs.json'],
                                capture_output=True, text=True).stdout
-          vorher = len(json.loads(alt)['songs']) if alt else 0
-          print(f'{vorher} -> {len(songs)} Songs, davon {len(mit_stufe)} mit Stufe')
+          frueher = json.loads(alt)['songs'] if alt else []
+          vorher_stufe = sum(1 for s in frueher if s.get('d'))
+          # Ein gedrosselter Lauf holt weniger Kataloge und verliert dadurch
+          # Chartsongs - dann lieber nichts committen. Ein Prozent Schwankung
+          # ist normal, mehr nicht.
+          assert len(mit_stufe) >= vorher_stufe * 0.99, (
+              f'{vorher_stufe} -> {len(mit_stufe)} Songs mit Stufe: der Lauf hat welche verloren, '
+              'vermutlich fehlen Kataloge. Nichts committet.')
+          print(f'{len(frueher)} -> {len(songs)} Songs, davon {vorher_stufe} -> {len(mit_stufe)} mit Stufe')
           PY
 
       - name: Committen

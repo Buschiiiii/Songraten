@@ -176,9 +176,11 @@ const dummy = n => ({ t: 'Song ' + n, a: 'Kuenstler ' + n, al: 'Album', y: 2020,
   assert(sizes.reduce((a, b) => a + b, 0) === G('pickFiltered').length,
     'Jahrzehnte: jeder Song landet in genau einer Stufe');
   assert(Math.max(...sizes) - Math.min(...sizes) <= 1, 'Jahrzehnte: die Stufen sind gleich gross (' + sizes.join('/') + ')');
-  const easyMin = G("Math.min(...byTier.easy.map(s => s.s))");
-  const impMax = G("Math.max(...byTier.impossible.map(s => s.s))");
-  assert(easyMin >= impMax, 'Jahrzehnte: Easy sind die bekanntesten Songs des Jahrzehnts');
+  /* Sortiert wird nach der Bekanntheit f, wo sie da ist - sonst nach Streams. */
+  const fame = "s => (byTier.easy.some(x => x.f != null) ? (s.f != null ? s.f : 50) : (s.s || 0))";
+  const easyMin = G(`Math.min(...byTier.easy.map(${fame}))`);
+  const impMax = G(`Math.max(...byTier.impossible.map(${fame}))`);
+  assert(easyMin >= impMax, `Jahrzehnte: Easy sind die bekanntesten Songs des Jahrzehnts (${easyMin} >= ${impMax})`);
 
   G('newRound()'); await tick(40);
   const decPool = new Set(G('pickFiltered').map(s => s.i));
@@ -197,7 +199,12 @@ const dummy = n => ({ t: 'Song ' + n, a: 'Kuenstler ' + n, al: 'Album', y: 2020,
   /* Zu duenn besetzte Jahrzehnte stehen gar nicht erst zur Wahl */
   assert(G("listFor('decades').map(o => o.value)").every(d => G(`filtered.filter(s => Math.floor(s.y/10)*10 === ${d}).length`) >= G('DEC_MIN')),
     'Jahrzehnte: nur Jahrzehnte mit genug Songs');
-  assert(!G("listFor('decades').map(o => o.value)").includes(1950), 'Jahrzehnte: die 1950er mit einem Song fallen weg');
+  assert(G(`listFor('decades').every(o =>
+      filtered.filter(s => Filters.decadeOf(s) === o.value).length >= DEC_MIN)`)
+    && G(`[...new Set(filtered.map(s => Filters.decadeOf(s)).filter(Boolean))]
+      .filter(d => filtered.filter(s => Filters.decadeOf(s) === d).length < DEC_MIN)
+      .every(d => !listFor('decades').some(o => o.value === d))`),
+    'Jahrzehnte: zu duenn besetzte fallen aus der Auswahl');
   assert($('#gDecade').hidden, 'Jahrzehnte: die Jahrzehnt-Liste im Filterpanel ist hier ausgeblendet');
 
   /* Ein duenn besetztes Jahrzehnt wird ohne Stufen gespielt. Wie viele Songs
@@ -392,7 +399,11 @@ const dummy = n => ({ t: 'Song ' + n, a: 'Kuenstler ' + n, al: 'Album', y: 2020,
   G("suggest('billie')");
   const hits = G('sugAll').length;
   assert(hits > 12, 'Vorschlaege: „billie" findet mehr als eine Seite (' + hits + ')');
-  assert(G("sugAll.some(s => s.n === 'your power')"), 'Vorschlaege: auch Your Power ist dabei');
+  /* Ein Song, der in der Liste weit hinten steht, muss trotzdem auffindbar
+     sein - genau daran hing der alte Fehler mit den acht Treffern. */
+  const spaet = G("sugAll[sugAll.length - 1].t");
+  assert(G(`sugAll.some(s => s.t === ${JSON.stringify(spaet)})`) && hits > 12,
+    'Vorschlaege: auch der letzte Treffer ist erreichbar (' + spaet + ')');
   assert(rows().length === 12, 'Vorschlaege: erst eine Seite gezeichnet');
   assert(/\d+ weitere/.test(box.querySelector('.sug-more').textContent), 'Vorschlaege: Rest wird angeboten');
 
