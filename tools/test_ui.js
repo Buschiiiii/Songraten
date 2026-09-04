@@ -199,16 +199,18 @@ const dummy = n => ({ t: 'Song ' + n, a: 'Kuenstler ' + n, al: 'Album', y: 2020,
   assert($('#gDecade').hidden, 'Jahrzehnte: die Jahrzehnt-Liste im Filterpanel ist hier ausgeblendet');
 
   /* Ein duenn besetztes Jahrzehnt wird ohne Stufen gespielt */
-  G('settings.decade = 1960; applyFilters(); renderSlots(); newRound()'); await tick(40);
+  G('settings.decade = 1960; applyFilters(); newRound()'); await tick(40);
   assert(G('(currentPick()||{}).value') === 1960, 'Jahrzehnte: die 1960er sind waehlbar');
   assert(!G('usesTiers()') && G('slots()').length === 5 && G('round')[0].tier.mult === 1,
     'Jahrzehnte: zu wenige Songs -> fuenf zufaellige statt Stufen (' + G('pickFiltered').length + ')');
+  assert($('#tierList').children[0].textContent.includes('Song'),
+    'Jahrzehnte: die Leiste links wandert mit der Runde mit');
   assert(new Set(G('round').filter(r => r.song).map(r => r.song.i)).size === 5,
     'Jahrzehnte: dabei wiederholt sich kein Song');
   assert(/ohne Stufen/.test($('#pickCount').textContent), 'Jahrzehnte: die Leiste sagt es dazu');
   assert($('#tierList').children.length === 5 && $('#tierList').children[0].textContent.includes('Song'),
     'Jahrzehnte: die Leiste links zeigt Plaetze statt Stufen');
-  G('settings.decade = 2010; applyFilters(); renderSlots(); newRound()'); await tick(40);
+  G('settings.decade = 2010; applyFilters(); newRound()'); await tick(40);
   assert(G('usesTiers()'), 'Jahrzehnte: ein grosses Jahrzehnt hat wieder Stufen');
 
   /* Statistik zaehlt die Serie mit */
@@ -315,7 +317,7 @@ const dummy = n => ({ t: 'Song ' + n, a: 'Kuenstler ' + n, al: 'Album', y: 2020,
   /* Ein kleines Genre wird ohne Stufen gespielt: fuenf zufaellige Songs. */
   const tinyGenre = G("listFor('genres').map(o => o.value).find(v => filtered.filter(s => norm(Filters.genreOf(s)) === v).length < TIER_MIN * TIERS.length)");
   if (tinyGenre) {
-    G(`settings.genre = ${JSON.stringify(tinyGenre)}; applyFilters(); renderSlots(); newRound()`);
+    G(`settings.genre = ${JSON.stringify(tinyGenre)}; applyFilters(); newRound()`);
     await tick(40);
     assert(!G('usesTiers()') && G('slots()').length === 5 && G('round')[0].tier.mult === 1,
       'Genres: zu wenige Songs -> fuenf zufaellige statt Stufen');

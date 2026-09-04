@@ -244,12 +244,16 @@ function buildChrome() {
 }
 
 /* Die Leiste links und die Reiter oben zeigen die Schwierigkeitsstufen oder,
-   wo es keine gibt, fuenf gleichwertige Plaetze. */
+   wo es keine gibt, fuenf gleichwertige Plaetze. Gezeichnet wird nach der
+   laufenden Runde, nicht nach dem aktuellen Pool: sonst stuenden dort Plaetze,
+   waehrend noch eine Runde mit Stufen laeuft, weil ein Filter den Pool
+   zwischendurch unter die Schwelle gedrueckt hat. */
 function renderSlots() {
   const list = $('#tierList'), tabs = $('#tabs');
   list.innerHTML = '';
   tabs.innerHTML = '';
-  slots().forEach((t, i) => {
+  const shown = round.length ? round.map(r => r.tier) : slots();
+  shown.forEach((t, i) => {
     const b = el('button', 'tier-item', t.label);
     b.style.setProperty('--tc', `var(--t-${t.id})`);
     b.appendChild(el('span', 'dot'));
@@ -340,6 +344,7 @@ function newRound() {
     save('recent', recent);
   }
   active = 0;
+  renderSlots();
   render();
   resetBar();
   focusSearch();
@@ -881,7 +886,6 @@ function stepPick(dir) {
   if (mode === 'genres') settings.genre = next; else settings.decade = next;
   save('settings', settings);
   applyFilters();
-  renderSlots();
   newRound();
 }
 
@@ -1299,9 +1303,8 @@ function setMode(m) {
   pick = null;
   $('#search').value = '';
   $('#clearPick').hidden = true;
-  applyFilters();      /* erst der Pool, dann die Plaetze: ein kleines */
-  renderSlots();       /* Jahrzehnt spielt ohne Stufen */
-  renderPlaylist();
+  applyFilters();      /* erst der Pool: ein kleines Jahrzehnt spielt ohne */
+  renderPlaylist();    /* Stufen, und das entscheidet newRound() */
   newRound();
 }
 
