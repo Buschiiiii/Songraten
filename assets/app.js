@@ -55,6 +55,8 @@ let settings = load('settings', {
   genre: 'pop',
   artist: null,           /* zuletzt gespielter Kuenstler (Apple-ID) */
   service: Links.DEFAULT, /* Lieblingsdienst zum Nachhoeren */
+  svcAll: false,          /* alle Dienste in der Aufloesung zeigen */
+  open: {},               /* welche Panels aufgeklappt sind */
   arFilters: Filters.DEFAULT.map(r => ({ ...r })),
   loFilters: Filters.DEFAULT.map(r => ({ ...r })),
   hard: false,
@@ -185,6 +187,7 @@ function buildChrome() {
       settings.start = b.dataset.v;
       save('settings', settings);
       $('#startMode').querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b));
+      renderPanelSums();
       round.forEach((r, i) => {
         if (r.status !== 'playing' || r.guesses.length || r.stage !== 0) return;
         /* Bei eigenen Dateien steckt die Stelle im Ausschnitt selbst - der
@@ -204,6 +207,7 @@ function buildChrome() {
     settings.volume = vol.value / 100;
     Audio2.setVolume(settings.volume);
     save('settings', settings);
+    renderPanelSums();
   };
 
   const hard = $('#hardMode');
@@ -284,6 +288,7 @@ function buildChrome() {
   buildServiceUI();
   buildFilterUI();
   renderStats();
+  buildPanels();
 }
 
 /* Die Leiste links und die Reiter oben zeigen die Schwierigkeitsstufen oder,
@@ -339,6 +344,7 @@ function focusSearch() {
 
 function renderChips() {
   $('#stageChips').querySelectorAll('.chip').forEach((c, i) => c.classList.toggle('on', settings.stages[i]));
+  renderPanelSums();
 }
 
 /* ----------------------------------------------------------------- Runde */
@@ -810,15 +816,39 @@ function showReveal(r, won) {
 function renderServiceLinks(song) {
   const box = $('#revealLinks');
   box.innerHTML = '';
-  Links.forSong(song, settings.service).forEach((l, i) => {
-    const a = el('a', 'svc' + (l.all ? ' all' : i === 0 || (l.id === settings.service) ? ' on' : ''));
+  const liste = Links.forSong(song, settings.service);
+  const chip = l => {
+    const a = el('a', 'svc' + (l.all ? ' all' : l.id === settings.service ? ' on' : '')
+      + (l.shop ? ' shop' : ''));
     a.href = l.url;
     a.target = '_blank';
     a.rel = 'noopener noreferrer';
     a.textContent = l.name;
     if (l.hint) a.title = l.hint;
-    box.appendChild(a);
-  });
+    if (l.shop) a.title = 'Kaufen statt streamen';
+    return a;
+  };
+  /* Standardmaessig steht nur der eigene Dienst da - und der Sammellink, wenn
+     es ihn gibt. Der Rest kommt auf Klick und bleibt dann offen. */
+  const zeigen = settings.svcAll ? liste : liste.filter(l => l.all || l.id === settings.service);
+  zeigen.forEach(l => box.appendChild(chip(l)));
+  if (!settings.svcAll && zeigen.length < liste.length) {
+    const mehr = el('button', 'svc more', `+ ${liste.length - zeigen.length} weitere`);
+    mehr.onclick = () => {
+      settings.svcAll = true;
+      save('settings', settings);
+      renderServiceLinks(song);
+    };
+    box.appendChild(mehr);
+  } else if (settings.svcAll && liste.length > 1) {
+    const weg = el('button', 'svc more', 'weniger');
+    weg.onclick = () => {
+      settings.svcAll = false;
+      save('settings', settings);
+      renderServiceLinks(song);
+    };
+    box.appendChild(weg);
+  }
 }
 
 function buildServiceUI() {
@@ -886,6 +916,84 @@ function showSummary() {
   $('#summary').hidden = false;
 }
 
+/* ------------------------------------------------------- Ausklappbares */
+
+/* Mit sechs Modi, drei Quellen und den Einstellungen wird die Spalte lang.
+   Zugeklappt steht die Antwort in der Zeile selbst - „Nachhören bei ·
+   Spotify" -, aufgeklappt wird nur, was man gerade wirklich ändern will.
+   Der Zustand wird gemerkt. */
+function buildPanels() {
+  document.querySelectorAll('details.panel[data-k]').forEach(d => {
+    const k = d.dataset.k;
+    d.open = !!(settings.open || {})[k];
+    d.addEventListener('toggle', () => {
+      settings.open = { ...(settings.open || {}), [k]: d.open };
+      save('settings', settings);
+    });
+  });
+  renderPanelSums();
+}
+
+/* Was in der zugeklappten Zeile steht. */
+function panelSum(k) {
+  const nichts = 'nichts geladen';
+  if (k === 'stages') {
+    const an = settings.stages.filter(Boolean).length;
+    return [`${an} von ${STAGES.length}`, an < 2];
+  }
+  if (k === 'stats') {
+    return [stats.played ? `${stats.solved}/${stats.played} · ${Math.round(stats.solved / stats.played * 100)} %`
+      : 'noch nichts gespielt', false];
+  }
+  if (k === 'playlist') {
+    if (plBusy) return ['wird gesucht …', false];
+    return [PL ? `${PL.name} · ${PL.songs.length} Songs` : nichts, false];
+  }
+  if (k === 'artist') {
+    const n = (typeof Artist !== 'undefined' ? Artist.all() : []).length;
+    if (mode === 'artist' && currentPick()) return [currentPick().text, false];
+    return [n ? `${n} geladen` : nichts, false];
+  }
+  if (k === 'local') {
+    if (loBusy || srvBusy) return ['wird gelesen …', false];
+    return [LO ? `${LO.name} · ${LO.songs.length} Songs` : nichts, false];
+  }
+  if (k === 'service') return [Links.name(settings.service), false];
+  if (k === 'play') {
+    return [`${settings.hard ? 'Hardmode' : 'normal'} · `
+      + `${settings.start === 'random' ? 'zufällige Stelle' : 'Anfang'} · `
+      + `${Math.round(settings.volume * 100)} %`, false];
+  }
+  if (k === 'filter') {
+    const n = activePool().length;
+    const min = (mode === 'playlist' || mode === 'local') ? PL_MIN : Filters.MIN_POOL;
+    const rules = activeFilters().length;
+    /* Worauf die Regeln wirken, gehoert dazu: jeder Modus hat seinen eigenen
+       Satz, und wer das nicht sieht, wundert sich. */
+    return [`${filterScope()} · ${n} Songs`
+      + (rules ? ` · ${rules} Regel${rules > 1 ? 'n' : ''}` : ''), n < min];
+  }
+  return ['', false];
+}
+
+/* Worauf sich die Songauswahl gerade bezieht. */
+function filterScope() {
+  if (mode === 'playlist') return 'Playlist';
+  if (mode === 'local') return LO ? LO.name : 'Eigene Musik';
+  if (PICKED.includes(mode)) { const now = currentPick(); return now ? now.text : '–'; }
+  return 'Charts';
+}
+
+function renderPanelSums() {
+  document.querySelectorAll('details.panel[data-k]').forEach(d => {
+    const box = d.querySelector('summary .psum');
+    if (!box) return;
+    const [text, warn] = panelSum(d.dataset.k);
+    box.textContent = text;
+    box.classList.toggle('warn', !!warn);
+  });
+}
+
 /* ------------------------------------------------------------- Rendering */
 
 function render() {
@@ -945,6 +1053,7 @@ function render() {
     : 'Song suchen …';
   $('#roundScore').textContent = round.reduce((a, b) => a + b.points, 0);
   setAction();
+  renderPanelSums();
 }
 
 /* `stats.byTier` sammelt seit jeher pro Stufe, Jahrzehnt, Genre und Playlist -
@@ -979,6 +1088,7 @@ function renderStats() {
   const groups = statGroups();
   if (groups.length > 1) rows.push(...groups.map(([label, p, w]) => [label, `${w}/${p}`]));
   rows.forEach(([k, v]) => { d.appendChild(el('dt', null, k)); d.appendChild(el('dd', null, v)); });
+  renderPanelSums();
 }
 
 /* --------------------------------------------------------- Songauswahl */
@@ -1260,9 +1370,6 @@ function markRules() {
 function renderFilters() {
   const rules = activeFilters();
   const now = PICKED.includes(mode) ? currentPick() : null;
-  $('#filterPanel').querySelector('h2').textContent = mode === 'playlist' ? 'Songauswahl · Playlist'
-    : mode === 'local' ? 'Songauswahl · Eigene Musik'
-    : now ? 'Songauswahl · ' + now.text : 'Songauswahl';
 
   const box = $('#filterList');
   box.innerHTML = '';
@@ -1306,6 +1413,7 @@ function renderFilters() {
   }
   c.textContent = msg;
   c.classList.toggle('warn', warn);
+  renderPanelSums();
 }
 
 /* ---------------------------------------------------------- Kuenstler */
@@ -1465,6 +1573,7 @@ function buildLocalUI() {
 }
 
 function renderLocal() {
+  renderPanelSums();
   $('#loPickDir').hidden = loBusy;
   $('#loPickFiles').hidden = loBusy;
   $('#loCancel').hidden = !loBusy;
@@ -1598,13 +1707,27 @@ function buildServerUI() {
   });
 }
 
-/* Plex kennt keinen Benutzernamen, dort zaehlt nur der Token. */
+/* Plex kennt keinen Benutzernamen, dort zaehlt nur der Token. Und weil kaum
+   jemand weiss, wo der steht, sagt es die Zeile darunter. */
+const SRV_HINT = {
+  subsonic: 'Adresse deines Navidrome, Airsonic oder Gonic, dazu Benutzername '
+    + 'und Passwort wie beim Anmelden.',
+  jellyfin: 'Adresse deines Jellyfin (oder Emby), Benutzername und Passwort. '
+    + 'Statt des Passworts geht auch ein API-Schlüssel – dann das Namensfeld leer lassen. '
+    + 'Den Schlüssel gibt es unter Dashboard → Erweitert → API-Schlüssel.',
+  plex: 'Adresse: die, unter der du deinen Server erreichst – meist eine auf '
+    + '.plex.direct:32400, die app.plex.tv selbst benutzt. Token: in der Plex-Weboberfläche '
+    + 'einen Song auswählen, ⋮ → Informationen → XML anzeigen; in der Adresse des neuen '
+    + 'Tabs steht am Ende X-Plex-Token=…',
+};
+
 function renderServerKind() {
   $('#srvKind').querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.v === srvKind));
   const plex = srvKind === 'plex';
   $('#srvUser').hidden = plex;
   $('#srvPass').placeholder = plex ? 'X-Plex-Token'
     : srvKind === 'jellyfin' ? 'Passwort (oder API-Schlüssel)' : 'Passwort';
+  $('#srvHint').textContent = SRV_HINT[srvKind] || '';
 }
 
 async function loadServer(cfg, opts) {
@@ -1810,6 +1933,7 @@ function renderModes() {
 
 function renderPlaylist() {
   renderModes();
+  renderPanelSums();
   if ($('#arHits')) renderArtists();
   $('#plPick').disabled = plBusy;
   $('#plPick').hidden = plBusy;

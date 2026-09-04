@@ -196,6 +196,26 @@ main{
 /* ---------- Panels rechts ---------- */
 .panel{background:var(--panel);border-radius:var(--r);padding:15px 16px;margin-bottom:12px}
 .panel h2{font-size:11px;letter-spacing:.09em;text-transform:uppercase;color:var(--muted);margin-bottom:11px}
+
+/* Ausklappbare Panels: zugeklappt steht in der Zeile, was drinsteht - dann
+   muss man sie meistens gar nicht erst aufmachen. */
+details.panel > summary{
+  display:flex;align-items:baseline;gap:10px;list-style:none;cursor:pointer;
+}
+details.panel > summary::-webkit-details-marker{display:none}
+details.panel > summary::after{
+  content:"▸";font-size:10px;color:var(--grey);transition:transform .15s;align-self:center;
+}
+details.panel[open] > summary::after{transform:rotate(90deg)}
+details.panel > summary h2{margin:0;flex:none}
+details.panel > summary .psum{
+  flex:1;min-width:0;text-align:right;font-size:12px;color:var(--muted);
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+}
+details.panel > summary .psum.warn{color:var(--yellow)}
+details.panel > summary:hover h2,details.panel > summary:hover .psum{color:var(--text)}
+details.panel[open] > summary{margin-bottom:12px}
+details.panel[open] > summary .psum{opacity:.55}
 .panel .note{color:var(--grey);font-size:11.5px;margin:9px 0 0;line-height:1.4}
 
 .seg{display:flex;flex-direction:column;gap:5px}
@@ -351,7 +371,10 @@ body.dragging::after{
 }
 .reveal-card.wide{max-width:460px}
 @keyframes pop{from{opacity:0;transform:scale(.9)}to{opacity:1;transform:none}}
-.reveal-card img{border-radius:14px;cursor:pointer;margin-bottom:18px;box-shadow:0 12px 34px rgba(0,0,0,.5)}
+.reveal-card img{
+  border-radius:14px;cursor:pointer;margin-bottom:18px;box-shadow:0 12px 34px rgba(0,0,0,.5);
+  max-width:100%;height:auto;
+}
 .reveal-card h3{font-size:22px;letter-spacing:-.01em}
 .reveal-card p{margin:5px 0 0;color:var(--muted)}
 .reveal-card .meta{font-size:12.5px;color:var(--grey);margin-top:7px}
@@ -375,6 +398,9 @@ body.dragging::after{
 }
 .svc:hover{color:var(--text);border-color:var(--line)}
 .svc.on{color:var(--green);border-color:var(--green-dim)}
+.svc.shop{opacity:.75}
+.svc.more{color:var(--grey);background:none;border:1px dashed var(--line)}
+.svc.more:hover{color:var(--text);border-color:var(--grey)}
 .svc.all{color:var(--text);background:var(--green-dim);border-color:transparent;font-weight:600}
 .svc.all:hover{background:var(--green);color:#07130b}
 
@@ -419,7 +445,23 @@ body.dragging::after{
   .col-right .btn-ghost{width:100%}
   .pick-now{min-width:120px}
   .pick-now strong{font-size:18px}
-  .hint{line-height:1.7}
+  .hint{display:none}
+  /* Auf dem Handy ist die Flaeche knapp: die Auflösung darf den Rand nutzen. */
+  .reveal{padding:14px}
+  .reveal-card{padding:22px 18px;border-radius:18px}
+  .reveal-card img{width:190px}
+  .panel{padding:13px 14px;margin-bottom:9px}
+  /* Sechs Modi untereinander sind auf dem Handy eine halbe Seite. */
+  #modeSeg{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+  #modeSeg button{padding:9px 6px;font-size:12.5px}
+}
+
+/* Ganz schmale Geraete: der Knopf neben dem Suchfeld wird sonst gequetscht. */
+@media (max-width:430px){
+  .guess-row{flex-wrap:wrap}
+  .guess-row .search{flex:1 1 100%}
+  .btn-action{width:100%;padding:12px 0}
+  .tab{padding:7px 13px;font-size:13px}
 }
 @media (prefers-reduced-motion:reduce){
   *{animation-duration:.01ms !important;transition-duration:.01ms !important}

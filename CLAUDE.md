@@ -417,9 +417,22 @@ Playlist wie Künstlerkatalog übernehmen sie von Apple. Fehlt sie (ältere
 `songs.json`, lokale Dateien), bleibt es bei der Suche — deshalb stehen die
 Einzellinks weiterhin daneben und nicht nur der Sammellink.
 
-Der Lieblingsdienst (`settings.service`) steht in der Auflösung vorn und hängt
-an jeder Zeile der Ergebnisliste. Ein gespeicherter Dienst, den es nicht mehr
-gibt, fällt beim Laden auf Apple zurück.
+Der Lieblingsdienst (`settings.service`) steht in der Auflösung — und zwar
+**nur er**, dazu der Sammellink; die übrigen kommen über „+ n weitere"
+(`settings.svcAll`, bleibt dann so). Ein gespeicherter Dienst, den es nicht
+mehr gibt, fällt beim Laden auf Apple zurück.
+
+Zwei Adressen zeigten auf den falschen Ort: `qobuz.com` ist der Kaufladen,
+gespielt wird auf `play.qobuz.com`. Bandcamp, Discogs und der Qobuz-Shop
+stehen deshalb als `shop: true` hinten und leicht abgeblendet.
+
+**Anmelden und direkt abspielen geht nicht.** Spotifys Web Playback SDK
+bräuchte eine registrierte App, Premium und ein Fremdskript — und könnte
+trotzdem keine 0,01 Sekunden schneiden, weil Seek und Play dort im
+Zehntelsekundenbereich liegen. Apples MusicKit will einen signierten
+Developer-Token, also einen Server. Wer direkt abspielen will, nimmt die
+eigene Musik oder den eigenen Mediathek-Server — dort läuft der Ton wirklich
+aus der Seite heraus.
 
 ## Spielregeln
 
@@ -464,14 +477,33 @@ Frontend hält ein fehlendes Feld zusätzlich aus.
 ## Aufbau der Seite
 
 Links Kopfzeile (Marke, Stufenliste, Neuwürfeln, Rundenpunkte) und darunter
-die Panels *Stufen* und *Statistik*; in der Mitte das Spielfeld; rechts
-*Modus*, *Künstler*, *Eigene Musik*, *Nachhören bei*, *Spielweise*,
-*Songstart*, *Lautstärke* und ganz unten die *Songauswahl*.
+*Stufen* und *Statistik*; in der Mitte das Spielfeld; rechts *Modus*, *Eigene
+Playlist*, *Künstler*, *Eigene Musik*, *Nachhören bei*, *Spielweise* und ganz
+unten die *Songauswahl*.
 
 Auf schmalen Bildschirmen wird `.col-left` zu `display:contents`, damit
 `.left-head` (order 1) oben bleibt und `.left-panels` (order 4) hinter das
 Spielfeld und die Einstellungen rutscht — sonst müsste man an den Panels
-vorbeiscrollen, um den Abspielknopf zu sehen.
+vorbeiscrollen, um den Abspielknopf zu sehen. `#modeSeg` wird dort zweispaltig
+und die Tastaturhilfe verschwindet.
+
+### Alles klappt zu, und die Zeile sagt trotzdem Bescheid
+
+Sechs Modi, drei Quellen und die Einstellungen — untereinander wäre das eine
+Scrollstrecke, auf dem Handy erst recht. Deshalb ist jedes Panel ein
+`<details class="panel" data-k="…">`; offen bleibt nur *Modus*, weil man dort
+anfängt. Der Zustand liegt in `settings.open`.
+
+Damit Zuklappen nichts verbirgt, steht in jeder Kopfzeile rechts der aktuelle
+Wert (`panelSum()` → `.psum`): „Nachhören bei · Spotify", „Eigene Musik ·
+1240 Songs", „Songauswahl · Charts · 1913 Songs · 1 Regel", und bei zu kleinem
+Pool gelb. Damit muss man die meisten Panels nie aufmachen.
+`renderPanelSums()` hängt an `render()` und an allem, was sich ohne `render()`
+ändert (Lautstärke, Songstart, Stufen, Statistik, Filter, Quellen).
+
+Die Überschrift der *Songauswahl* wurde früher umgeschrieben („Songauswahl ·
+Playlist"). Das steht jetzt in der Zeile (`filterScope()`) — eine lange
+Überschrift hätte den Wert rechts hinausgedrückt.
 
 ## Fallstricke im Frontend
 

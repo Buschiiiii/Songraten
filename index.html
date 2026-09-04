@@ -37,16 +37,16 @@
     </div>
 
     <div class="left-panels">
-      <div class="panel">
-        <h2>Stufen</h2>
+      <details class="panel" data-k="stages">
+        <summary><h2>Stufen</h2><span class="psum"></span></summary>
         <div class="chips" id="stageChips"></div>
         <p class="note">Abgeschaltete Stufen werden übersprungen – kosten dich aber auch einen Versuch.</p>
-      </div>
+      </details>
 
-      <div class="panel stats">
-        <h2>Statistik</h2>
+      <details class="panel stats" data-k="stats">
+        <summary><h2>Statistik</h2><span class="psum"></span></summary>
         <dl id="stats"></dl>
-      </div>
+      </details>
     </div>
   </aside>
 
@@ -93,7 +93,7 @@
 
   <aside class="col col-right">
 
-    <div class="panel">
+    <div class="panel panel-open">
       <h2>Modus</h2>
       <div class="seg" id="modeSeg">
         <button data-v="charts" class="on">Charts &amp; Stufen</button>
@@ -103,6 +103,12 @@
         <button data-v="playlist" disabled>Eigene Playlist</button>
         <button data-v="local" disabled>Eigene Musik</button>
       </div>
+      <p class="note">Was noch nichts geladen hat, ist ausgegraut – die Quelle
+        steht darunter.</p>
+    </div>
+
+    <details class="panel" data-k="playlist" id="plPanel">
+      <summary><h2>Eigene Playlist</h2><span class="psum"></span></summary>
       <div class="pl-load">
         <input id="plFile" type="file" accept=".csv,.tsv,.txt,.json,.m3u,.m3u8,text/csv,text/plain,application/json" hidden>
         <button id="plPick" class="btn-ghost">Playlist laden</button>
@@ -116,20 +122,20 @@
       <button id="plClear" class="pl-link" hidden>Playlist entfernen</button>
       <p class="note">CSV, TSV, TXT, M3U oder JSON aus Exportify, TuneMyMusic, Soundiiz,
         der Musik-App oder Google Takeout – Datei hierher ziehen geht auch.</p>
-    </div>
+    </details>
 
-    <div class="panel" id="artistPanel">
-      <h2>Künstler</h2>
+    <details class="panel" data-k="artist" id="artistPanel">
+      <summary><h2>Künstler</h2><span class="psum"></span></summary>
       <input id="arSearch" type="text" placeholder="Künstler suchen …" autocomplete="off" spellcheck="false">
       <div id="arHits" class="fopts"></div>
       <p id="arStatus" class="note"></p>
       <p class="note">Alle Songs kommen direkt von Apple, Gastauftritte
         eingeschlossen. Gespielt werden fünf zufällige davon, ohne Stufen –
         sonst wäre der größte Hit sofort das Easy.</p>
-    </div>
+    </details>
 
-    <div class="panel" id="localPanel">
-      <h2>Eigene Musik</h2>
+    <details class="panel" data-k="local" id="localPanel">
+      <summary><h2>Eigene Musik</h2><span class="psum"></span></summary>
       <input id="loDir" type="file" webkitdirectory directory multiple hidden>
       <input id="loFiles" type="file" multiple hidden
              accept="audio/*,.mp3,.m4a,.m4b,.flac,.ogg,.oga,.opus,.wav,.aac,.aif,.aiff">
@@ -165,23 +171,24 @@
           <button id="srvGo" class="btn-ghost">Mediathek laden</button>
           <button id="srvForget" class="pl-link" hidden>Zugang vergessen</button>
           <p id="srvNote" class="note"></p>
-          <p class="note">Navidrome, Airsonic, Gonic (Subsonic), Jellyfin/Emby und Plex.
-            Der Server muss über <b>https</b> erreichbar sein – diese Seite läuft über
-            https und darf nichts von http nachladen. Gemerkte Zugangsdaten liegen
-            unverschlüsselt im Browser.</p>
+          <p id="srvHint" class="note"></p>
+          <p class="note">Der Server muss über <b>https</b> erreichbar sein – diese Seite
+            läuft über https und darf nichts von http nachladen. Gemerkte Zugangsdaten
+            liegen unverschlüsselt im Browser.</p>
         </div>
       </details>
-    </div>
+    </details>
 
-    <div class="panel">
-      <h2>Nachhören bei</h2>
+    <details class="panel" data-k="service">
+      <summary><h2>Nachhören bei</h2><span class="psum"></span></summary>
       <div id="svcSeg" class="svc-row pick"></div>
       <p class="note">Steht bei der Auflösung vorn und hängt an der
-        Ergebnisliste. Die übrigen Dienste stehen trotzdem daneben.</p>
-    </div>
+        Ergebnisliste. Die übrigen kommen dort auf Klick dazu.</p>
+    </details>
 
-    <div class="panel">
-      <h2>Spielweise</h2>
+    <details class="panel" data-k="play">
+      <summary><h2>Spielweise</h2><span class="psum"></span></summary>
+
       <label class="switch" for="hardMode">
         <input type="checkbox" id="hardMode">
         <span class="track"></span>
@@ -189,23 +196,19 @@
       </label>
       <p class="note">Ein verpasster Song beendet die Runde – und gespielt wird
         strikt der Reihe nach.</p>
-    </div>
 
-    <div class="panel">
-      <h2>Songstart</h2>
+      <p class="fhead">Songstart</p>
       <div class="seg" id="startMode">
         <button data-v="hook" class="on">Anfang des Ausschnitts</button>
         <button data-v="random">Zufällige Stelle</button>
       </div>
-    </div>
 
-    <div class="panel">
-      <h2>Lautstärke</h2>
+      <p class="fhead">Lautstärke</p>
       <input id="volume" class="range" type="range" min="0" max="100" value="80">
-    </div>
+    </details>
 
-    <div class="panel" id="filterPanel">
-      <h2>Songauswahl</h2>
+    <details class="panel" data-k="filter" id="filterPanel">
+      <summary><h2>Songauswahl</h2><span class="psum"></span></summary>
 
       <div id="filterList" class="filter-list"></div>
       <button id="fReset" class="pl-link" hidden>Alle Filter zurücksetzen</button>
@@ -242,7 +245,7 @@
       <p id="filterCount" class="note"></p>
       <p class="note">nur schränkt ein, ohne wirft raus, dazu holt zurück.
         Filter wirken ab der nächsten Runde.</p>
-    </div>
+    </details>
 
   </aside>
 </main>

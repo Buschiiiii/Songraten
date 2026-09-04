@@ -248,6 +248,38 @@ const dummy = n => ({ t: 'Song ' + n, a: 'Kuenstler ' + n, al: 'Album', y: 2020,
   G('newRound()'); await tick(30);
   assert(G('round').every(r => r.status === 'playing'), 'Neu wuerfeln: alles auf Anfang');
 
+  /* --------------------------------------------------- Ausklappbares */
+  /* Neun Panels waeren eine Scrollstrecke. Zugeklappt steht das Wichtigste in
+     der Zeile, aufgeklappt bleibt nur, was man wirklich braucht. */
+  const panels = [...$('#app').querySelectorAll('details.panel')];
+  assert(panels.length >= 8, 'Panels: die Seitenspalten klappen zu (' + panels.length + ')');
+  assert(panels.every(d => !d.open), 'Panels: beim ersten Besuch ist alles zu');
+  assert(!$('#modeSeg').closest('details'), 'Panels: der Modus bleibt immer sichtbar');
+  const sumOf = k => $(`details.panel[data-k="${k}"] .psum`).textContent;
+  assert(sumOf('service') === 'Apple Music', 'Panels: die Zeile nennt den Dienst');
+  assert(/^Charts · \d+ Songs/.test(sumOf('filter')),
+    'Panels: und worauf die Songauswahl wirkt (' + sumOf('filter') + ')');
+  assert(sumOf('stages') === '6 von 6', 'Panels: und wie viele Stufen an sind');
+  assert(sumOf('playlist') === 'nichts geladen' && sumOf('local') === 'nichts geladen',
+    'Panels: leere Quellen sagen das');
+  assert(/normal · Anfang · \d+ %/.test(sumOf('play')), 'Panels: Spielweise auf einen Blick (' + sumOf('play') + ')');
+
+  const filterPanel = $('details.panel[data-k="filter"]');
+  filterPanel.open = true;
+  filterPanel.dispatchEvent(new w.Event('toggle'));
+  assert(G('settings.open.filter') === true, 'Panels: aufgeklappt wird gemerkt');
+
+  /* Die Zeile zieht mit, wenn sich etwas aendert */
+  G("settings.stages[0] = false; renderChips()");
+  assert(sumOf('stages') === '5 von 6', 'Panels: die Zeile zieht sofort mit');
+  G("settings.stages[0] = true; renderChips()");
+
+  const wPanel = makeWindow({ 'songrate:settings': JSON.stringify({ open: { filter: true } }) });
+  await waitFor(() => !wPanel.document.querySelector('#app').hidden);
+  assert(wPanel.document.querySelector('details.panel[data-k="filter"]').open
+    && !wPanel.document.querySelector('details.panel[data-k="play"]').open,
+    'Panels: nach dem Neuladen steht wieder offen, was offen war');
+
   /* ---------------------------------------------------- Playlist-Modus */
   const csv = 'Track Name,Artist Name(s)\nUnstoppable,Sia\nBlinding Lights,The Weeknd\nLevitating,Dua Lipa\n'
             + 'Hello,Adele\nBad Guy,Billie Eilish\nStronger,Britney Spears\nGibtsNicht,Niemand';
@@ -386,9 +418,16 @@ const dummy = n => ({ t: 'Song ' + n, a: 'Kuenstler ' + n, al: 'Album', y: 2020,
 
   /* Nachhoeren: eine Zeile mit allen Diensten */
   G('showReveal(round[0], false)');
+  assert($('#revealLinks').querySelectorAll('a').length === 1
+    && $('#revealLinks').querySelector('a').textContent === 'Apple Music',
+    'Aufloesung: erst einmal steht nur der eigene Dienst da');
+  assert(/\+ \d+ weitere/.test($('#revealLinks').querySelector('.more').textContent),
+    'Aufloesung: die anderen kommen auf Klick');
+  $('#revealLinks').querySelector('.more').click();
   const svc = [...$('#revealLinks').querySelectorAll('a')];
   assert(svc.length === G('Links.SERVICES.length'),
-    'Aufloesung: alle Dienste stehen da (' + svc.length + ')');
+    'Aufloesung: dann stehen alle da (' + svc.length + ')');
+  assert(G('settings.svcAll') === true, 'Aufloesung: das bleibt so, bis man es zurueckstellt');
   assert(svc.every(a => a.target === '_blank' && /noopener/.test(a.rel)),
     'Aufloesung: die Links gehen in einen neuen Tab und ohne Rueckkanal');
   assert(svc.every(a => /^https:\/\//.test(a.href) && a.href.length > 30),
@@ -402,6 +441,8 @@ const dummy = n => ({ t: 'Song ' + n, a: 'Kuenstler ' + n, al: 'Album', y: 2020,
     'Aufloesung: Apple, Spotify, Tidal, Qobuz und Deezer sind dabei');
   assert(svc[0].classList.contains('on') && svc[0].textContent === 'Apple Music',
     'Aufloesung: der Lieblingsdienst steht vorn');
+  assert(svc.some(a => /play\.qobuz\.com/.test(a.href)) && svc.some(a => a.classList.contains('shop')),
+    'Aufloesung: Qobuz zeigt auf den Player, der Kaufladen steht getrennt');
   assert(!$('#revealLinks').querySelector('.all'),
     'Aufloesung: ohne Apple-ID kein Sammellink');
 
@@ -591,7 +632,7 @@ const dummy = n => ({ t: 'Song ' + n, a: 'Kuenstler ' + n, al: 'Album', y: 2020,
   assert(G('round').every(r => r.song && G('pickFiltered').some(s => s.i === r.song.i)),
     'Genres: der Wechsel startet eine neue Runde aus dem neuen Genre');
   assert($('#gGenre').hidden, 'Genres: die Genre-Liste im Filterpanel ist hier ausgeblendet');
-  assert(/Songauswahl · /.test($('#filterPanel h2').textContent), 'Genres: die Ueberschrift nennt das Genre');
+  assert(G('filterScope()') === gnow(), 'Genres: die Zeile der Songauswahl nennt das Genre');
 
   /* Ein kleines Genre wird ohne Stufen gespielt: fuenf zufaellige Songs. */
   const tinyGenre = G("listFor('genres').map(o => o.value).find(v => filtered.filter(s => norm(Filters.genreOf(s)) === v).length < TIER_MIN * TIERS.length)");
@@ -843,8 +884,8 @@ const dummy = n => ({ t: 'Song ' + n, a: 'Kuenstler ' + n, al: 'Album', y: 2020,
   await waitFor(() => w2.__ev('mode') === 'playlist');
 
   assert(!w2.document.querySelector('#filterPanel').hidden, 'Playlist-Filter: das Panel bleibt sichtbar');
-  assert(/Playlist/.test(w2.document.querySelector('#filterPanel h2').textContent),
-    'Playlist-Filter: die Überschrift sagt, worauf die Regeln wirken');
+  assert(/Playlist/.test(w2.document.querySelector('#filterPanel .psum').textContent),
+    'Playlist-Filter: die Zeile sagt, worauf die Regeln wirken');
   assert(w2.__ev('plFiltered').length === 5,
     'Playlist-Filter: Instrumentals und Karaoke fliegen von Haus aus raus (' + w2.__ev('plFiltered').length + ' von 8)');
   assert(w2.__ev("plFiltered.every(s => !/Instrumental|Karaoke/i.test(s.t + s.al))"),
@@ -873,7 +914,7 @@ const dummy = n => ({ t: 'Song ' + n, a: 'Kuenstler ' + n, al: 'Album', y: 2020,
     'Playlist-Filter: zu wenig Songs wird gemeldet (' + w2.document.querySelector('#filterCount').textContent + ')');
 
   w2.__ev("setMode('charts')"); await tick(30);
-  assert(JSON.stringify(w2.__ev('settings.filters')) === chartRules && !/Playlist/.test(w2.document.querySelector('#filterPanel h2').textContent),
+  assert(JSON.stringify(w2.__ev('settings.filters')) === chartRules && !/Playlist/.test(w2.document.querySelector('#filterPanel .psum').textContent),
     'Playlist-Filter: zurück im Chartsmodus gelten wieder die alten Regeln');
 
   /* -------------------------------------------------- Eigene Musik */
@@ -956,7 +997,8 @@ const dummy = n => ({ t: 'Song ' + n, a: 'Kuenstler ' + n, al: 'Album', y: 2020,
     'Eigene Musik: die Aufloesung nennt die Datei (' + l$('#revealFile').textContent + ')');
   assert(/^blob:/.test(l$('#revealFile').getAttribute('href')),
     'Eigene Musik: und laesst sie sich oeffnen');
-  assert(l$('#revealLinks').querySelectorAll('a').length > 5,
+  assert(l$('#revealLinks').querySelector('a').textContent === 'Apple Music'
+    && l$('#revealLinks').querySelector('.more'),
     'Eigene Musik: nachhoeren kann man sie trotzdem woanders');
   const offen = w5.__urls.size;
   w5.__ev('closeReveal()'); await tick(20);

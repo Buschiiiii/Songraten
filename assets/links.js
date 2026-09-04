@@ -29,11 +29,14 @@ const Links = (() => {
     { id: 'youtube',    name: 'YouTube',       url: s => 'https://www.youtube.com/results?search_query=' + q(s) },
     { id: 'deezer',     name: 'Deezer',        url: s => 'https://www.deezer.com/search/' + path(s) },
     { id: 'tidal',      name: 'Tidal',         url: s => 'https://listen.tidal.com/search?q=' + q(s) },
-    { id: 'qobuz',      name: 'Qobuz',         url: s => 'https://www.qobuz.com/de-de/search?q=' + q(s) },
+    /* play.qobuz.com ist der Player; qobuz.com selbst ist der Kaufladen. */
+    { id: 'qobuz',      name: 'Qobuz',         url: s => 'https://play.qobuz.com/search/' + path(s) },
     { id: 'amazon',     name: 'Amazon Music',  url: s => 'https://music.amazon.de/search/' + path(s) },
     { id: 'soundcloud', name: 'SoundCloud',    url: s => 'https://soundcloud.com/search?q=' + q(s) },
-    { id: 'bandcamp',   name: 'Bandcamp',      url: s => 'https://bandcamp.com/search?q=' + q(s) },
-    { id: 'discogs',    name: 'Discogs',       url: s => 'https://www.discogs.com/search/?type=release&q=' + q(s) },
+    /* Kein Streaming, sondern Kaufen und Nachschlagen - stehen deshalb hinten. */
+    { id: 'bandcamp',   name: 'Bandcamp',      shop: true, url: s => 'https://bandcamp.com/search?q=' + q(s) },
+    { id: 'qobuzshop',  name: 'Qobuz-Shop',    shop: true, url: s => 'https://www.qobuz.com/de-de/search?q=' + q(s) },
+    { id: 'discogs',    name: 'Discogs',       shop: true, url: s => 'https://www.discogs.com/search/?type=release&q=' + q(s) },
   ];
 
   const byId = Object.fromEntries(SERVICES.map(s => [s.id, s]));
@@ -53,7 +56,7 @@ const Links = (() => {
     const rest = SERVICES.slice();
     const i = rest.findIndex(s => s.id === favourite);
     if (i > 0) rest.unshift(rest.splice(i, 1)[0]);
-    rest.forEach(s => out.push({ id: s.id, name: s.name, url: s.url(song) }));
+    rest.forEach(s => out.push({ id: s.id, name: s.name, shop: !!s.shop, url: s.url(song) }));
     return out;
   }
 

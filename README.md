@@ -22,6 +22,15 @@ kombinieren lassen.
 
 ---
 
+## Aufgeräumt: alles klappt zu
+
+Rechts und links stehen die Einstellungen in Panels, die **zugeklappt**
+anfangen. In jeder Zeile steht trotzdem, was drinsteht – „Nachhören bei ·
+Spotify", „Eigene Musik · 1240 Songs", „Songauswahl · Charts · 1913 Songs".
+Aufgeklappt bleibt nur, was du wirklich brauchst; die Seite merkt es sich.
+Offen bleibt von Anfang an nur *Modus*. Auf dem Handy passt damit alles auf
+wenige Bildschirme.
+
 ## Website online stellen
 
 1. Auf [github.com](https://github.com) einloggen, oben rechts **+** → **New repository**.
@@ -103,7 +112,15 @@ zweite Mal Sekunden statt Minuten.
 Unter **Eigene Musik → Vom eigenen Server** lassen sich **Subsonic**
 (Navidrome, Airsonic, Gonic), **Jellyfin/Emby** und **Plex** eintragen.
 Adresse, Benutzername und Passwort – bei Plex stattdessen der
-X-Plex-Token – und *Mediathek laden*. Danach wird daraus gespielt wie aus
+X-Plex-Token – und *Mediathek laden*. Unter den Feldern steht je nach Art,
+was genau dort hingehört.
+
+**Woher der Plex-Token kommt:** in der Plex-Weboberfläche einen Song
+auswählen, dann ⋮ → *Informationen* → *XML anzeigen*. Es öffnet sich ein neuer
+Tab, und ganz am Ende der Adresse steht `X-Plex-Token=…`. **Welche Adresse:**
+die, unter der du deinen Server erreichst – wenn du ihn über app.plex.tv
+benutzt, ist das meist eine auf `.plex.direct:32400` (steht in derselben
+XML-Adresse davor). Danach wird daraus gespielt wie aus
 eigenen Dateien.
 
 Zwei Dinge müssen stimmen, sonst kommt nichts an:
@@ -123,14 +140,21 @@ ganze FLAC – der Server macht das selbst. Zugangsdaten bleiben im Browser
 
 ## Nachhören, egal bei welchem Dienst
 
-Unter jeder Auflösung steht eine Reihe von Links: Apple Music, Spotify,
-YouTube Music, YouTube, Deezer, Tidal, Qobuz, Amazon Music, SoundCloud,
-Bandcamp und Discogs. Welcher davon vorn steht – und an der Ergebnisliste
-hängt – wählst du rechts unter **Nachhören bei**.
+Unter der Auflösung steht **dein** Dienst – welcher das ist, wählst du rechts
+unter **Nachhören bei**. Ein Klick auf *+ n weitere* holt die anderen dazu und
+merkt sich das: Apple Music, Spotify, YouTube Music, YouTube, Deezer, Tidal,
+Qobuz, Amazon Music, SoundCloud – dazu Bandcamp, der Qobuz-Shop und Discogs
+zum Kaufen und Nachschlagen.
 
 Kennt die Songliste Apples Track-ID, kommt zusätzlich ein grüner Knopf
 *Alle Dienste*. Der geht über song.link und landet nicht auf einer Suche,
 sondern auf genau dieser Aufnahme – beim Dienst, den du dort anklickst.
+
+**Direkt in der Seite abspielen geht nur mit der eigenen Musik.** Spotify,
+Apple Music und die anderen lassen sich ohne registrierte App und ohne Server
+nicht anmelden – und selbst dann könnte ihr Player keine 0,01 Sekunden
+schneiden. Wenn du wirklich aus der Seite heraus hören willst: eigene Dateien
+oder der eigene Mediathek-Server, beides weiter oben beschrieben.
 
 ## Songs nachladen (alte Jahrzehnte)
 
