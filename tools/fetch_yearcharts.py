@@ -25,6 +25,7 @@ import os
 import re
 import sys
 import time
+import urllib.error
 import urllib.parse
 import urllib.request
 
@@ -32,6 +33,7 @@ CACHE = '.cache/yearcharts'
 OUT = 'data/yearcharts.json'
 UA = {'User-Agent': 'Songraten/1.0 (statisches Songratespiel; Kontakt ueber GitHub)'}
 API = 'https://en.wikipedia.org/w/api.php'
+PAUSE = 2.0     # Wikipedia mag kein Dauerfeuer
 
 # Bis 1958 hiess die Liste anders und ist nicht einheitlich aufgebaut.
 FIRST_YEAR = 1959
@@ -84,6 +86,10 @@ def parse_rows(page_html):
 
 
 def fetch(year):
+    """Eine Jahresseite, mit Cache. Wikipedia drosselt nach etwa zehn schnellen
+    Anfragen mit 429 - dann wird gewartet und erneut versucht. Ohne das brach
+    beim ersten Lauf nach 1968 alles weg, weil ein Fehlschlag ohne Pause zum
+    naechsten Jahr sprang und dort sofort wieder 429 kam."""
     os.makedirs(CACHE, exist_ok=True)
     path = os.path.join(CACHE, f'{year}.html')
     if os.path.exists(path):
@@ -93,14 +99,24 @@ def fetch(year):
         'action': 'parse', 'page': page_for(year), 'prop': 'text',
         'format': 'json', 'formatversion': '2', 'redirects': '1',
     })
-    req = urllib.request.Request(url, headers=UA)
-    with urllib.request.urlopen(req, timeout=30) as r:
-        data = json.load(r)
+    data = None
+    for versuch in range(4):
+        try:
+            req = urllib.request.Request(url, headers=UA)
+            with urllib.request.urlopen(req, timeout=30) as r:
+                data = json.load(r)
+            break
+        except urllib.error.HTTPError as e:
+            if e.code not in (429, 503) or versuch == 3:
+                raise
+            wait = 10 * (versuch + 1)
+            print(f'  Wikipedia bremst, warte {wait}s', flush=True)
+            time.sleep(wait)
     if 'error' in data:
         raise LookupError(data['error'].get('info', 'Seite fehlt'))
     text = data['parse']['text']
     open(path, 'w', encoding='utf-8').write(text)
-    time.sleep(1.0)
+    time.sleep(PAUSE)
     return text
 
 
@@ -148,6 +164,7 @@ if __name__ == '__main__':
             rows = parse_rows(fetch(year))
         except Exception as e:
             print(f'  {year}: {e}', flush=True)
+            time.sleep(PAUSE)      # auch nach einem Fehlschlag Luft lassen
             continue
         if len(rows) < 20:
             print(f'  {year}: nur {len(rows)} Zeilen erkannt - uebersprungen', flush=True)
