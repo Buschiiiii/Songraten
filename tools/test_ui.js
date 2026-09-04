@@ -568,6 +568,38 @@ const dummy = n => ({ t: 'Song ' + n, a: 'Kuenstler ' + n, al: 'Album', y: 2020,
   assert(JSON.stringify(w2.__ev('settings.filters')) === chartRules && !/Playlist/.test(w2.document.querySelector('#filterPanel h2').textContent),
     'Playlist-Filter: zurück im Chartsmodus gelten wieder die alten Regeln');
 
+  /* ------------------------------------- Grosse Songliste bleibt flott */
+  /* Nach ein paar Datenlaeufen stehen statt 2000 vielleicht 8000 Songs in der
+     Datei. Der Test misst nur grob, faengt aber ein O(n²) ab, das sich
+     einschleicht. */
+  const t0 = Date.now();
+  const wBig = makeWindow({}, db => {
+    const vorlage = db.songs.slice(0, 400);
+    for (let i = 0; i < 6000; i++) {
+      const v = vorlage[i % vorlage.length];
+      db.songs.push({ ...v, t: v.t + ' #' + i, r: (i % 100) + 1, f: i % 100 });
+    }
+  });
+  await waitFor(() => !wBig.document.querySelector('#app').hidden, 20000);
+  const bootMs = Date.now() - t0;
+  assert(!wBig.document.querySelector('#app').hidden && bootMs < 15000,
+    `grosse Liste: Start mit ${wBig.__ev('DB.songs.length')} Songs in ${bootMs} ms`);
+
+  const tFilter = Date.now();
+  wBig.__ev("settings.filters.push({ mode: 'ohne', type: 'genre', value: 'pop', text: 'Pop' }); applyFilters()");
+  assert(Date.now() - tFilter < 3000, `grosse Liste: Filter greifen in ${Date.now() - tFilter} ms`);
+
+  const tSug = Date.now();
+  wBig.__ev("suggest('the')");
+  assert(Date.now() - tSug < 2000,
+    `grosse Liste: Vorschlaege in ${Date.now() - tSug} ms (${wBig.__ev('sugAll.length')} Treffer)`);
+  assert(wBig.document.querySelectorAll('#suggest .sug').length <= 12,
+    'grosse Liste: trotzdem nur eine Seite gezeichnet');
+
+  wBig.__ev("setMode('decades')");
+  assert(wBig.__ev('usesTiers()') && wBig.__ev('pickFiltered').length > 100,
+    'grosse Liste: der Jahrzehntmodus hat dann genug fuer Stufen');
+
   /* ------------------------------------------------------- Randfaelle */
   w = makeWindow({
     'songrate:playlist': JSON.stringify({ name: 'Gespeichert', songs: [1, 2, 3, 4, 5, 6].map(dummy), missed: ['Fehlt'] }),
