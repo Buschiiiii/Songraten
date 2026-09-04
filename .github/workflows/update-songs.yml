@@ -77,7 +77,9 @@ jobs:
 
       - name: Committen
         run: |
-          if git diff --quiet -- data/; then
+          # --porcelain statt diff: beim ersten Lauf ist data/yearcharts.json
+          # neu, und git diff sieht unbekannte Dateien nicht.
+          if [ -z "$(git status --porcelain -- data/)" ]; then
             echo "nichts Neues"
             exit 0
           fi

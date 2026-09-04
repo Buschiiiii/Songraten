@@ -10,8 +10,6 @@ const TIERS = [
 ];
 const POINTS = { 0.01: 1000, 0.1: 850, 0.5: 700, 2: 500, 8: 300, 15: 150 };
 const RECENT_MAX = 60;
-/* Im Playlist-Modus gibt es keine Schwierigkeitsstufen, sondern fuenf
-   zufaellige Songs aus der eigenen Liste - alle mit demselben Faktor. */
 /* Fuenf gleichwertige Plaetze statt der Schwierigkeitsstufen - fuer die
    Playlist und fuer Jahrzehnte oder Genres, in denen zu wenige Songs fuer eine
    sinnvolle Stufenleiter stecken. */
@@ -35,89 +33,6 @@ let filterMode = 'nur';   /* Wirkung, die ein Klick in den Listen bekommt */
    andere Genres und Kuenstler mit als die Charts, und wer dort „nur 1960er"
    gesetzt hat, soll seine Playlist nicht leer vorfinden. */
 const activeFilters = () => (mode === 'playlist' ? settings.plFilters : settings.filters);
-const PICKED = ['decades', 'genres'];   /* Modi mit Auswahlleiste oben */
-const activePool = () => (mode === 'playlist' ? plFiltered
-  : PICKED.includes(mode) ? pickFiltered : chartFiltered);
-
-/* Ein Jahrzehnt oder Genre braucht genug Songs, sonst ist die Runde nach zwei
-   Partien auswendig gelernt. Genres brauchen mehr, weil sie sich nicht ueber
-   die Zeit verteilen. */
-const DEC_MIN = 10;
-const GEN_MIN = 20;
-
-/* Die Auswahl fuer einen Modus als [{ value, text }]. */
-function listFor(m) {
-  const cnt = new Map(), label = new Map();
-  const collect = (key, text) => {
-    if (!key) return;
-    cnt.set(key, (cnt.get(key) || 0) + 1);
-    label.set(key, text);
-  };
-  if (m === 'decades') {
-    filtered.forEach(s => { const d = Filters.decadeOf(s); collect(d, d + 'er'); });
-    return [...cnt].filter(([, n]) => n >= DEC_MIN).sort((a, b) => a[0] - b[0])
-      .map(([v]) => ({ value: v, text: label.get(v) }));
-  }
-  if (m === 'genres') {
-    filtered.forEach(s => { const g = Filters.genreOf(s); collect(norm(g), g); });
-    return [...cnt].filter(([, n]) => n >= GEN_MIN).sort((a, b) => b[1] - a[1])
-      .map(([v]) => ({ value: v, text: label.get(v) }));
-  }
-  return [];
-}
-
-const pickList = () => listFor(mode);
-const pickSetting = () => (mode === 'genres' ? settings.genre : settings.decade);
-const inPick = (s, value) => (mode === 'decades'
-  ? Filters.decadeOf(s) === value
-  : norm(Filters.genreOf(s)) === value);
-
-/* Fuenf Stufen brauchen genug Songs. Reicht es nicht, wird das Jahrzehnt oder
-   Genre wie eine Playlist gespielt: fuenf zufaellige Songs, keine Stufen. */
-const usesTiers = () => (mode === 'charts'
-  || (PICKED.includes(mode) && pickFiltered.length >= TIER_MIN * TIERS.length));
-
-/* Das gespeicherte Jahrzehnt oder Genre kann durch Filter oder neue Daten
-   wegfallen - dann greift das naechstliegende. */
-function currentPick() {
-  const list = pickList();
-  if (!list.length) return null;
-  const want = pickSetting();
-  const hit = list.find(o => String(o.value) === String(want));
-  if (hit) return hit;
-  if (mode === 'decades') {
-    return list.reduce((best, o) =>
-      Math.abs(o.value - want) < Math.abs(best.value - want) ? o : best, list[0]);
-  }
-  return list[0];
-}
-
-function stepPick(dir) {
-  const list = pickList();
-  if (list.length < 2) return;
-  const now = currentPick();
-  const i = list.findIndex(o => String(o.value) === String(now.value));
-  const next = list[(i + dir + list.length) % list.length].value;
-  if (mode === 'genres') settings.genre = next; else settings.decade = next;
-  save('settings', settings);
-  applyFilters();
-  renderSlots();
-  newRound();
-}
-
-function renderPicker() {
-  const bar = $('#pickBar');
-  if (!bar) return;
-  bar.hidden = !PICKED.includes(mode);
-  if (bar.hidden) return;
-  const now = currentPick();
-  $('#pickLabel').textContent = now ? now.text : '–';
-  $('#pickCount').textContent = `${pickFiltered.length} Songs`
-    + (usesTiers() ? '' : ' · ohne Stufen');
-  const only = pickList().length < 2;
-  $('#pickPrev').disabled = only;
-  $('#pickNext').disabled = only;
-}
 function setFilters(list) {
   if (mode === 'playlist') settings.plFilters = list; else settings.filters = list;
   save('settings', settings);
@@ -190,6 +105,7 @@ function barStops(segs) {
   });
   return stops;
 }
+
 const slots = () => (usesTiers() ? TIERS : FLAT_SLOTS);
 const pool = () => (mode === 'playlist' && PL ? PL : DB);
 
@@ -308,9 +224,10 @@ function buildChrome() {
       if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); (!$('#reveal').hidden ? $('#revealNext') : $('#summaryNext')).click(); }
       return;
     }
+    /* Keine Buchstaben als Kuerzel: nach einem Klick auf einen Filter liegt
+       der Fokus auf dem Knopf, und wer dann "Sia" tippt, haette mit dem s
+       uebersprungen. */
     if (e.key === ' ') { e.preventDefault(); playCurrent(); }
-    else if (e.key.toLowerCase() === 's') submit();
-    else if (e.key.toLowerCase() === 'r') newRound();
     else if (/^[1-5]$/.test(e.key)) switchTo(+e.key - 1);
   });
 
@@ -326,8 +243,8 @@ function buildChrome() {
   renderStats();
 }
 
-/* Die Leiste links und die Reiter oben zeigen je nach Modus die
-   Schwierigkeitsstufen oder die fuenf Playlist-Plaetze. */
+/* Die Leiste links und die Reiter oben zeigen die Schwierigkeitsstufen oder,
+   wo es keine gibt, fuenf gleichwertige Plaetze. */
 function renderSlots() {
   const list = $('#tierList'), tabs = $('#tabs');
   list.innerHTML = '';
@@ -566,7 +483,11 @@ function suggest(q) {
     seen.add(k);
     out.push([sc, s]);
   }
-  out.sort((a, b) => b[0] - a[0] || b[1].s - a[1].s || a[1].t.localeCompare(b[1].t));
+  /* Erst die Trefferart, dann die Bekanntheit. `f` kennt auch die alten Hits
+     ohne Streamzahl - ohne das staenden sie immer ganz unten. */
+  const fame = x => (x.f != null ? x.f : -1);
+  out.sort((a, b) => b[0] - a[0] || fame(b[1]) - fame(a[1])
+    || b[1].s - a[1].s || a[1].t.localeCompare(b[1].t));
 
   sugAll = out.map(x => x[1]);
   sugItems = [];
@@ -737,7 +658,9 @@ let revealed = null;
 function showReveal(r, won) {
   const s = r.song;
   revealed = r;
-  $('#revealArt').src = s.c.replace('100x100bb', '400x400bb');
+  const art = $('#revealArt');
+  art.hidden = !s.c;
+  if (s.c) art.src = s.c.replace('100x100bb', '400x400bb');
   $('#revealTitle').textContent = s.t;
   $('#revealArtist').textContent = s.a;
   $('#revealMeta').textContent = [s.al, s.y || null,
@@ -850,7 +773,7 @@ function render() {
   $('#actionBtn').disabled = over;
   $('#playBtn').classList.toggle('loading', !!r && !r.buffer && !r.error);
   $('#search').placeholder = r && !r.song ? 'Kein Song passt zu den Filtern'
-    : r && r.error ? 'Song nicht ladbar – R für neue Runde'
+    : r && r.error ? 'Song nicht ladbar – Cmd+Enter würfelt neu'
     : mode === 'playlist' ? 'Song aus der Playlist suchen …' : 'Song suchen …';
   $('#roundScore').textContent = round.reduce((a, b) => a + b.points, 0);
   setAction();
@@ -867,6 +790,94 @@ function renderStats() {
 }
 
 /* --------------------------------------------------------- Songauswahl */
+
+/* ---- Auswahl im Jahrzehnte- und Genremodus ---- */
+
+const PICKED = ['decades', 'genres'];   /* Modi mit Auswahlleiste oben */
+const activePool = () => (mode === 'playlist' ? plFiltered
+  : PICKED.includes(mode) ? pickFiltered : chartFiltered);
+
+/* Ein Jahrzehnt oder Genre braucht genug Songs, sonst ist die Runde nach zwei
+   Partien auswendig gelernt. Genres brauchen mehr, weil sie sich nicht ueber
+   die Zeit verteilen. */
+const DEC_MIN = 10;
+const GEN_MIN = 20;
+
+/* Die Auswahl fuer einen Modus als [{ value, text }]. */
+function listFor(m) {
+  const cnt = new Map(), label = new Map();
+  const collect = (key, text) => {
+    if (!key) return;
+    cnt.set(key, (cnt.get(key) || 0) + 1);
+    label.set(key, text);
+  };
+  if (m === 'decades') {
+    filtered.forEach(s => { const d = Filters.decadeOf(s); collect(d, d + 'er'); });
+    return [...cnt].filter(([, n]) => n >= DEC_MIN).sort((a, b) => a[0] - b[0])
+      .map(([v]) => ({ value: v, text: label.get(v) }));
+  }
+  if (m === 'genres') {
+    filtered.forEach(s => { const g = Filters.genreOf(s); collect(norm(g), g); });
+    return [...cnt].filter(([, n]) => n >= GEN_MIN).sort((a, b) => b[1] - a[1])
+      .map(([v]) => ({ value: v, text: label.get(v) }));
+  }
+  return [];
+}
+
+const pickList = () => listFor(mode);
+const pickSetting = () => (mode === 'genres' ? settings.genre : settings.decade);
+const inPick = (s, value) => (mode === 'decades'
+  ? Filters.decadeOf(s) === value
+  : norm(Filters.genreOf(s)) === value);
+
+/* Fuenf Stufen brauchen genug Songs. Reicht es nicht, wird das Jahrzehnt oder
+   Genre wie eine Playlist gespielt: fuenf zufaellige Songs, keine Stufen. */
+const usesTiers = () => (mode === 'charts'
+  || (PICKED.includes(mode) && pickFiltered.length >= TIER_MIN * TIERS.length));
+
+/* Das gespeicherte Jahrzehnt oder Genre kann durch Filter oder neue Daten
+   wegfallen - dann greift das naechstliegende. */
+function currentPick() {
+  const list = pickList();
+  if (!list.length) return null;
+  const want = pickSetting();
+  const hit = list.find(o => String(o.value) === String(want));
+  if (hit) return hit;
+  if (mode === 'decades') {
+    return list.reduce((best, o) =>
+      Math.abs(o.value - want) < Math.abs(best.value - want) ? o : best, list[0]);
+  }
+  return list[0];
+}
+
+function stepPick(dir) {
+  const list = pickList();
+  if (list.length < 2) return;
+  const now = currentPick();
+  const i = list.findIndex(o => String(o.value) === String(now.value));
+  const next = list[(i + dir + list.length) % list.length].value;
+  if (mode === 'genres') settings.genre = next; else settings.decade = next;
+  save('settings', settings);
+  applyFilters();
+  renderSlots();
+  newRound();
+}
+
+function renderPicker() {
+  const bar = $('#pickBar');
+  if (!bar) return;
+  bar.hidden = !PICKED.includes(mode);
+  if (bar.hidden) return;
+  const now = currentPick();
+  $('#pickLabel').textContent = now ? now.text : '–';
+  $('#pickCount').textContent = `${pickFiltered.length} Songs`
+    + (usesTiers() ? '' : ' · ohne Stufen');
+  const only = pickList().length < 2;
+  $('#pickPrev').disabled = only;
+  $('#pickNext').disabled = only;
+}
+
+/* ---- Filter ---- */
 
 /* Der Pool wird neu gerechnet, die laufende Runde aber nicht angefasst -
    sonst waere ein Klick auf einen Filter dasselbe wie Aufgeben. */

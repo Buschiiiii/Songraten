@@ -297,7 +297,11 @@ kworb geprüft, plus die `NEVER_SPLIT`-Liste in `match_local.py`.
    korrekt, nur das Tempo ist gestreckt.
 6. **Der Cursor steht dauerhaft im Suchfeld.** Kürzel dürfen deshalb keine
    Schriftzeichen sein: ↑ spielt ab, Enter rät, Shift+Enter überspringt,
-   ←→ wechselt die Stufe (nur bei leerem Feld), Cmd+Enter würfelt neu.
+   ←→ wechselt die Stufe (nur bei leerem Feld), Shift+←→ das Jahrzehnt oder
+   Genre, Cmd+Enter würfelt neu. Die globalen Kürzel `s` und `r` waren
+   trotzdem drin und sind rausgeflogen: nach einem Klick auf einen Filter
+   liegt der Fokus auf dem Knopf, und wer dann „Sia" tippt, hat mit dem `s`
+   übersprungen.
 7. **Die Vorschlagsliste wird häppchenweise gezeichnet** (`SUG_PAGE`), sonst
    sind bei „billie" zwar 30 Treffer da, aber nur die ersten acht erreichbar.
    Nachgeladen wird beim Scrollen ans Ende, beim Klick auf „n weitere" und

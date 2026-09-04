@@ -111,7 +111,6 @@ main{
 .stage-seg{border-radius:5px;background:var(--panel-2);transition:background .25s}
 .stage-seg.filled{background:var(--green-dim)}
 .stage-seg.current{background:var(--green);box-shadow:0 0 0 2px rgba(62,224,122,.25)}
-.stage-seg.off{opacity:.25}
 
 /* ---------- Player ---------- */
 .player{position:relative;display:flex;align-items:center;justify-content:center;width:100%;max-width:640px;margin:14px 0 4px}
@@ -348,6 +347,12 @@ body.dragging::after{
   .play svg{width:46px;height:46px}
   .col-right{order:3}
   .stage-label{position:static;margin-left:16px}
+  /* In der rechten Spalte sollen die Knoepfe breit bleiben, nur die in der
+     Kopfzeile werden schmal. */
+  .col-right .btn-ghost{width:100%}
+  .pick-now{min-width:120px}
+  .pick-now strong{font-size:18px}
+  .hint{line-height:1.7}
 }
 @media (prefers-reduced-motion:reduce){
   *{animation-duration:.01ms !important;transition-duration:.01ms !important}

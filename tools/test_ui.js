@@ -327,6 +327,26 @@ const dummy = n => ({ t: 'Song ' + n, a: 'Kuenstler ' + n, al: 'Album', y: 2020,
   assert(txt() === 'Raten', 'Knopf: mit gewaehltem Song heisst er Raten');
   G('clearPick(); newRound()'); await tick(30);
 
+  /* Buchstaben duerfen nichts ausloesen, wenn der Fokus auf einem Knopf liegt */
+  $('#rerollAll').focus();
+  const guesses0 = G('round[active].guesses.length');
+  w.document.dispatchEvent(new w.KeyboardEvent('keydown', { key: 's', bubbles: true }));
+  w.document.dispatchEvent(new w.KeyboardEvent('keydown', { key: 'r', bubbles: true }));
+  assert(G('round[active].guesses.length') === guesses0,
+    'Tastatur: getippte Buchstaben ueberspringen nichts mehr');
+  w.document.dispatchEvent(new w.KeyboardEvent('keydown', { key: '3', bubbles: true }));
+  assert(G('active') === 2, 'Tastatur: die Ziffern wechseln weiter die Stufe');
+  G('switchTo(0)');
+
+  /* Songs ohne Cover */
+  G("showReveal({ ...round[0], song: { ...round[0].song, c: '' } }, false)");
+  assert($('#revealArt').hidden, 'Aufloesung: ohne Cover bleibt das Bild weg');
+  G('closeReveal()'); await tick(20);
+  G('showReveal(round[0], false)');
+  assert(!$('#revealArt').hidden && /400x400bb/.test($('#revealArt').src),
+    'Aufloesung: mit Cover kommt das grosse Bild');
+  G('closeReveal()'); await tick(20);
+
   const segCount = () => $('#stageBar').querySelectorAll('.stage-seg').length;
   assert(segCount() === 6, 'Balken: sechs Kaesten, solange alle Stufen an sind');
   assert(!$('#stageBar').querySelector('.stage-seg.off'), 'Balken: keine ausgegrauten Kaesten mehr');
