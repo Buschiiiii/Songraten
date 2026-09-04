@@ -330,6 +330,7 @@ body.dragging::after{
 .summary-row .s-title{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .summary-row .s-pts{margin-left:auto;font-family:var(--mono);color:var(--muted)}
 .summary-row.won .s-pts{color:var(--green)}
+.summary-hits{color:var(--muted);font-size:13px;margin:0 0 4px;text-align:left}
 .summary-total{display:flex;justify-content:space-between;align-items:baseline;padding:13px 0 20px;border-top:1px solid var(--line)}
 .summary-total strong{font-family:var(--mono);font-size:24px;color:var(--green)}
 

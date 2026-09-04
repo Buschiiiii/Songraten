@@ -144,6 +144,8 @@ const dummy = n => ({ t: 'Song ' + n, a: 'Kuenstler ' + n, al: 'Album', y: 2020,
 
   for (let i = 0; i < 5; i++) { G('choose(round[active].song); submit()'); await tick(10); G('closeReveal()'); await tick(10); }
   assert(!$('#summary').hidden, 'Playlist: Rundenende zeigt das Ergebnis');
+  assert(/\d+ von \d+ erraten/.test($('#summaryHits').textContent),
+    'Rundenende: es steht da, wie viele erraten wurden (' + $('#summaryHits').textContent + ')');
   assert(G('stats.byTier.playlist') != null && G('stats.byTier.pl1') == null, 'Playlist: Statistik unter einem Schluessel');
   $('#summaryNext').click(); await tick(30);
 

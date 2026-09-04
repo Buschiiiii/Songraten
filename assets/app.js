@@ -720,6 +720,8 @@ function showSummary() {
     row.appendChild(el('span', 's-pts', r.status === 'won' ? '+' + r.points : '—'));
     list.appendChild(row);
   });
+  const geraten = round.filter(r => r.status === 'won').length;
+  $('#summaryHits').textContent = `${geraten} von ${round.filter(r => r.song).length} erraten`;
   $('#summaryScore').textContent = total;
   stats.rounds++;
   if (total > stats.best) stats.best = total;
