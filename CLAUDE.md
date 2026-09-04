@@ -1,8 +1,9 @@
 # Songraten
 
 Website zum Songraten, Nachbau von Songless. Fünf Songs pro Runde, einer je
-Schwierigkeitsstufe, Ausschnitte von 0,01 bis 15 Sekunden. Zweck: der Betreiber
-nimmt damit Shorts und TikToks auf.
+Schwierigkeitsstufe, Ausschnitte von 0,01 bis 15 Sekunden. Privates
+Spaßprojekt, keine Videoproduktion — Entscheidungen also nach Spielgefühl,
+nicht nach Aufnahmetauglichkeit.
 
 **Sprache: Deutsch.** Erklärungen knapp halten.
 
@@ -12,6 +13,9 @@ Rein statisch auf GitHub Pages. Kein Server, kein Build-Step, keine
 Paketabhängigkeiten, kein API-Key, kein Login. Jeder Lösungsvorschlag, der
 einen Proxy, ein Backend oder ein npm-Paket zur Laufzeit braucht, ist raus —
 lieber die Funktion anders schneiden.
+
+Die GitHub Actions sind kein Widerspruch dazu: sie erzeugen nur `songs.json`
+und committen sie. Ausgeliefert wird weiterhin, was im Repo liegt.
 
 ## Warum Apple-Previews
 
