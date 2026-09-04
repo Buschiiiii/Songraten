@@ -150,11 +150,19 @@ Kennt die Songliste Apples Track-ID, kommt zusätzlich ein grüner Knopf
 *Alle Dienste*. Der geht über song.link und landet nicht auf einer Suche,
 sondern auf genau dieser Aufnahme – beim Dienst, den du dort anklickst.
 
-**Direkt in der Seite abspielen geht nur mit der eigenen Musik.** Spotify,
-Apple Music und die anderen lassen sich ohne registrierte App und ohne Server
-nicht anmelden – und selbst dann könnte ihr Player keine 0,01 Sekunden
-schneiden. Wenn du wirklich aus der Seite heraus hören willst: eigene Dateien
-oder der eigene Mediathek-Server, beides weiter oben beschrieben.
+**Angemeldet bist du dabei schon.** Der Link öffnet sich in deinem Browser,
+und dort läuft deine Sitzung bei Spotify, Tidal oder Qobuz weiter – du landest
+also im Player und drückst Play. Damit du dort nicht erst suchen musst, holt
+die Seite bei eingeschaltetem *Genau diese Aufnahme* einmal je Song die echten
+Adressen bei song.link; ein grüner Punkt am Dienst heißt „führt direkt zu
+diesem Song". Qobuz und Bandcamp kennt song.link nicht, dort bleibt es bei der
+Suche im Player. Abschalten lässt sich das unter **Nachhören bei**.
+
+**Innerhalb des Spiels abspielen geht nur mit der eigenen Musik.** Spotify und
+Apple Music bräuchten dafür eine registrierte App und einen Server – und
+selbst dann könnte ihr Player keine 0,01 Sekunden schneiden. Wer den Ton aus
+der Seite selbst hören will: eigene Dateien oder der eigene Mediathek-Server,
+beides weiter oben.
 
 ## Songs nachladen (alte Jahrzehnte)
 

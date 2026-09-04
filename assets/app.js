@@ -56,6 +56,7 @@ let settings = load('settings', {
   artist: null,           /* zuletzt gespielter Kuenstler (Apple-ID) */
   service: Links.DEFAULT, /* Lieblingsdienst zum Nachhoeren */
   svcAll: false,          /* alle Dienste in der Aufloesung zeigen */
+  exact: true,            /* genaue Links statt Suchseiten (ueber song.link) */
   open: {},               /* welche Panels aufgeklappt sind */
   arFilters: Filters.DEFAULT.map(r => ({ ...r })),
   loFilters: Filters.DEFAULT.map(r => ({ ...r })),
@@ -819,19 +820,28 @@ function renderServiceLinks(song) {
   const liste = Links.forSong(song, settings.service);
   const chip = l => {
     const a = el('a', 'svc' + (l.all ? ' all' : l.id === settings.service ? ' on' : '')
-      + (l.shop ? ' shop' : ''));
+      + (l.shop ? ' shop' : '') + (l.exact ? ' exact' : ''));
     a.href = l.url;
     a.target = '_blank';
     a.rel = 'noopener noreferrer';
     a.textContent = l.name;
     if (l.hint) a.title = l.hint;
     if (l.shop) a.title = 'Kaufen statt streamen';
+    if (l.exact) a.title = 'Führt direkt zu dieser Aufnahme';
     return a;
   };
   /* Standardmaessig steht nur der eigene Dienst da - und der Sammellink, wenn
      es ihn gibt. Der Rest kommt auf Klick und bleibt dann offen. */
   const zeigen = settings.svcAll ? liste : liste.filter(l => l.all || l.id === settings.service);
   zeigen.forEach(l => box.appendChild(chip(l)));
+  /* Die genauen Adressen kommen von song.link und brauchen einen Moment.
+     Bis dahin steht die Suche da - wer sofort klickt, landet also trotzdem
+     richtig, nur eine Trefferliste weiter vorn. */
+  if (settings.exact && song && song.k && !Links.known(song)) {
+    Links.exact(song).then(hit => {
+      if (hit && revealed && revealed.song === song) renderServiceLinks(song);
+    });
+  }
   if (!settings.svcAll && zeigen.length < liste.length) {
     const mehr = el('button', 'svc more', `+ ${liste.length - zeigen.length} weitere`);
     mehr.onclick = () => {
@@ -852,6 +862,15 @@ function renderServiceLinks(song) {
 }
 
 function buildServiceUI() {
+  const genau = $('#svcExact');
+  if (genau) {
+    genau.checked = settings.exact !== false;
+    genau.onchange = () => {
+      settings.exact = genau.checked;
+      save('settings', settings);
+      if (revealed) renderServiceLinks(revealed.song);
+    };
+  }
   const box = $('#svcSeg');
   box.innerHTML = '';
   Links.SERVICES.forEach(sv => {

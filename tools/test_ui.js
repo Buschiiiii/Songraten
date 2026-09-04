@@ -35,6 +35,7 @@ const CATALOG = {
 const sortKey = s => s.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim().split(' ').sort().join(' ');
 let itunesCalls = 0;
 let srvCalls = [];
+let odesliCalls = [];
 
 /* Ein Puffer, wie ihn decodeAudioData liefern wuerde. Niedrige Abtastrate,
    damit drei Minuten Testton nicht 60 MB belegen. */
@@ -131,6 +132,22 @@ function makeWindow(store, patchDb) {
         { trackName: 'Fremder Song', artistName: 'Ganz Andere', trackId: 501, previewUrl: 'https://audio/g2' },
       ] }) };
     }
+    /* ---- song.link: die genauen Adressen je Dienst ---- */
+    if (url.includes('api.song.link')) {
+      odesliCalls.push(url);
+      if (/id=666/.test(url)) return { ok: false, status: 429, json: async () => ({}) };
+      const id = (/id=(\d+)/.exec(url) || [0, '0'])[1];
+      return { ok: true, status: 200, json: async () => ({
+        pageUrl: 'https://song.link/i/' + id,
+        linksByPlatform: {
+          appleMusic: { url: 'https://music.apple.com/de/album/x/1?i=' + id },
+          spotify: { url: 'https://open.spotify.com/track/abc' + id },
+          tidal: { url: 'https://tidal.com/browse/track/' + id },
+          deezer: { url: 'https://www.deezer.com/track/' + id },
+        },
+      }) };
+    }
+
     /* ---- Mediathek-Server: Subsonic, Jellyfin, Plex ---- */
     if (url.includes('musik.example.org') || url.includes('musik.kaputt.org')) {
       srvCalls.push(url);
@@ -457,7 +474,50 @@ const dummy = n => ({ t: 'Song ' + n, a: 'Kuenstler ' + n, al: 'Album', y: 2020,
   const alle = $('#revealLinks').querySelector('.all');
   assert(alle && alle.href === 'https://song.link/i/1440857781',
     'Aufloesung: mit Track-ID kommt der Sammellink dazu');
-  G('delete round[0].song.k');
+  /* Genau diese Aufnahme: song.link loest die Track-ID in echte Adressen auf.
+     Bis die Antwort da ist, steht die Suche da - wer sofort klickt, landet
+     also trotzdem richtig. */
+  odesliCalls = [];
+  G('settings.svcAll = true; showReveal(round[0], false)');
+  assert(/spotify\.com\/search/.test([...$('#revealLinks').querySelectorAll('a')].find(a => a.textContent === 'Spotify').href),
+    'Genau: vor der Antwort steht die Suche da');
+  await waitFor(() => /open\.spotify\.com\/track\//.test(
+    ([...$('#revealLinks').querySelectorAll('a')].find(a => a.textContent === 'Spotify') || {}).href || ''), 4000);
+  const genau = [...$('#revealLinks').querySelectorAll('a')];
+  const bei = n => genau.find(a => a.textContent === n);
+  assert(/open\.spotify\.com\/track\/abc1440857781/.test(bei('Spotify').href)
+    && bei('Spotify').classList.contains('exact'),
+    'Genau: Spotify zeigt danach auf den Song selbst');
+  assert(/tidal\.com\/browse\/track\//.test(bei('Tidal').href)
+    && /deezer\.com\/track\//.test(bei('Deezer').href),
+    'Genau: Tidal und Deezer ebenso');
+  assert(/play\.qobuz\.com\/search/.test(bei('Qobuz').href) && !bei('Qobuz').classList.contains('exact'),
+    'Genau: was song.link nicht kennt, bleibt eine Suche');
+  assert(odesliCalls.length === 1 && /platform=itunes&type=song&id=1440857781/.test(odesliCalls[0]),
+    'Genau: eine einzige Anfrage je Song');
+
+  G('closeReveal()'); await tick(20);
+  G('showReveal(round[0], false)'); await tick(60);
+  assert(odesliCalls.length === 1, 'Genau: beim zweiten Mal kommt alles aus dem Speicher');
+  assert(/open\.spotify\.com\/track\//.test(G("Links.one(round[0].song, 'spotify')")),
+    'Genau: auch die Ergebnisliste nimmt die genaue Adresse');
+
+  /* Abschaltbar, und ohne Antwort bleibt es bei der Suche */
+  $('#svcExact').checked = false;
+  $('#svcExact').dispatchEvent(new w.Event('change'));
+  assert(G('settings.exact') === false, 'Genau: laesst sich abschalten');
+  G('round[0].song.k = 666; showReveal(round[0], false)'); await tick(80);
+  assert(odesliCalls.length === 1, 'Genau: abgeschaltet fragt die Seite gar nicht erst');
+  $('#svcExact').checked = true;
+  $('#svcExact').dispatchEvent(new w.Event('change'));
+  await waitFor(() => odesliCalls.length === 2, 3000);
+  await tick(60);
+  const nachFehler = [...$('#revealLinks').querySelectorAll('a')].map(a => a.href);
+  assert(odesliCalls.length === 2 && nachFehler.some(h => /music\.apple\.com\/de\/search/.test(h))
+    && !$('#revealLinks').querySelector('.exact'),
+    'Genau: sagt song.link nichts, bleibt die Suche stehen');
+
+  G('settings.svcAll = false; delete round[0].song.k');
   [...$('#svcSeg').querySelectorAll('button')].find(b => b.textContent === 'Apple Music').click();
   G('closeReveal()'); await tick(20);
   G('newRound()'); await tick(30);

@@ -55,8 +55,11 @@ so lange erneut versucht, bis der Context wirklich läuft.
 
 ## Datenpipeline — läuft nur beim Bauen, nie zur Laufzeit
 
-(Einzige Ausnahme: der Playlist-Modus fragt die iTunes-Suche im Browser ab,
-siehe unten.)
+Zur Laufzeit fragt die Seite nur an vier Stellen nach, alle vom Nutzer
+angestoßen und alle ohne Schlüssel: der **Playlist-Modus** löst Titel über die
+iTunes-Suche auf, der **Künstlermodus** holt den Katalog bei Apple, der
+**Mediathek-Server** ist der eigene, und **song.link** liefert auf Wunsch die
+genauen Links in der Auflösung. Nichts davon braucht ein Backend.
 
 0. `tools/fetch_kworb.py <anzahl>` holt die Streamzahlen: Künstlerübersicht
    und die Songseiten der größten Künstler, daraus `artists_top.json` und
@@ -417,6 +420,31 @@ Playlist wie Künstlerkatalog übernehmen sie von Apple. Fehlt sie (ältere
 `songs.json`, lokale Dateien), bleibt es bei der Suche — deshalb stehen die
 Einzellinks weiterhin daneben und nicht nur der Sammellink.
 
+### Genau diese Aufnahme statt einer Trefferliste
+
+Ein Suchlink landet auf einer Ergebnisliste; man will aber auf den Song. Bei
+eingeschaltetem `settings.exact` (Voreinstellung) fragt `Links.exact()` einmal
+je Song die Odesli-API (`api.song.link/v1-alpha.1/links?platform=itunes&
+type=song&id=<k>`) und ersetzt die Suchadressen durch die echten. Ein grüner
+Punkt am Chip zeigt, dass der Link genau trifft.
+
+Wichtig dabei:
+
+- **Angemeldet ist man sowieso.** Der Link geht in den eigenen Browser, dort
+  läuft die Sitzung bei Spotify, Tidal oder Qobuz weiter. Die Seite selbst
+  kann sich nirgends anmelden und muss es auch nicht — sie spart nur den
+  Umweg über die Trefferliste.
+- Gerendert wird **sofort mit der Suche**; die genauen Adressen kommen
+  nachträglich und tauschen nur das `href`. Wer schneller klickt, landet
+  trotzdem richtig.
+- Treffer liegen in `songrate:links` (300 Songs), ein zweiter Blick kostet
+  keine Anfrage. Ohne Schlüssel lässt Odesli rund zehn Anfragen je Minute
+  durch, deshalb die Bremse bei acht — und bei Fehler, 429 oder fehlendem `k`
+  bleibt einfach die Suche stehen.
+- **Qobuz und Bandcamp kennt Odesli nicht.** Dort bleibt es bei der Suche im
+  jeweiligen Player, und das ist verschmerzbar: eingeloggt ist man, es kostet
+  einen Klick mehr.
+
 Der Lieblingsdienst (`settings.service`) steht in der Auflösung — und zwar
 **nur er**, dazu der Sammellink; die übrigen kommen über „+ n weitere"
 (`settings.svcAll`, bleibt dann so). Ein gespeicherter Dienst, den es nicht
@@ -562,7 +590,8 @@ Playlist"). Das steht jetzt in der Zeile (`filterScope()`) — eine lange
    `songrate:playlist` (aufgelöste Playlist), `songrate:artists`
    (geladene Künstlerkataloge), `songrate:localmeta` (gelesene Tags der
    eigenen Musik), `songrate:server` (Zugang zum Mediathek-Server),
-   `songrate:device` (Geräte-ID für Jellyfin), `songrate:plcache`
+   `songrate:device` (Geräte-ID für Jellyfin), `songrate:links`
+   (genaue Dienst-Links je Song), `songrate:plcache`
    (Titel → iTunes-Treffer), `songrate:plqueue` (Titelliste eines noch nicht
    fertigen Laufs). Das Präfix bleibt
    `songrate:`, obwohl die Seite Songraten heißt — Umbenennen würde alle

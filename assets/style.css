@@ -399,6 +399,8 @@ body.dragging::after{
 .svc:hover{color:var(--text);border-color:var(--line)}
 .svc.on{color:var(--green);border-color:var(--green-dim)}
 .svc.shop{opacity:.75}
+/* Der Punkt heisst: dieser Link geht auf den Song selbst, nicht auf eine Suche. */
+.svc.exact::before{content:"●";font-size:6px;vertical-align:middle;margin-right:5px;color:var(--green)}
 .svc.more{color:var(--grey);background:none;border:1px dashed var(--line)}
 .svc.more:hover{color:var(--text);border-color:var(--grey)}
 .svc.all{color:var(--text);background:var(--green-dim);border-color:transparent;font-weight:600}
