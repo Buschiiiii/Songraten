@@ -262,12 +262,16 @@ songs, seen = [], set()
 if True:
     for tier, c in all_candidates():
         it = c['it']
-        raw = set()
-        for a in c['artists']:
-            raw.update(split_artist(a))
-        raw.update(split_artist(it['artistName']))
-        for m in FEAT.findall((it['trackName'] or '') + ' ' + c['title']):
-            raw.update(split_artist(m))
+        # Reihenfolge mit Absicht: der Name aus dem iTunes-Katalog kommt
+        # zuerst, weil er die offizielle Schreibweise hat ("TOTO", nicht
+        # "Toto"). Ueber ein Set gelaufen war es Zufall, welche gewann.
+        raw = []
+        for n in (split_artist(it['artistName'])
+                  + [x for m in FEAT.findall((it['trackName'] or '') + ' ' + c['title'])
+                     for x in split_artist(m)]
+                  + [x for a in c['artists'] for x in split_artist(a)]):
+            if n not in raw:
+                raw.append(n)
         ids = []
         for n in raw:
             i = aid(n)
