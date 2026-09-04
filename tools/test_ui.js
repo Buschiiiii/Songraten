@@ -221,6 +221,17 @@ const dummy = n => ({ t: 'Song ' + n, a: 'Kuenstler ' + n, al: 'Album', y: 2020,
     'Statistik: Aufgeben setzt die Serie zurueck, die beste bleibt stehen');
   G('closeReveal()'); await tick(20);
 
+  /* Die Statistik schluesselt nach Modus auf, sobald mehr als einer bespielt ist */
+  G("stats.byTier = { easy: {p:4,w:3}, 'dec-1980': {p:2,w:1}, 'gen-pop': {p:1,w:0} }; renderStats()");
+  const statText = $('#stats').textContent;
+  assert(/Charts3\/4|Charts.*3\/4/.test(statText.replace(/\s+/g, '')) || /3\/4/.test(statText),
+    'Statistik: die Charts stehen mit ihrer Quote da');
+  assert(/Jahrzehnte/.test(statText) && /Genres/.test(statText),
+    'Statistik: Jahrzehnte und Genres ebenfalls');
+  G("stats.byTier = { easy: {p:4,w:3} }; renderStats()");
+  assert(!/Jahrzehnte/.test($('#stats').textContent),
+    'Statistik: bei nur einem Modus bleibt die Aufschluesselung weg');
+
   /* Bei Apple Music nachhoeren */
   G('showReveal(round[0], false)');
   assert(/music\.apple\.com\/de\/search\?term=/.test($('#revealLink').href),

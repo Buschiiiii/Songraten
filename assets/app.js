@@ -779,6 +779,26 @@ function render() {
   setAction();
 }
 
+/* `stats.byTier` sammelt seit jeher pro Stufe, Jahrzehnt, Genre und Playlist -
+   angezeigt wurde es nie. Hier zusammengefasst, aber nur was bespielt wurde. */
+function statGroups() {
+  const groups = [
+    ['Charts', k => TIERS.some(t => t.id === k)],
+    ['Jahrzehnte', k => k.startsWith('dec-')],
+    ['Genres', k => k.startsWith('gen-')],
+    ['Playlist', k => k === 'playlist'],
+  ];
+  return groups.map(([label, test]) => {
+    let p = 0, w = 0;
+    Object.keys(stats.byTier || {}).forEach(k => {
+      if (!test(k)) return;
+      p += stats.byTier[k].p || 0;
+      w += stats.byTier[k].w || 0;
+    });
+    return [label, p, w];
+  }).filter(([, p]) => p > 0);
+}
+
 function renderStats() {
   const d = $('#stats');
   d.innerHTML = '';
@@ -786,6 +806,8 @@ function renderStats() {
   const rows = [['Runden', stats.rounds], ['Songs erraten', `${stats.solved}/${stats.played}`],
     ['Quote', rate + ' %'], ['Serie', `${stats.streak || 0} (best ${stats.bestStreak || 0})`],
     ['Bestes Ergebnis', stats.best]];
+  const groups = statGroups();
+  if (groups.length > 1) rows.push(...groups.map(([label, p, w]) => [label, `${w}/${p}`]));
   rows.forEach(([k, v]) => { d.appendChild(el('dt', null, k)); d.appendChild(el('dd', null, v)); });
 }
 
