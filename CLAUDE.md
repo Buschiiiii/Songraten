@@ -127,9 +127,9 @@ Chartsongs aus „Africa" den unbekanntesten Song der 80er. Fehlt `f` (ältere
 `songs.json`), entscheiden die Streams.
 
 Songs mit leerem `d` haben keine Stufe und damit keine Streamzahl — sie kommen
-aus den Jahrescharts und spielen **nur** im Jahrzehntmodus mit. `chartFiltered`
-hält sie aus den Charts heraus, `filtered` (und damit die Vorschlagsliste)
-enthält sie.
+aus den Jahrescharts und spielen in den Charts **nicht** mit, im Jahrzehnte-
+und Genremodus schon. `chartFiltered` hält sie aus den Charts heraus,
+`filtered` (und damit die Vorschlagsliste) enthält sie.
 
 ## Mehr Songs für alte Jahrzehnte
 
