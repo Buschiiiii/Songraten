@@ -59,28 +59,29 @@ mehr Songs bekommst, steht unter *Songs nachladen*.
 
 Die mitgelieferte Songliste kommt aus Spotify-Streamzahlen – und Spotify gibt
 es erst seit 2008. Deshalb sind die 60er bis 90er dünn besetzt. Zwei Skripte
-holen die alten Hits nach (Python 3, keine Pakete nötig):
+holen die alten Hits über die Billboard-Jahrescharts nach.
 
-**Am einfachsten über GitHub:** im Repo auf **Actions** → *Songs aktualisieren*
-→ **Run workflow**. Das läuft monatlich auch von selbst und committet die neuen
-Songs direkt. Ein Lauf holt etwa so viele Songs, wie Apple in 25 Minuten
-durchlässt; beim nächsten Mal geht es dort weiter.
-
-Daneben gibt es *Charts neu bauen* – das holt die Spotify-Streamzahlen frisch
-von kworb und baut den ganzen Bestand des Standardmodus neu. Das dauert bis zu
-einer Stunde und läuft nur auf Knopfdruck. Kommt dabei zu wenig zusammen, wird
-nichts committet und die alte Liste bleibt stehen.
-
-Oder lokal (Python 3, keine Pakete nötig):
+**Lokal geht es am schnellsten** (Python 3, keine Pakete nötig):
 
 ```
-python3 tools/fetch_yearcharts.py     # Jahrescharts von Wikipedia, ~2 Minuten
+python3 tools/fetch_yearcharts.py     # Jahrescharts von Wikipedia, ~3 Minuten
 python3 tools/add_decades.py 900      # 15 Minuten lang Titel bei Apple suchen
 ```
 
 Das zweite Skript darfst du ruhig mehrfach starten: Apple bremst nach einigen
 hundert Anfragen, aber alles Gefundene liegt im Cache, und der nächste Lauf
-macht dort weiter. Danach `data/songs.json` committen – fertig.
+macht dort weiter. Danach `data/` committen – fertig.
+
+**Oder über GitHub:** im Repo auf **Actions** → *Songs aktualisieren* →
+**Run workflow**. Das läuft täglich auch von selbst und committet die neuen
+Songs direkt. Nur: Apple lässt aus GitHubs Rechenzentren kaum etwas durch – im
+ersten Lauf waren es 56 Songs in 17 Minuten, der Rest der Zeit ging fürs
+Warten drauf. Von zu Hause kommen in derselben Zeit einige hundert zusammen.
+
+Daneben gibt es *Charts neu bauen* – das holt die Spotify-Streamzahlen frisch
+von kworb und baut den ganzen Bestand des Standardmodus neu. Das dauert bis zu
+einer Stunde und läuft nur auf Knopfdruck. Kommt dabei zu wenig zusammen, wird
+nichts committet und die alte Liste bleibt stehen.
 
 ## Songauswahl einstellen
 

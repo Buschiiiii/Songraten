@@ -170,7 +170,7 @@ if __name__ == '__main__':
         if hit is None and key not in cache:
             try:
                 hits = None
-                for versuch in range(3):
+                for versuch in range(4):
                     try:
                         hits = lookup(row['title'], row['artist'])
                         break
@@ -180,7 +180,9 @@ if __name__ == '__main__':
                             raise
                         # Apple macht fuer ein paar Minuten dicht. Einmal warten
                         # lohnt sich, danach lieber aufhoeren und spaeter weiter.
-                        wait = 60 * (versuch + 1)
+                        # Aus Rechenzentren blockt Apple hart: 60 s reichen
+                        # dort nicht, nach der Pause kam sofort wieder 403.
+                        wait = (60, 180, 300)[versuch]
                         print(f'  Apple bremst, warte {wait}s', flush=True)
                         save_cache(cache)
                         time.sleep(wait)
