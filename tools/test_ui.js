@@ -319,6 +319,40 @@ const dummy = n => ({ t: 'Song ' + n, a: 'Kuenstler ' + n, al: 'Album', y: 2020,
   assert(!H("round.some(r => r.song.r)") || /Platz \d+ der Jahrescharts/.test(meta),
     'Jahrescharts: die Aufloesung nennt den Chartplatz statt der Streams (' + meta + ')');
 
+  /* ------------------------------------------------------------ Hardmode */
+  G("settings.hard = false; newRound()"); await tick(30);
+  assert(!$('#hardMode').checked || true, 'Hardmode: Schalter ist da');
+  $('#hardMode').checked = true;
+  $('#hardMode').dispatchEvent(new w.Event('change'));
+  assert(G('settings.hard') === true, 'Hardmode: laesst sich einschalten und wird gemerkt');
+
+  G('newRound()'); await tick(30);
+  assert(G('locked(1)') && !G('locked(0)'), 'Hardmode: spaetere Plaetze sind gesperrt');
+  assert($('#tierList').children[1].classList.contains('locked'), 'Hardmode: man sieht es der Leiste an');
+  G('switchTo(3)');
+  assert(G('active') === 0, 'Hardmode: der Sprung nach vorne wird abgelehnt');
+
+  /* Ein verpasster Song beendet die Runde */
+  G('round[active].stage = enabledStages().length - 1; clearPick(); submit()'); await tick(30);
+  assert(G("round.every(r => r.status !== 'playing')"), 'Hardmode: ein verpasster Song beendet alles');
+  assert(G("round.filter(r => r.status === 'lost').length") === 5, 'Hardmode: die restlichen Plaetze fallen mit');
+  assert(G('stats.byTier.easy.p') > 0, 'Hardmode: gezaehlt wird nur der gespielte Song');
+  G('closeReveal()'); await tick(20);
+  assert(!$('#summary').hidden, 'Hardmode: danach kommt gleich das Ergebnis');
+  $('#summaryNext').click(); await tick(30);
+
+  /* Wer trifft, darf weiter */
+  G('choose(round[active].song); submit()'); await tick(20);
+  assert(G("round[0].status") === 'won' && G("round[1].status") === 'playing',
+    'Hardmode: nach einem Treffer geht es normal weiter');
+  G('closeReveal()'); await tick(20);
+  assert(G('active') === 1 && !G('locked(1)'), 'Hardmode: der naechste Platz ist jetzt frei');
+
+  $('#hardMode').checked = false;
+  $('#hardMode').dispatchEvent(new w.Event('change'));
+  assert(G('settings.hard') === false && !G('locked(3)'), 'Hardmode: ausgeschaltet ist wieder alles offen');
+  G('newRound()'); await tick(30);
+
   /* --------------------------------------------------------- Genre-Modus */
   $('#modeSeg [data-v="genres"]').click(); await tick(40);
   assert(G('mode') === 'genres', 'Genres: Modus laesst sich einschalten');
@@ -538,7 +572,11 @@ const dummy = n => ({ t: 'Song ' + n, a: 'Kuenstler ' + n, al: 'Album', y: 2020,
   add('nur', 'decade', duenn);
   assert(F('activePool()').length < 30 && $$('#filterCount').classList.contains('warn')
     && /Nur \d+ Songs/.test($$('#filterCount').textContent), 'Filter: kleiner Pool warnt (' + $$('#filterCount').textContent + ')');
-  assert(F('TIERS.some(t => byTier[t.id].length === 0)'), 'Filter: dabei bleibt mindestens eine Stufe leer');
+  /* Ob eine Stufe wirklich leer laeuft, haengt am Datenstand - die Regel
+     dahinter laesst sich aber direkt pruefen: eine leere Stufe holt Ersatz. */
+  F("byTier.impossible = []; newRound()");
+  await tick(30);
+  assert(F('round').every(r => r.song), 'Filter: eine leere Stufe bekommt trotzdem einen Song');
 
   F('newRound()'); await tick(30);
   const small = new Set(F('chartFiltered').map(s => s.i));

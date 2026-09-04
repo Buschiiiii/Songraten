@@ -259,6 +259,11 @@ höchstens einen Tipp gelb, anders als in der Pipeline.
 - Derselbe Künstler darf mehrfach in einer Runde vorkommen.
 - Punkte nach gehörten Sekunden mal Stufenfaktor, damit unterschiedliche
   Stufenleitern vergleichbar bleiben.
+- **Hardmode** (`settings.hard`, aus): ein verpasster Song beendet die ganze
+  Runde — die übrigen Plätze fallen mit, gezählt wird in der Statistik nur der
+  Song, den man wirklich gespielt hat. Außerdem geht es strikt der Reihe nach:
+  `locked(i)` sperrt jeden Platz, vor dem noch einer offen ist, und `render()`
+  zeichnet ihn ausgegraut.
 
 ## Künstlerindex — hier steckt die Arbeit
 
@@ -281,6 +286,18 @@ stolpert über `s.ar.map(...)`, wenn das Feld fehlt — die Seite bleibt dann
 committet hat. `tools/artistids.py` vergibt sie jetzt beim Einfügen
 (`add_decades.py`) und repariert bestehende Dateien (`clean_songs.py`); das
 Frontend hält ein fehlendes Feld zusätzlich aus.
+
+## Aufbau der Seite
+
+Links Kopfzeile (Marke, Stufenliste, Neuwürfeln, Rundenpunkte) und darunter
+die Panels *Stufen* und *Statistik*; in der Mitte das Spielfeld; rechts
+*Modus*, *Spielweise*, *Songstart*, *Lautstärke* und ganz unten die
+*Songauswahl*.
+
+Auf schmalen Bildschirmen wird `.col-left` zu `display:contents`, damit
+`.left-head` (order 1) oben bleibt und `.left-panels` (order 4) hinter das
+Spielfeld und die Einstellungen rutscht — sonst müsste man an den Panels
+vorbeiscrollen, um den Abspielknopf zu sehen.
 
 ## Fallstricke im Frontend
 
