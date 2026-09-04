@@ -30,6 +30,7 @@ import urllib.parse
 import urllib.request
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from artistids import ensure_ids
 from dedupe import merge_duplicates
 from fame import add_fame
 
@@ -216,6 +217,8 @@ if __name__ == '__main__':
     save_cache(cache)
 
     if added:
+        # Ohne Kuenstler-IDs stolpert das Frontend beim Laden.
+        ensure_ids(data)
         data['songs'], merged = merge_duplicates(data['songs'])
         add_fame(data['songs'])
         data['v'] = 2

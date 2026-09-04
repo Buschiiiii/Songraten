@@ -117,6 +117,7 @@ async function boot() {
   DB.songs.forEach((s, i) => {
     s.i = i;
     s.n = norm(s.t);
+    s.ar = s.ar || [];        /* aeltere Datenlaeufe kannten das Feld nicht */
     s.na = s.ar.map(a => norm(DB.artists[a])).join(' ');
   });
   PL = buildPlaylist(Playlist.restore());
@@ -602,9 +603,10 @@ function submit() {
   const guess = pick;
 
   if (guess) {
+    const ga = guess.ar || [], ta = target.ar || [];
     const correct = guess.i === target.i ||
-      (norm(guess.t) === norm(target.t) && guess.ar.some(a => target.ar.includes(a)));
-    const artist = !correct && guess.ar.some(a => target.ar.includes(a));
+      (norm(guess.t) === norm(target.t) && ga.some(a => ta.includes(a)));
+    const artist = !correct && ga.some(a => ta.includes(a));
     r.guesses.push({ t: guess.t, a: guess.a, kind: correct ? 'ok' : artist ? 'artist' : 'no' });
     if (correct) return win(r);
   } else {
