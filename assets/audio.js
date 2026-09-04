@@ -105,10 +105,15 @@ const Audio2 = (() => {
     return von + Math.random() * Math.max(0, bis - von);
   }
 
-  async function loadFile(file, opts) {
+  /* `src` ist eine Datei vom Geraet oder die Adresse eines Songs auf dem
+     eigenen Mediathek-Server - beides sind ganze Songs, beides wird gleich
+     behandelt. */
+  async function loadFile(src, opts) {
     opts = opts || {};
     const seconds = opts.seconds || 20;
-    const buf = await file.arrayBuffer();
+    const buf = typeof src === 'string'
+      ? await (await fetch(src, { mode: 'cors' })).arrayBuffer()
+      : await src.arrayBuffer();
     const full = await decode(ensure(), buf);
     const start = opts.start === 'random' ? randomStart(full, seconds) : firstSound(full);
     return { buffer: excerpt(full, start, seconds), start, duration: full.duration || 0 };

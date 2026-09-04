@@ -347,6 +347,59 @@ Instrumentalfassungen weg, die ein gezogenes Album gern mitbringt. Unter
 Datei und öffnet sie auf Klick über eine Objekt-URL, die beim Schließen
 wieder freigegeben wird.
 
+## Mediathek vom eigenen Server
+
+Dieselbe Spielweise wie „Eigene Musik", nur kommen die Songs nicht von der
+Platte, sondern von **Subsonic** (Navidrome, Airsonic, Gonic), **Jellyfin**
+(auch Emby) oder **Plex**. Alle drei haben eine offene REST-Schnittstelle
+ohne OAuth und ohne registrierte App — deshalb geht das trotz der harten
+Randbedingung. `assets/server.js` hält die drei Clients.
+
+Zwei Dinge müssen beim Nutzer stimmen, und beides lässt sich von hier aus
+nicht erzwingen:
+
+1. **https.** Die Seite läuft über https und darf nichts von http nachladen —
+   der Browser bricht das kommentarlos ab. Die typische Heimnetzadresse
+   (`http://192.168.…`) geht also nicht; es braucht Reverse Proxy, Tailscale,
+   Cloudflare Tunnel oder bei Plex die dafür gedachte `*.plex.direct`-Adresse.
+2. **CORS.** Navidrome, Jellyfin und Plex erlauben fremde Herkunft von Haus
+   aus, ältere Airsonic-Versionen nicht immer.
+
+Weil `fetch` beide Fälle im `catch` gleich aussehen lässt (ein nacktes
+`TypeError`), rät `hint()` anhand des Schemas: steht `http:` in der Adresse
+und `https:` in der Seite, ist es Mixed Content — sonst wird nach Adresse,
+laufendem Server und CORS gefragt. „Fehler beim Laden" hilft niemandem.
+
+Details, die leicht schiefgehen:
+
+- **Subsonic** will `t=md5(passwort+salt)`. Eine Bibliothek dafür ist
+  verboten, also steht MD5 in `server.js` — geprüft gegen Nodes `crypto`.
+  Die Songliste kommt über `search3` mit leerem Suchbegriff (Navidrome gibt
+  dann alles heraus); wo das nichts liefert, wird `*` versucht.
+- **Jellyfin** meldet sich über `/Users/AuthenticateByName` an und braucht den
+  `X-Emby-Authorization`-Kopf mit einer festen Geräte-ID
+  (`songrate:device`) — sonst legt der Server bei jedem Besuch ein neues Gerät
+  an. Ein API-Schlüssel geht auch, dann bleibt der Benutzername leer.
+- **Plex** kennt keinen Benutzernamen, nur den `X-Plex-Token`. Gespielt wird
+  die Datei direkt (`/library/parts/…`), Plex' Transkodierung ist zu
+  umständlich für den Zweck.
+
+Gespielt wird bei Subsonic und Jellyfin ein auf 192 kbit/s umgerechnetes MP3
+— der Server rechnet das selbst, und eine 40-MB-FLAC pro Rateversuch über die
+Leitung zu ziehen wäre unsinnig. Ansonsten läuft alles wie bei lokalen
+Dateien: `Audio2.loadFile()` nimmt eine Adresse genauso wie eine Datei,
+schneidet den Ausschnitt heraus und lässt den Rest fallen.
+
+Zugangsdaten liegen in `songrate:server`, unverschlüsselt — das steht auch so
+im Panel. Der Schalter *Zugang merken* lässt sich abschalten, *Zugang
+vergessen* räumt ihn weg, und *Eigene Musik entfernen* nimmt ihn mit: sonst
+wäre die Mediathek nach dem Neuladen sofort wieder da.
+
+**Ungetestet gegen echte Server.** In der Entwicklungsumgebung gibt es kein
+Netz; geprüft ist gegen nachgebaute Antworten (`tools/test_ui.js`), dass die
+Anfragen richtig gebaut und die Antworten richtig gelesen werden. Ob ein
+konkreter Server CORS erlaubt, zeigt erst der Versuch.
+
 ## Nachhören: Links statt eines Dienstes
 
 Die Auflösung verlinkte früher nur zu Apple Music. Abfragen lässt sich keiner
@@ -476,7 +529,8 @@ vorbeiscrollen, um den Abspielknopf zu sehen.
    `songrate:recent` (letzte 60 Songs, gegen Wiederholungen),
    `songrate:playlist` (aufgelöste Playlist), `songrate:artists`
    (geladene Künstlerkataloge), `songrate:localmeta` (gelesene Tags der
-   eigenen Musik), `songrate:plcache`
+   eigenen Musik), `songrate:server` (Zugang zum Mediathek-Server),
+   `songrate:device` (Geräte-ID für Jellyfin), `songrate:plcache`
    (Titel → iTunes-Treffer), `songrate:plqueue` (Titelliste eines noch nicht
    fertigen Laufs). Das Präfix bleibt
    `songrate:`, obwohl die Seite Songraten heißt — Umbenennen würde alle

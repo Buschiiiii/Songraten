@@ -189,7 +189,7 @@ function buildChrome() {
         if (r.status !== 'playing' || r.guesses.length || r.stage !== 0) return;
         /* Bei eigenen Dateien steckt die Stelle im Ausschnitt selbst - der
            muss also noch einmal aus der Datei geschnitten werden. */
-        if (r.song && r.song.file) { r.buffer = null; preload(i); }
+        if (r.song && (r.song.file || r.song.full)) { r.buffer = null; preload(i); }
         else r.offset = newOffset();
       });
       focusSearch();
@@ -280,6 +280,7 @@ function buildChrome() {
   buildPlaylistUI();
   buildArtistUI();
   buildLocalUI();
+  buildServerUI();
   buildServiceUI();
   buildFilterUI();
   renderStats();
@@ -407,14 +408,15 @@ async function preload(i) {
   const r = round[i];
   if (!r.song || r.buffer) return;
   try {
-    if (r.song.file) {
+    if (r.song.file || r.song.full) {
       /* Aus der Datei wird gleich beim Dekodieren der gebrauchte Ausschnitt
          geschnitten - der ganze Song bliebe sonst im Speicher liegen. */
       /* Immer nach der laengsten Stufe schneiden, nicht nach der gerade
          eingeschalteten - sonst fehlt Ton, wenn mitten in der Runde eine
          laengere Stufe dazukommt. */
       const laenge = STAGES[STAGES.length - 1] + 8;
-      const cut = await Audio2.loadFile(r.song.file, { start: settings.start, seconds: laenge });
+      const cut = await Audio2.loadFile(r.song.file || r.song.full,
+        { start: settings.start, seconds: laenge });
       r.buffer = cut.buffer;
       r.at = cut.start;
       r.offset = 0;
@@ -1447,6 +1449,9 @@ function buildLocalUI() {
   };
 
   $('#loClear').onclick = () => {
+    /* Kam die Mediathek vom Server, waere sie nach dem Neuladen sofort wieder
+       da - dann muss auch der gemerkte Zugang weg. */
+    if (LO && LO.server) { Server.store(null); $('#srvForget').hidden = true; srvNote(''); }
     LO = null;
     Local.forget();
     Local.dropHandle();
@@ -1520,10 +1525,10 @@ async function restoreLocal() {
   const last = Local.lastKnown();
   if (!Local.supported()) {
     if (last && last.count) loNote(`Zuletzt: ${last.name} mit ${last.count} Songs – Ordner erneut wählen, dann geht es sofort.`);
-    return;
+    return srvRestore();
   }
   const handle = await Local.getHandle();
-  if (!handle) return;
+  if (!handle) return srvRestore();
   const st = await Local.permission(handle, false);
   if (st === 'granted') {
     const files = await Local.filesFromHandle(handle, () => loStop).catch(() => []);
@@ -1531,7 +1536,107 @@ async function restoreLocal() {
   } else {
     $('#loGrant').hidden = false;
     loNote(`${handle.name}${last ? ` mit ${last.count} Songs` : ''}: einmal freigeben, dann ist alles wieder da.`);
+    await srvRestore();
   }
+}
+
+/* Ein gemerkter Server wird beim Start still wieder geholt - eine Mediathek,
+   die man einmal eingetragen hat, soll einfach da sein. */
+async function srvRestore() {
+  const cfg = Server.restore();
+  if (!cfg || !cfg.url || LO) return;
+  await loadServer(cfg, { silent: true });
+}
+
+/* ------------------------------------------- Eigene Musik vom Server */
+
+/* Subsonic, Jellyfin und Plex haben eine offene Schnittstelle - kein OAuth,
+   keine registrierte App -, also geht das auch ohne Backend. Gespielt wird
+   dann derselbe Modus, nur dass die Songs nicht aus Dateien kommen, sondern
+   von der eigenen Mediathek. Siehe assets/server.js, auch zu den zwei
+   Stolpersteinen (https und CORS). */
+
+let srvKind = 'subsonic';
+let srvBusy = false;
+
+const srvNote = m => { const n = $('#srvNote'); if (n) n.textContent = m; };
+
+function srvCfg() {
+  return {
+    kind: srvKind,
+    url: $('#srvUrl').value.trim(),
+    user: $('#srvUser').value.trim(),
+    pass: $('#srvPass').value,
+  };
+}
+
+function buildServerUI() {
+  if (!$('#srvBox')) return;
+  $('#srvKind').querySelectorAll('button').forEach(b => {
+    b.onclick = () => { srvKind = b.dataset.v; renderServerKind(); };
+  });
+
+  const alt = Server.restore();
+  if (alt) {
+    srvKind = alt.kind || 'subsonic';
+    $('#srvUrl').value = alt.url || '';
+    $('#srvUser').value = alt.user || '';
+    $('#srvPass').value = alt.pass || '';
+    $('#srvForget').hidden = false;
+  }
+  renderServerKind();
+
+  $('#srvGo').onclick = () => loadServer(srvCfg());
+  $('#srvForget').onclick = () => {
+    Server.store(null);
+    $('#srvPass').value = '';
+    $('#srvForget').hidden = true;
+    srvNote('Zugang vergessen.');
+  };
+  [$('#srvUrl'), $('#srvUser'), $('#srvPass')].forEach(i => {
+    i.onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); loadServer(srvCfg()); } };
+  });
+}
+
+/* Plex kennt keinen Benutzernamen, dort zaehlt nur der Token. */
+function renderServerKind() {
+  $('#srvKind').querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.v === srvKind));
+  const plex = srvKind === 'plex';
+  $('#srvUser').hidden = plex;
+  $('#srvPass').placeholder = plex ? 'X-Plex-Token'
+    : srvKind === 'jellyfin' ? 'Passwort (oder API-Schlüssel)' : 'Passwort';
+}
+
+async function loadServer(cfg, opts) {
+  if (srvBusy || loBusy) return;
+  opts = opts || {};
+  srvBusy = true;
+  $('#srvGo').disabled = true;
+  srvNote('Verbindung wird geprüft …');
+  try {
+    const info = await Server.check(cfg);
+    srvNote('Songs werden geholt …');
+    const list = await Server.tracks(cfg, {
+      token: info.token,
+      onProgress: n => srvNote(`${n} Songs geholt …`),
+    });
+    if (!list.length) throw new Error('Der Server gibt keine Songs heraus.');
+    LO = buildPlaylist({ name: cfg.name || info.name, songs: list }, 'local');
+    LO.server = true;
+    if ($('#srvSave').checked) {
+      Server.store(cfg);
+      $('#srvForget').hidden = false;
+    }
+    applyFilters();
+    srvNote(`${LO.name}: ${LO.songs.length} Songs`);
+    renderLocal();
+    if (loPlayable() && mode !== 'local' && (!opts.silent || settings.mode === 'local')) setMode('local');
+    else if (mode === 'local') newRound();
+  } catch (e) {
+    srvNote(e && e.message ? e.message : 'Das hat nicht geklappt.');
+  }
+  srvBusy = false;
+  $('#srvGo').disabled = false;
 }
 
 /* ------------------------------------------------------------- Playlist */

@@ -34,6 +34,7 @@ const CATALOG = {
 };
 const sortKey = s => s.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim().split(' ').sort().join(' ');
 let itunesCalls = 0;
+let srvCalls = [];
 
 /* Ein Puffer, wie ihn decodeAudioData liefern wuerde. Niedrige Abtastrate,
    damit drei Minuten Testton nicht 60 MB belegen. */
@@ -87,6 +88,9 @@ function makeWindow(store, patchDb) {
 
   w.fetch = async url => {
     url = String(url);
+    /* Der Browser bricht http-Anfragen aus einer https-Seite ab, ohne zu
+       fragen - hier genauso. */
+    if (url.startsWith('http://')) { srvCalls.push(url); throw new TypeError('Failed to fetch'); }
     if (url.includes('songs.json')) {
       const db = JSON.parse(read('data/songs.json'));
       if (patchDb) patchDb(db);
@@ -127,6 +131,55 @@ function makeWindow(store, patchDb) {
         { trackName: 'Fremder Song', artistName: 'Ganz Andere', trackId: 501, previewUrl: 'https://audio/g2' },
       ] }) };
     }
+    /* ---- Mediathek-Server: Subsonic, Jellyfin, Plex ---- */
+    if (url.includes('musik.example.org') || url.includes('musik.kaputt.org')) {
+      srvCalls.push(url);
+      if (url.includes('musik.kaputt.org')) throw new TypeError('Failed to fetch');
+      const json = x => ({ ok: true, status: 200, json: async () => x });
+
+      /* Subsonic */
+      if (url.includes('/rest/ping')) {
+        if (!/t=[0-9a-f]{32}/.test(url)) return json({ 'subsonic-response': { status: 'failed', error: { code: 40, message: 'Wrong username or password' } } });
+        if (/u=falsch/.test(url)) return json({ 'subsonic-response': { status: 'failed', error: { code: 40, message: 'Wrong username or password' } } });
+        return json({ 'subsonic-response': { status: 'ok', version: '1.16.1' } });
+      }
+      if (url.includes('/rest/search3')) {
+        const off = +(/songOffset=(\d+)/.exec(url) || [0, 0])[1];
+        const song = i => ({ id: 's' + i, title: 'Subsonic Song ' + i, artist: 'Sub Band', album: 'Sub Album',
+                             year: 2001, genre: 'Rock', duration: 200, coverArt: 'c' + i });
+        return json({ 'subsonic-response': { status: 'ok',
+          searchResult3: { song: off === 0 ? [1, 2, 3, 4, 5, 6, 7].map(song) : [] } } });
+      }
+
+      /* Jellyfin */
+      if (url.includes('/Users/AuthenticateByName')) {
+        return json({ AccessToken: 'jf-token', User: { Id: 'u1' } });
+      }
+      if (url.includes('/Items?')) {
+        const start = +(/StartIndex=(\d+)/.exec(url) || [0, 0])[1];
+        const item = i => ({ Id: 'j' + i, Name: 'Jelly Song ' + i, Artists: ['Jelly Band'],
+                             Album: 'Jelly Album', ProductionYear: 2011, Genres: ['Pop'],
+                             RunTimeTicks: 2000000000, ImageTags: { Primary: 'p' + i } });
+        return json({ Items: start === 0 ? [1, 2, 3, 4, 5, 6].map(item) : [] });
+      }
+
+      /* Plex */
+      if (url.includes('/library/sections/')) {
+        const start = +(/X-Plex-Container-Start=(\d+)/.exec(url) || [0, 0])[1];
+        const track = i => ({ ratingKey: 'p' + i, title: 'Plex Song ' + i, grandparentTitle: 'Plex Band',
+                              parentTitle: 'Plex Album', parentYear: 1999, duration: 210000,
+                              thumb: '/thumb/' + i,
+                              Media: [{ Part: [{ key: '/library/parts/' + i + '/file.flac' }] }] });
+        return json({ MediaContainer: { Metadata: start === 0 ? [1, 2, 3, 4, 5, 6].map(track) : [] } });
+      }
+      if (url.includes('/library/sections')) {
+        return json({ MediaContainer: { Directory: [{ key: '1', type: 'artist', title: 'Musik' }] } });
+      }
+
+      /* Der Song selbst - gross genug, damit der Mock ihn als Datei nimmt. */
+      return { ok: true, status: 200, arrayBuffer: async () => new ArrayBuffer(4096) };
+    }
+
     if (url.includes('itunes.apple.com/search')) {
       itunesCalls++;
       const term = sortKey(decodeURIComponent(url.split('term=')[1]));
@@ -136,8 +189,9 @@ function makeWindow(store, patchDb) {
     return { ok: true, status: 200, arrayBuffer: async () => new ArrayBuffer(8) };  /* Preview */
   };
 
-  w.eval(['assets/links.js', 'assets/tags.js', 'assets/local.js', 'assets/audio.js',
-    'assets/playlist.js', 'assets/filters.js', 'assets/artist.js', 'assets/app.js']
+  w.eval(['assets/links.js', 'assets/tags.js', 'assets/local.js', 'assets/server.js',
+    'assets/audio.js', 'assets/playlist.js', 'assets/filters.js', 'assets/artist.js',
+    'assets/app.js']
     .map(read).join('\n;\n')
     + '\n;window.__ev = s => eval(s);');
   return w;
@@ -972,6 +1026,103 @@ const dummy = n => ({ t: 'Song ' + n, a: 'Kuenstler ' + n, al: 'Album', y: 2020,
   assert(w7.__ev('LO') === null && w7.__ev('mode') === 'charts'
     && w7.document.querySelector('#modeSeg [data-v="local"]').disabled,
     'Eigene Musik: entfernen schaltet zurueck und sperrt den Modus');
+
+  /* ------------------------------------------- Mediathek vom Server */
+  /* Subsonic, Jellyfin und Plex mit nachgebauten Antworten. Ob ein echter
+     Server antwortet, kann der Test nicht wissen - dass die Anfragen richtig
+     gebaut und die Antworten richtig gelesen werden, schon. */
+  const w8 = makeWindow({});
+  const S = n => w8.__ev(n), s$ = q => w8.document.querySelector(q);
+  await waitFor(() => !w8.document.querySelector('#app').hidden);
+
+  const srvFill = (kind, url, user, pass) => {
+    s$(`#srvKind [data-v="${kind}"]`).click();
+    s$('#srvUrl').value = url;
+    s$('#srvUser').value = user || '';
+    s$('#srvPass').value = pass || '';
+  };
+
+  /* ---- Subsonic ---- */
+  srvCalls = [];
+  srvFill('subsonic', 'https://musik.example.org', 'ben', 'geheim');
+  s$('#srvGo').click();
+  await waitFor(() => w8.__ev('mode') === 'local', 8000);
+  assert(S('mode') === 'local' && S('LO.songs.length') === 7,
+    'Subsonic: die Mediathek kommt an (' + S('LO.songs.length') + ' Songs)');
+  assert(S("LO.songs[0].t") === 'Subsonic Song 1' && S("LO.songs[0].a") === 'Sub Band',
+    'Subsonic: Titel und Kuenstler stimmen');
+  assert(S("LO.songs[0].y") === 2001 && S("LO.songs[0].g") === 'Rock', 'Subsonic: Jahr und Genre auch');
+  assert(/\/rest\/stream\?/.test(S('LO.songs[0].full')) && /format=mp3/.test(S('LO.songs[0].full')),
+    'Subsonic: gespielt wird ein kleines MP3, nicht die ganze FLAC');
+  assert(/\/rest\/getCoverArt\?/.test(S('LO.songs[0].c')), 'Subsonic: das Cover kommt vom Server');
+  const ping = srvCalls.find(u => u.includes('/rest/ping'));
+  assert(/t=[0-9a-f]{32}&s=\w+/.test(ping) && !/p=/.test(ping) && !ping.includes('geheim'),
+    'Subsonic: das Passwort geht als Hash mit Salz, nicht im Klartext');
+  assert(S("Server.md5('geheim' + 'x')").length === 32, 'Subsonic: md5 steht bereit');
+
+  /* Gespielt wird wie eine eigene Datei: Ausschnitt statt ganzem Song */
+  await waitFor(() => w8.__ev('round[0].buffer') != null, 8000);
+  assert(Math.abs(S('round[0].buffer').duration - S('STAGES[STAGES.length - 1] + 8')) < 0.1,
+    'Server: auch hier bleibt nur der Ausschnitt im Speicher');
+  assert(S('round[0].offset') === 0, 'Server: der Ausschnitt faengt bei null an');
+
+  /* Zugang gemerkt */
+  assert(S("Server.restore().url") === 'https://musik.example.org' && S("Server.restore().kind") === 'subsonic',
+    'Server: der Zugang wird gemerkt, wenn der Schalter an ist');
+  s$('#srvForget').click();
+  assert(S('Server.restore()') === null && s$('#srvPass').value === '', 'Server: und laesst sich vergessen');
+
+  /* ---- Jellyfin ---- */
+  srvCalls = [];
+  srvFill('jellyfin', 'https://musik.example.org', 'ben', 'geheim');
+  s$('#srvGo').click();
+  await waitFor(() => w8.__ev('LO') && w8.__ev('LO.songs.length') === 6, 8000);
+  assert(S("LO.songs[0].t") === 'Jelly Song 1' && S("LO.songs[0].a") === 'Jelly Band',
+    'Jellyfin: Titel und Kuenstler stimmen');
+  assert(S("LO.songs[0].dur") === 200, 'Jellyfin: die Spielzeit wird aus Ticks umgerechnet');
+  assert(/AudioCodec=mp3/.test(S('LO.songs[0].full')) && /api_key=jf-token/.test(S('LO.songs[0].full')),
+    'Jellyfin: gespielt wird mit dem Token vom Anmelden');
+  assert(srvCalls.some(u => u.includes('/Users/AuthenticateByName')), 'Jellyfin: erst anmelden, dann holen');
+  assert(srvCalls.some(u => /UserId=u1/.test(u)), 'Jellyfin: die Liste haengt am angemeldeten Benutzer');
+
+  /* ---- Plex ---- */
+  srvFill('plex', 'https://musik.example.org', '', 'plex-token');
+  assert(s$('#srvUser').hidden && /Plex-Token/.test(s$('#srvPass').placeholder),
+    'Plex: statt Benutzername und Passwort nur der Token');
+  s$('#srvGo').click();
+  await waitFor(() => w8.__ev('LO') && w8.__ev('LO.songs.length') === 6 && w8.__ev("LO.songs[0].t").startsWith('Plex'), 8000);
+  assert(S("LO.songs[0].t") === 'Plex Song 1' && S("LO.songs[0].a") === 'Plex Band',
+    'Plex: Titel und Kuenstler stimmen');
+  assert(S("LO.songs[0].y") === 1999 && Math.round(S("LO.songs[0].dur")) === 210,
+    'Plex: Jahr und Spielzeit auch');
+  assert(/\/library\/parts\/1\/file\.flac\?X-Plex-Token=/.test(S('LO.songs[0].full')),
+    'Plex: die Datei haengt am Token');
+
+  /* Entfernen nimmt auch den gemerkten Zugang mit - sonst waere die
+     Mediathek nach dem Neuladen sofort wieder da. */
+  s$('#srvGo').click();
+  await waitFor(() => w8.__ev('LO') != null && !w8.__ev('srvBusy'), 8000);
+  s$('#loClear').click(); await tick(30);
+  assert(S('LO') === null && S('Server.restore()') === null,
+    'Server: entfernen nimmt den gemerkten Zugang mit');
+
+  /* ---- Was schiefgehen kann, steht auch da ---- */
+  srvFill('subsonic', 'http://192.168.1.5:4533', 'ben', 'geheim');
+  s$('#srvGo').click();
+  await waitFor(() => /https/.test(s$('#srvNote').textContent), 5000);
+  assert(/http/.test(s$('#srvNote').textContent) && /blockt/.test(s$('#srvNote').textContent),
+    'Server: bei http sagt die Meldung, woran es liegt (' + s$('#srvNote').textContent.slice(0, 60) + '…)');
+
+  srvFill('subsonic', 'https://musik.kaputt.org', 'ben', 'geheim');
+  s$('#srvGo').click();
+  await waitFor(() => /CORS/.test(s$('#srvNote').textContent), 5000);
+  assert(/CORS/.test(s$('#srvNote').textContent), 'Server: sonst wird nach Adresse und CORS gefragt');
+
+  srvFill('subsonic', 'https://musik.example.org', 'falsch', 'geheim');
+  s$('#srvGo').click();
+  await waitFor(() => /Passwort/.test(s$('#srvNote').textContent), 5000);
+  assert(/Benutzername oder Passwort/.test(s$('#srvNote').textContent),
+    'Server: falsche Zugangsdaten werden benannt');
 
   /* ------------------------------------- Grosse Songliste bleibt flott */
   /* Nach ein paar Datenlaeufen stehen statt 2000 vielleicht 8000 Songs in der

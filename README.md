@@ -15,7 +15,7 @@ keine Bibliotheken. Alles läuft im Browser.
 | Genres | ein Genre, Stufen relativ dazu vergeben |
 | Künstler | alle Songs eines Künstlers samt Gastauftritten, fünf zufällige davon |
 | Eigene Playlist | ein eigener Export, fünf zufällige Songs daraus |
-| Eigene Musik | Dateien vom eigenen Gerät, fünf zufällige davon |
+| Eigene Musik | Dateien vom eigenen Gerät oder die Mediathek vom eigenen Server |
 
 Dazu Filter für Genre, Künstler, Jahrzehnt und Instrumentals, die sich
 kombinieren lassen.
@@ -97,6 +97,29 @@ wird gemerkt, beim nächsten Besuch fragt die Seite höchstens einmal nach der
 Freigabe. Safari und Firefox erlauben das nicht – dort den Ordner erneut
 wählen. Die gelesenen Tags bleiben trotzdem gespeichert, deshalb dauert das
 zweite Mal Sekunden statt Minuten.
+
+## Die eigene Mediathek vom Server
+
+Unter **Eigene Musik → Vom eigenen Server** lassen sich **Subsonic**
+(Navidrome, Airsonic, Gonic), **Jellyfin/Emby** und **Plex** eintragen.
+Adresse, Benutzername und Passwort – bei Plex stattdessen der
+X-Plex-Token – und *Mediathek laden*. Danach wird daraus gespielt wie aus
+eigenen Dateien.
+
+Zwei Dinge müssen stimmen, sonst kommt nichts an:
+
+- **Der Server braucht eine https-Adresse.** Diese Seite läuft über https und
+  darf nichts von http nachladen; der Browser blockt das. `http://192.168.…`
+  geht also nicht – nötig ist ein Reverse Proxy mit Zertifikat, Tailscale,
+  ein Cloudflare Tunnel, oder bei Plex die Adresse auf `*.plex.direct`.
+- **Der Server muss Zugriffe von fremden Seiten erlauben (CORS).** Navidrome,
+  Jellyfin und Plex tun das von Haus aus, ältere Airsonic-Versionen nicht.
+
+Geht etwas schief, steht in der Meldung, woran es vermutlich liegt.
+
+Gespielt wird bei Subsonic und Jellyfin ein umgerechnetes MP3, nicht die
+ganze FLAC – der Server macht das selbst. Zugangsdaten bleiben im Browser
+(unverschlüsselt); *Zugang vergessen* räumt sie weg.
 
 ## Nachhören, egal bei welchem Dienst
 

@@ -155,6 +155,33 @@
       <p class="note">Nichts wird hochgeladen – die Dateien bleiben auf dem Gerät.
         Titel und Künstler kommen aus den Tags, sonst aus dem Dateinamen.
         Ordner lassen sich auch einfach ins Fenster ziehen.</p>
+
+      <details class="fgroup" id="srvBox">
+        <summary>Vom eigenen Server</summary>
+        <div class="srv">
+          <div class="seg seg-row" id="srvKind">
+            <button data-v="subsonic" class="on">Subsonic</button>
+            <button data-v="jellyfin">Jellyfin</button>
+            <button data-v="plex">Plex</button>
+          </div>
+          <input id="srvUrl" type="url" placeholder="https://musik.example.org"
+                 autocomplete="off" spellcheck="false">
+          <input id="srvUser" type="text" placeholder="Benutzername" autocomplete="username">
+          <input id="srvPass" type="password" placeholder="Passwort" autocomplete="current-password">
+          <label class="switch" for="srvSave">
+            <input type="checkbox" id="srvSave" checked>
+            <span class="track"></span>
+            <span class="switch-txt">Zugang merken</span>
+          </label>
+          <button id="srvGo" class="btn-ghost">Mediathek laden</button>
+          <button id="srvForget" class="pl-link" hidden>Zugang vergessen</button>
+          <p id="srvNote" class="note"></p>
+          <p class="note">Navidrome, Airsonic, Gonic (Subsonic), Jellyfin/Emby und Plex.
+            Der Server muss über <b>https</b> erreichbar sein – diese Seite läuft über
+            https und darf nichts von http nachladen. Gemerkte Zugangsdaten liegen
+            unverschlüsselt im Browser.</p>
+        </div>
+      </details>
     </div>
 
     <div class="panel">
@@ -247,6 +274,7 @@
 <script src="assets/links.js"></script>
 <script src="assets/tags.js"></script>
 <script src="assets/local.js"></script>
+<script src="assets/server.js"></script>
 <script src="assets/audio.js"></script>
 <script src="assets/playlist.js"></script>
 <script src="assets/filters.js"></script>

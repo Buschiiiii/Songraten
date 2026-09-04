@@ -295,6 +295,19 @@ main{
 .arhit .nm{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .arhit .sub{font-size:11px;color:var(--grey);white-space:nowrap}
 
+/* ---------- Mediathek-Server ---------- */
+.srv{display:flex;flex-direction:column;gap:6px;padding-bottom:4px}
+.srv input[type="url"],.srv input[type="text"],.srv input[type="password"]{
+  width:100%;padding:7px 10px;border-radius:9px;background:var(--panel-2);
+  border:1px solid var(--line);color:var(--text);font:inherit;font-size:12.5px;outline:none;
+}
+.srv input:focus{border-color:var(--green-dim)}
+.srv .btn-ghost{margin-top:2px}
+.srv .btn-ghost:disabled{opacity:.5;cursor:wait}
+.srv .seg-row button{font-size:12px;padding:6px 4px}
+.srv .switch{margin:2px 0}
+#srvNote{color:var(--muted);overflow-wrap:anywhere}
+
 /* ---------- Playlist ---------- */
 .pl-load{display:flex;flex-direction:column;gap:6px;margin-top:10px}
 .pl-load .btn-ghost{margin-top:0}
