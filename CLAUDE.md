@@ -315,7 +315,11 @@ kworb geprüft, plus die `NEVER_SPLIT`-Liste in `match_local.py`.
    globale Klick-Handler muss `isConnected` prüfen — der „weitere"-Knopf
    verschwand sonst beim Klick aus dem DOM und galt als Klick daneben, was
    die Liste sofort wieder schloss.
-8. localStorage-Schlüssel: `songrate:settings` (enthält auch `filters`),
+8. **Die Statistik zeigt `stats.byTier` erst seit Kurzem.** Gesammelt wurde
+   immer schon pro Stufe (`easy`…), pro Jahrzehnt (`dec-1980`), Genre
+   (`gen-pop`) und für die Playlist — `statGroups()` fasst das zusammen und
+   zeigt es nur, wenn mehr als ein Modus bespielt wurde.
+9. localStorage-Schlüssel: `songrate:settings` (enthält auch `filters`),
    `songrate:stats`,
    `songrate:recent` (letzte 60 Songs, gegen Wiederholungen),
    `songrate:playlist` (aufgelöste Playlist), `songrate:plcache`
@@ -366,9 +370,10 @@ zeigt es.
 
 ## Offene Punkte
 
-1. **Chartsdaten.** Für einen frischen Chartsbestand fehlt ein Skript, das
-   kworb selbst abgreift und `artists_top.json` und `candidates.json` erzeugt.
-   Ohne das lässt sich `match_local.py` nirgends neu starten.
+1. **kworb-Parser ungetestet am echten Objekt.** `fetch_kworb.py` erzeugt die
+   Vorstufe wieder selbst, die HTML-Struktur ist aber aus der Ferne geraten und
+   nur gegen nachgebaute Tabellen geprüft. Erkennt es zu wenig, bricht es ab —
+   der erste echte Lauf von *Charts neu bauen* zeigt, ob es passt.
 2. **Playlist-Modus.** Steht (siehe oben). Offen bleibt: die Trefferquote der
    iTunes-Suche ist bei Remixen und Live-Versionen mager. Wie lange Apple nach
    einem 403 wirklich dichthält, ist nicht dokumentiert — die Wartestufen sind
