@@ -101,6 +101,11 @@ const dummy = n => ({ t: 'Song ' + n, a: 'Kuenstler ' + n, al: 'Album', y: 2020,
     'Balken: Stufenlaengen landen auf den Segmentkanten');
   assert(xf(1, stops) > 216 && xf(1, stops) < 340, 'Balken: dazwischen wird interpoliert');
   assert(xf(99, stops) === 640, 'Balken: laeuft nicht ueber das Ende hinaus');
+  /* Bei gleich breiten Kaesten liegt jede Stufenkante auf einem Sechstel. */
+  const gleich = [0.01, 0.1, 0.5, 2, 8, 15].map((t, i) => ({ t, x: (i + 1) * 100 }));
+  assert(xf(0.01, gleich) === 100 && xf(2, gleich) === 400 && xf(15, gleich) === 600,
+    'Balken: auf gleich breiten Kaesten sitzen die Stufenkanten richtig');
+  assert(xf(4, gleich) > 400 && xf(4, gleich) < 500, 'Balken: dazwischen laeuft die Zeit weiter');
 
   const wrong = G('DB.songs').find(s => s.i !== G('round[0].song.i'));
   G(`choose(DB.songs[${wrong.i}]); submit()`); await tick(10);
@@ -383,12 +388,14 @@ const dummy = n => ({ t: 'Song ' + n, a: 'Kuenstler ' + n, al: 'Album', y: 2020,
 
   const segCount = () => $('#stageBar').querySelectorAll('.stage-seg').length;
   assert(segCount() === 6, 'Balken: sechs Kaesten, solange alle Stufen an sind');
+  assert(G('segmentWidths()').every(w => w === 1),
+    'Balken: alle Kaesten gleich breit - die Leiste zeigt Versuche, nicht Sekunden');
   assert(!$('#stageBar').querySelector('.stage-seg.off'), 'Balken: keine ausgegrauten Kaesten mehr');
   $('#stageChips').children[0].click(); await tick(20);
   assert(segCount() === 5, 'Balken: eine abgeschaltete Stufe bekommt keinen eigenen Kasten');
   const widths = G('segmentWidths()');
-  assert(Math.abs(widths[0] - G('logW(0)') - G('logW(1)')) < 1e-9,
-    'Balken: ihre Breite geht an die naechste Stufe, die sie mitspielt');
+  assert(widths[0] === 2 && widths.slice(1).every(w => w === 1),
+    'Balken: ihre Breite geht an die naechste Stufe, die sie mitspielt (' + widths.join('/') + ')');
   $('#stageChips').children[0].click(); await tick(20);
   assert(segCount() === 6, 'Balken: wieder eingeschaltet ist der Kasten zurueck');
 

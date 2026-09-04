@@ -293,29 +293,34 @@ Frontend hält ein fehlendes Feld zusätzlich aus.
    wie die bisherige. Nie `newRound()` aus einer Einstellung heraus aufrufen.
 3. **`.stage-progress` darf in `render()` nicht mitgelöscht werden.** `render()`
    entfernt gezielt nur `.stage-seg`, sonst reißt die laufende Animation ab.
-4. **Abgeschaltete Stufen bekommen keinen eigenen Kasten.** Ihre Sekunden
+4. **Ein Kasten je Stufe, alle gleich breit.** Nach Sekunden geteilt wäre
+   0,01 s mit 0,07 % unsichtbar; logarithmisch geteilt bekommt ausgerechnet
+   der längste Abschnitt den schmalsten Kasten (8 → 15 s ist nicht mal eine
+   Verdopplung, 0,01 → 0,1 s ein Faktor zehn). Die Leiste zeigt deshalb, was
+   sie eigentlich meint: sechs Versuche, du bist beim vierten.
+5. **Abgeschaltete Stufen bekommen keinen eigenen Kasten.** Ihre Sekunden
    gehören zur nächsten aktiven Stufe, die sie ja mitspielt — ein grauer Kasten
    mit Trennlinie würde eine Grenze zeigen, die es beim Hören nicht gibt.
-   `segmentWidths()` schlägt die Breite deshalb der folgenden Stufe zu.
-   `barStops()` setzt für die verschluckten Stufen trotzdem Stützpunkte, sonst
-   kröche der Balken innerhalb eines verschmolzenen Kastens linear statt
-   logarithmisch.
-5. **Der helle Balken muss die Zeit umrechnen, nicht linear wachsen.** Die
-   Leiste ist logarithmisch geteilt, die Zeit läuft gleichmäßig — ein linear
-   wachsender Balken hängt fast die ganze Wiedergabe zu weit links, weil er
-   sich durch die kurzen Abschnitte quält. `sweepBar()` rechnet deshalb pro
-   Bild die gehörten Sekunden über `xForTime()` in Pixel um: nach 0,01 s steht
-   er genau auf der 0,01s-Kante, nach 2 s auf der 2s-Kante. Stufen unter 0,4 s
+   `segmentWidths()` schlägt die Breite deshalb der folgenden Stufe zu, der
+   Kasten wird also doppelt so breit.
+6. **Der helle Balken muss die Zeit umrechnen, nicht linear wachsen.** Die
+   Kästen sind gleich breit, die Zeit in ihnen springt um Zehnerpotenzen — ein
+   linear wachsender Balken hängt fast die ganze Wiedergabe zu weit links.
+   `sweepBar()` rechnet deshalb pro Bild die gehörten Sekunden über
+   `xForTime()` in Pixel um: nach 0,01 s steht er genau auf der 0,01s-Kante,
+   nach 2 s auf der 2s-Kante, dazwischen wird interpoliert. `barStops()` setzt
+   auch für verschluckte Stufen Stützpunkte, sonst kröche er durch einen
+   verschmolzenen Kasten, als wäre nur eine Stufe darin. Stufen unter 0,4 s
    laufen optisch über 0,4 s ab, sonst sieht man nichts — die Breite bleibt
    korrekt, nur das Tempo ist gestreckt.
-6. **Der Cursor steht dauerhaft im Suchfeld.** Kürzel dürfen deshalb keine
+7. **Der Cursor steht dauerhaft im Suchfeld.** Kürzel dürfen deshalb keine
    Schriftzeichen sein: ↑ spielt ab, Enter rät, Shift+Enter überspringt,
    ←→ wechselt die Stufe (nur bei leerem Feld), Shift+←→ das Jahrzehnt oder
    Genre, Cmd+Enter würfelt neu. Die globalen Kürzel `s` und `r` waren
    trotzdem drin und sind rausgeflogen: nach einem Klick auf einen Filter
    liegt der Fokus auf dem Knopf, und wer dann „Sia" tippt, hat mit dem `s`
    übersprungen.
-7. **Die Vorschlagsliste wird häppchenweise gezeichnet** (`SUG_PAGE`), sonst
+8. **Die Vorschlagsliste wird häppchenweise gezeichnet** (`SUG_PAGE`), sonst
    sind bei „billie" zwar 30 Treffer da, aber nur die ersten acht erreichbar.
    Nachgeladen wird beim Scrollen ans Ende, beim Klick auf „n weitere" und
    wenn man mit ↓ unten anstößt; die Auswahl scrollt über `scrollIntoView`
@@ -324,11 +329,11 @@ Frontend hält ein fehlendes Feld zusätzlich aus.
    globale Klick-Handler muss `isConnected` prüfen — der „weitere"-Knopf
    verschwand sonst beim Klick aus dem DOM und galt als Klick daneben, was
    die Liste sofort wieder schloss.
-8. **Die Statistik zeigt `stats.byTier` erst seit Kurzem.** Gesammelt wurde
+9. **Die Statistik zeigt `stats.byTier` erst seit Kurzem.** Gesammelt wurde
    immer schon pro Stufe (`easy`…), pro Jahrzehnt (`dec-1980`), Genre
    (`gen-pop`) und für die Playlist — `statGroups()` fasst das zusammen und
    zeigt es nur, wenn mehr als ein Modus bespielt wurde.
-9. localStorage-Schlüssel: `songrate:settings` (enthält auch `filters`),
+10. localStorage-Schlüssel: `songrate:settings` (enthält auch `filters`),
    `songrate:stats`,
    `songrate:recent` (letzte 60 Songs, gegen Wiederholungen),
    `songrate:playlist` (aufgelöste Playlist), `songrate:plcache`
@@ -389,10 +394,13 @@ zeigt es.
 
 ## Offene Punkte
 
-1. **kworb-Parser ungetestet am echten Objekt.** `fetch_kworb.py` erzeugt die
-   Vorstufe wieder selbst, die HTML-Struktur ist aber aus der Ferne geraten und
-   nur gegen nachgebaute Tabellen geprüft. Erkennt es zu wenig, bricht es ab —
-   der erste echte Lauf von *Charts neu bauen* zeigt, ob es passt.
+1. **Apple drosselt den Katalog-Schritt.** *Charts neu bauen* lief durch, aber
+   in 25 Minuten kamen nicht alle Kataloge zusammen — der erste Neubau hatte
+   35 Chartsongs weniger, „Bohemian Rhapsody" verlor dabei seine Stufe. Die
+   Prüfung lässt so einen Lauf inzwischen nicht mehr durch (weniger als 99 %
+   der bisherigen Chartsongs = kein Commit), aber der eigentliche Weg zu einem
+   vollständigen Bestand sind mehrere Läufe hintereinander: der Cache behält
+   die Kataloge.
 2. **Playlist-Modus.** Steht (siehe oben). Offen bleibt: die Trefferquote der
    iTunes-Suche ist bei Remixen und Live-Versionen mager. Wie lange Apple nach
    einem 403 wirklich dichthält, ist nicht dokumentiert — die Wartestufen sind
