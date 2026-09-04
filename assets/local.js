@@ -93,13 +93,15 @@ const Local = (() => {
       if (opts.onProgress && (songs.length % 25 === 0 || songs.length === liste.length)) {
         opts.onProgress(songs.length, liste.length);
       }
-      /* Zwischendurch Luft lassen, sonst friert die Seite bei 2000 Dateien ein. */
-      if (gelesen % 40 === 39) await new Promise(r => setTimeout(r, 0));
+      /* Zwischendurch Luft lassen, sonst friert die Seite bei 2000 Dateien ein.
+         Gezaehlt wird nach Songs, nicht nach gelesenen Tags: sonst haengt der
+         Lauf, wenn alles aus dem Speicher kommt. */
+      if (songs.length % 40 === 0) await new Promise(r => setTimeout(r, 0));
     }
 
     const name = opts.name || folderName(liste) || 'Eigene Musik';
     if (songs.length) saveMeta(name, songs);
-    return { name, songs, skipped: [...files].length - liste.length };
+    return { name, songs, gelesen, skipped: [...files].length - liste.length };
   }
 
   /* Der oberste gemeinsame Ordner gibt den Namen. */

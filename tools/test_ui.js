@@ -1003,6 +1003,8 @@ const dummy = n => ({ t: 'Song ' + n, a: 'Kuenstler ' + n, al: 'Album', y: 2020,
   await waitFor(() => w6.__ev('mode') === 'local', 8000);
   assert(w6.__ev("LO.songs.some(s => s.t === 'Erster Song' && s.a === 'Testband')"),
     'Neustart: die Tags kommen aus dem Speicher, die Dateien werden nicht neu gelesen');
+  const frisch = await w6.__ev('Local.scan')(leer, { name: 'Musik' });
+  assert(frisch.gelesen === 0, 'Neustart: dabei wird keine einzige Datei erneut geoeffnet');
 
   /* Ein Ordner voller Musik, ins Fenster gezogen */
   const w7 = makeWindow({});
