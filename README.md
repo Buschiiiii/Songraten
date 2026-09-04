@@ -29,21 +29,37 @@ keine Bibliotheken. Alles läuft im Browser.
 
 Fertig. Jede spätere Änderung im Repo ist nach etwa einer Minute live.
 
-## Nach Jahrzehnten spielen
+## Nach Jahrzehnten oder Genres spielen
 
-Rechts unter **Modus** auf *Jahrzehnte*. Oben erscheinen dann Pfeile, mit denen
-du durch die Jahrzehnte springst – gespielt wird nur aus dem gewählten, und die
-fünf Stufen werden **innerhalb** des Jahrzehnts vergeben: Easy sind die
-bekanntesten 20 % der 80er, nicht die meistgestreamten Songs überhaupt.
+Rechts unter **Modus** auf *Jahrzehnte* oder *Genres*. Oben erscheinen dann
+Pfeile, mit denen du durchspringst – gespielt wird nur aus dem Gewählten, und
+die fünf Stufen werden **innerhalb** der Auswahl vergeben: Easy sind die
+bekanntesten 20 % der 80er, nicht die meistgestreamten Songs überhaupt. Mit
+Shift und den Pfeiltasten geht das auch über die Tastatur.
 
-Jahrzehnte mit zu wenigen Songs stehen nicht zur Wahl. Wie du mehr Songs für
-die alten Jahrzehnte bekommst, steht unter *Songs nachladen*.
+Sind zu wenige Songs da, um fünf Stufen zu füllen, wird ohne Stufen gespielt:
+fünf zufällige Songs aus der Auswahl. Die Leiste schreibt es dazu.
+
+Zu dünn besetzte Jahrzehnte und Genres stehen gar nicht erst zur Wahl. Wie du
+mehr Songs bekommst, steht unter *Songs nachladen*.
 
 ## Songs nachladen (alte Jahrzehnte)
 
 Die mitgelieferte Songliste kommt aus Spotify-Streamzahlen – und Spotify gibt
 es erst seit 2008. Deshalb sind die 60er bis 90er dünn besetzt. Zwei Skripte
 holen die alten Hits nach (Python 3, keine Pakete nötig):
+
+**Am einfachsten über GitHub:** im Repo auf **Actions** → *Songs aktualisieren*
+→ **Run workflow**. Das läuft monatlich auch von selbst und committet die neuen
+Songs direkt. Ein Lauf holt etwa so viele Songs, wie Apple in 25 Minuten
+durchlässt; beim nächsten Mal geht es dort weiter.
+
+Daneben gibt es *Charts neu bauen* – das holt die Spotify-Streamzahlen frisch
+von kworb und baut den ganzen Bestand des Standardmodus neu. Das dauert bis zu
+einer Stunde und läuft nur auf Knopfdruck. Kommt dabei zu wenig zusammen, wird
+nichts committet und die alte Liste bleibt stehen.
+
+Oder lokal (Python 3, keine Pakete nötig):
 
 ```
 python3 tools/fetch_yearcharts.py     # Jahrescharts von Wikipedia, ~2 Minuten

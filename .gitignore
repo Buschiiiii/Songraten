@@ -1,3 +1,10 @@
 node_modules/
 package-lock.json
 package.json
+__pycache__/
+*.pyc
+.cache/
+catalogs/
+artists_top.json
+candidates.json
+/songs.json

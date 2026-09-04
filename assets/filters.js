@@ -30,10 +30,45 @@ const Filters = (() => {
 
   const decadeOf = s => (s.y ? Math.floor(s.y / 10) * 10 : 0);
 
+  /* Apple vergibt fuer dieselbe Sache mehrere Genres - "Hip-Hop/Rap" (349
+     Songs), "Hip-Hop" (14) und "Rap" (4) stehen nebeneinander. Wer Rap
+     aussortieren will, musste bisher drei Haekchen setzen. Zusammengefasst
+     wird nur, was wirklich dasselbe meint; "Latin Urban" und "Latin" bleiben
+     getrennt. */
+  const GENRE_ALIAS = {
+    'hip hop': 'Hip-Hop/Rap',
+    'rap': 'Hip-Hop/Rap',
+    'zeitgenossischer r b': 'R&B/Soul',
+    'house': 'Dance',
+    'teen pop': 'Pop',
+    'indie rock': 'Alternative',
+    'weihnachten pop': 'Weihnachten',
+    'musik zum fest': 'Weihnachten',
+    'afro fusion': 'Afrobeats',
+  };
+
+  const genreOf = s => GENRE_ALIAS[norm(s.g)] || s.g || '';
+
+  /* Regeln aus einer aelteren Fassung koennen auf ein Genre zeigen, das es so
+     nicht mehr gibt ("ohne Hip-Hop"). Die werden auf den zusammengefassten
+     Namen gezogen, statt wirkungslos herumzuliegen. */
+  function migrate(rules) {
+    const out = [];
+    (rules || []).forEach(r => {
+      let x = r;
+      if (r.type === 'genre' && GENRE_ALIAS[r.value]) {
+        const text = GENRE_ALIAS[r.value];
+        x = { ...r, value: norm(text), text };
+      }
+      if (!out.some(o => o.type === x.type && String(o.value) === String(x.value))) out.push(x);
+    });
+    return out;
+  }
+
   function matches(s, r, db) {
     switch (r.type) {
       case 'instrumental': return isInstrumental(s);
-      case 'genre': return norm(s.g) === r.value;
+      case 'genre': return norm(genreOf(s)) === r.value;
       case 'decade': return decadeOf(s) === +r.value;
       case 'artist': return norm(s.a) === r.value ||
         (s.ar || []).some(a => norm(db.artists[a]) === r.value);
@@ -61,7 +96,7 @@ const Filters = (() => {
     if (type === 'instrumental') return [];
     const out = new Map();
     if (type === 'genre') {
-      db.songs.forEach(s => { if (s.g) out.set(norm(s.g), s.g); });
+      db.songs.forEach(s => { const g = genreOf(s); if (g) out.set(norm(g), g); });
     } else if (type === 'decade') {
       db.songs.forEach(s => { const d = decadeOf(s); if (d) out.set(String(d), d + 'er'); });
     } else if (type === 'artist') {
@@ -84,7 +119,7 @@ const Filters = (() => {
     const m = new Map();
     const bump = k => { if (k) m.set(k, (m.get(k) || 0) + 1); };
     db.songs.forEach(s => {
-      if (type === 'genre') bump(norm(s.g));
+      if (type === 'genre') bump(norm(genreOf(s)));
       else if (type === 'decade') bump(String(decadeOf(s)));
       else if (type === 'artist') {
         const ids = new Set((s.ar || []).map(a => norm(db.artists[a])));
@@ -112,5 +147,6 @@ const Filters = (() => {
 
   const same = (a, b) => a.mode === b.mode && a.type === b.type && String(a.value) === String(b.value);
 
-  return { apply, matches, options, counts, parse, label, same, isInstrumental, decadeOf, DEFAULT, MIN_POOL };
+  return { apply, matches, options, counts, parse, label, same, migrate,
+           isInstrumental, decadeOf, genreOf, DEFAULT, MIN_POOL };
 })();

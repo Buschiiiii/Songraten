@@ -90,16 +90,17 @@ main{
 .tab[aria-selected="true"]{background:var(--tc);color:#08120c}
 .tab.done::after{content:"·";margin-left:6px;opacity:.7}
 
-/* ---------- Jahrzehnte ---------- */
-.decade-bar{display:flex;align-items:center;justify-content:center;gap:14px;width:100%;max-width:640px}
-.dec-arrow{
+/* ---------- Auswahlleiste (Jahrzehnte, Genres) ---------- */
+.pick-bar{display:flex;align-items:center;justify-content:center;gap:14px;width:100%;max-width:640px}
+.pick-arrow{
   width:38px;height:38px;border-radius:50%;background:var(--panel);color:var(--muted);
   font-size:22px;line-height:1;display:grid;place-items:center;transition:.15s;
 }
-.dec-arrow:hover{background:var(--panel-2);color:var(--text)}
-.dec-now{min-width:150px;text-align:center}
-.dec-now strong{display:block;font-size:20px;letter-spacing:-.01em}
-.dec-now span{color:var(--muted);font-size:12px}
+.pick-arrow:hover{background:var(--panel-2);color:var(--text)}
+.pick-arrow:disabled{opacity:.3;cursor:default}
+.pick-now{min-width:150px;text-align:center}
+.pick-now strong{display:block;font-size:20px;letter-spacing:-.01em}
+.pick-now span{color:var(--muted);font-size:12px}
 
 /* ---------- Stufenbalken ---------- */
 .stage-bar{position:relative;display:flex;gap:4px;width:100%;max-width:640px;height:22px;margin-top:4px}
@@ -110,7 +111,6 @@ main{
 .stage-seg{border-radius:5px;background:var(--panel-2);transition:background .25s}
 .stage-seg.filled{background:var(--green-dim)}
 .stage-seg.current{background:var(--green);box-shadow:0 0 0 2px rgba(62,224,122,.25)}
-.stage-seg.off{opacity:.25}
 
 /* ---------- Player ---------- */
 .player{position:relative;display:flex;align-items:center;justify-content:center;width:100%;max-width:640px;margin:14px 0 4px}
@@ -167,6 +167,8 @@ main{
 .btn-action:hover{filter:brightness(1.07)}
 .btn-action.skip{background:var(--panel);color:var(--text);border:1px solid var(--line)}
 .btn-action.skip:hover{background:var(--panel-2)}
+.btn-action.giveup{color:var(--t-expert);border-color:color-mix(in srgb,var(--t-expert) 40%,transparent)}
+.btn-action.giveup:hover{background:color-mix(in srgb,var(--t-expert) 12%,var(--panel-2))}
 
 .suggest{
   position:absolute;bottom:calc(100% + 8px);left:0;right:0;z-index:20;
@@ -319,6 +321,8 @@ body.dragging::after{
 .badge{display:inline-block;margin:18px 0 20px;padding:8px 18px;border-radius:999px;font-weight:700;font-size:13.5px;background:var(--green);color:#07130b}
 .badge.miss{background:var(--panel-2);color:var(--muted)}
 .reveal-card .btn-action{width:100%;padding:13px 0}
+.reveal-link{display:block;margin:-8px 0 16px;color:var(--muted);font-size:12.5px;text-decoration:underline;text-underline-offset:3px}
+.reveal-link:hover{color:var(--text)}
 
 .summary-list{display:flex;flex-direction:column;gap:7px;margin:20px 0}
 .summary-row{display:flex;align-items:center;gap:10px;padding:9px 13px;border-radius:10px;background:var(--panel-2);text-align:left;font-size:13.5px}
@@ -343,6 +347,12 @@ body.dragging::after{
   .play svg{width:46px;height:46px}
   .col-right{order:3}
   .stage-label{position:static;margin-left:16px}
+  /* In der rechten Spalte sollen die Knoepfe breit bleiben, nur die in der
+     Kopfzeile werden schmal. */
+  .col-right .btn-ghost{width:100%}
+  .pick-now{min-width:120px}
+  .pick-now strong{font-size:18px}
+  .hint{line-height:1.7}
 }
 @media (prefers-reduced-motion:reduce){
   *{animation-duration:.01ms !important;transition-duration:.01ms !important}

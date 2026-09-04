@@ -37,13 +37,13 @@
 
   <section class="col col-main">
 
-    <div id="decadeBar" class="decade-bar" hidden>
-      <button id="decPrev" class="dec-arrow" aria-label="Ein Jahrzehnt zurück">‹</button>
-      <div class="dec-now">
-        <strong id="decLabel">2010er</strong>
-        <span id="decCount"></span>
+    <div id="pickBar" class="pick-bar" hidden>
+      <button id="pickPrev" class="pick-arrow" aria-label="Zurück">‹</button>
+      <div class="pick-now">
+        <strong id="pickLabel">2010er</strong>
+        <span id="pickCount"></span>
       </div>
-      <button id="decNext" class="dec-arrow" aria-label="Ein Jahrzehnt weiter">›</button>
+      <button id="pickNext" class="pick-arrow" aria-label="Weiter">›</button>
     </div>
 
     <div id="tabs" class="tabs"></div>
@@ -72,7 +72,7 @@
       <div id="suggest" class="suggest" hidden></div>
     </div>
 
-    <p class="hint">↑ spielt ab · Enter rät · Shift+Enter überspringt · ← → wechselt die Stufe · Cmd+Enter würfelt neu</p>
+    <p class="hint">↑ spielt ab · Enter rät · Shift+Enter überspringt · ← → wechselt die Stufe · Shift+← → wechselt die Auswahl · Cmd+Enter würfelt neu</p>
 
   </section>
 
@@ -83,6 +83,7 @@
       <div class="seg" id="modeSeg">
         <button data-v="charts" class="on">Charts &amp; Stufen</button>
         <button data-v="decades">Jahrzehnte</button>
+        <button data-v="genres">Genres</button>
         <button data-v="playlist" disabled>Eigene Playlist</button>
       </div>
       <div class="pl-load">
@@ -174,6 +175,7 @@
     <p id="revealArtist"></p>
     <p id="revealMeta" class="meta"></p>
     <div id="revealBadge" class="badge"></div>
+    <a id="revealLink" class="reveal-link" target="_blank" rel="noopener noreferrer">Bei Apple Music anhören</a>
     <button id="revealNext" class="btn-action">Weiter</button>
   </div>
 </div>
