@@ -259,6 +259,11 @@ höchstens einen Tipp gelb, anders als in der Pipeline.
 - Derselbe Künstler darf mehrfach in einer Runde vorkommen.
 - Punkte nach gehörten Sekunden mal Stufenfaktor, damit unterschiedliche
   Stufenleitern vergleichbar bleiben.
+- **Hardmode** (`settings.hard`, aus): ein verpasster Song beendet die ganze
+  Runde — die übrigen Plätze fallen mit, gezählt wird in der Statistik nur der
+  Song, den man wirklich gespielt hat. Außerdem geht es strikt der Reihe nach:
+  `locked(i)` sperrt jeden Platz, vor dem noch einer offen ist, und `render()`
+  zeichnet ihn ausgegraut.
 
 ## Künstlerindex — hier steckt die Arbeit
 
@@ -272,6 +277,18 @@ Das Aufspalten ist die gefährliche Stelle: `Simon & Garfunkel`,
 `Earth, Wind & Fire`, `Mumford & Sons` dürfen **nicht** zerlegt werden.
 Schutz: der komplette String wird gegen ~3000 kanonische Künstlernamen von
 kworb geprüft, plus die `NEVER_SPLIT`-Liste in `match_local.py`.
+
+## Aufbau der Seite
+
+Links Kopfzeile (Marke, Stufenliste, Neuwürfeln, Rundenpunkte) und darunter
+die Panels *Stufen* und *Statistik*; in der Mitte das Spielfeld; rechts
+*Modus*, *Spielweise*, *Songstart*, *Lautstärke* und ganz unten die
+*Songauswahl*.
+
+Auf schmalen Bildschirmen wird `.col-left` zu `display:contents`, damit
+`.left-head` (order 1) oben bleibt und `.left-panels` (order 4) hinter das
+Spielfeld und die Einstellungen rutscht — sonst müsste man an den Panels
+vorbeiscrollen, um den Abspielknopf zu sehen.
 
 ## Fallstricke im Frontend
 

@@ -45,6 +45,7 @@ let settings = load('settings', {
   plFilters: Filters.DEFAULT.map(r => ({ ...r })),
   decade: 2010,
   genre: 'pop',
+  hard: false,
 });
 /* Zusammengefasste Genres: alte Regeln auf den neuen Namen ziehen. */
 settings.filters = Filters.migrate(settings.filters);
@@ -180,6 +181,15 @@ function buildChrome() {
     settings.volume = vol.value / 100;
     Audio2.setVolume(settings.volume);
     save('settings', settings);
+  };
+
+  const hard = $('#hardMode');
+  hard.checked = !!settings.hard;
+  hard.onchange = () => {
+    settings.hard = hard.checked;
+    save('settings', settings);
+    render();          /* die gesperrten Plaetze aendern sich sofort */
+    focusSearch();
   };
 
   $('#playBtn').onclick = playCurrent;
@@ -380,8 +390,12 @@ async function preload(i) {
   if (i === active) render();
 }
 
+/* Im Hardmode wird der Reihe nach gespielt: einen Platz weiter vorne kann man
+   nur betreten, wenn alle davor durch sind. */
+const locked = i => settings.hard && round.slice(0, i).some(r => r.status === 'playing');
+
 function switchTo(i) {
-  if (i === active) return;
+  if (i === active || locked(i)) return;
   Audio2.stop();
   resetBar();
   active = i;
@@ -639,6 +653,14 @@ function win(r) {
 function lose(r) {
   r.status = 'lost';
   r.points = 0;
+  /* Hardmode: wer einen Song nicht schafft, kommt gar nicht erst zum
+     naechsten - die restlichen Plaetze fallen mit. Gezaehlt wird in der
+     Statistik nur der Song, den man wirklich gespielt hat. */
+  if (settings.hard) {
+    round.forEach(x => {
+      if (x !== r && x.status === 'playing') { x.status = 'lost'; x.points = 0; }
+    });
+  }
   finish(r, false);
 }
 
@@ -745,12 +767,14 @@ function render() {
 
   $('#tierList').querySelectorAll('.tier-item').forEach((b, i) => {
     b.setAttribute('aria-current', i === active);
+    b.classList.toggle('locked', locked(i));
     const d = b.querySelector('.dot');
     d.className = 'dot' + (round[i] ? (round[i].status === 'won' ? ' won' : round[i].status === 'lost' ? ' lost' : '') : '');
   });
   $('#tabs').querySelectorAll('.tab').forEach((b, i) => {
     b.setAttribute('aria-selected', i === active);
     b.classList.toggle('done', round[i] && round[i].status !== 'playing');
+    b.classList.toggle('locked', locked(i));
   });
 
   const bar = $('#stageBar');
