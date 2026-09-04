@@ -46,6 +46,9 @@ jobs:
           key: songraten-cache-${{ github.run_id }}
           restore-keys: songraten-cache-
 
+      - name: Pipeline pruefen
+        run: python3 tools/test_pipeline.py
+
       - name: Jahrescharts von Wikipedia
         run: python3 tools/fetch_yearcharts.py
 

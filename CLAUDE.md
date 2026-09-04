@@ -54,6 +54,12 @@ so lange erneut versucht, bis der Context wirklich läuft.
 (Einzige Ausnahme: der Playlist-Modus fragt die iTunes-Suche im Browser ab,
 siehe unten.)
 
+0. `tools/fetch_kworb.py <anzahl>` holt die Streamzahlen: Künstlerübersicht
+   und die Songseiten der größten Künstler, daraus `artists_top.json` und
+   `candidates.json` sowie die zwei HTML-Schnappschüsse im `.cache`, die
+   `match_local.py` erwartet. Erkennt es zu wenig, bricht es ab, statt leere
+   Dateien zu schreiben — kworb kann seine Tabellen jederzeit umbauen,
+   `--dump` zeigt dann die ersten Zeilen.
 1. `tools/fetch_catalogs.py <sekunden>` lädt je Künstler **eine** Anfrage
    (`attribute=artistTerm&limit=200`) und legt sie in `catalogs/` ab.
    Apple drosselt nach einigen tausend Anfragen mit 403 — deshalb das
@@ -309,6 +315,15 @@ kworb geprüft, plus die `NEVER_SPLIT`-Liste in `match_local.py`.
    fertigen Laufs). Das Präfix bleibt
    `songrate:`, obwohl die Seite Songraten heißt — Umbenennen würde alle
    bereits gespeicherten Einstellungen und Statistiken verwerfen.
+
+## Testen der Pipeline ohne Netz
+
+`python3 tools/test_pipeline.py` baut nachgebaute Eingaben zusammen (Kataloge
+wie von Apple, Kandidaten wie von kworb, zwei Jahrescharts-Zeilen), lässt
+`match_local.py` darauf laufen und prüft das Ergebnis: Stufen aus den
+Streamgrenzen, Jahrescharts-Songs ohne Stufe mit Jahresplatz, Künstler-IDs,
+Bekanntheit, zusammengeführte Doppel. Dazu laufen die `--selftest`-Parser aller
+Skripte. Beide Workflows starten damit, bevor sie irgendwo anfragen.
 
 ## Testen ohne Browser
 

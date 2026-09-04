@@ -54,6 +54,11 @@ holen die alten Hits nach (Python 3, keine Pakete nötig):
 Songs direkt. Ein Lauf holt etwa so viele Songs, wie Apple in 25 Minuten
 durchlässt; beim nächsten Mal geht es dort weiter.
 
+Daneben gibt es *Charts neu bauen* – das holt die Spotify-Streamzahlen frisch
+von kworb und baut den ganzen Bestand des Standardmodus neu. Das dauert bis zu
+einer Stunde und läuft nur auf Knopfdruck. Kommt dabei zu wenig zusammen, wird
+nichts committet und die alte Liste bleibt stehen.
+
 Oder lokal (Python 3, keine Pakete nötig):
 
 ```

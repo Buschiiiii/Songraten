@@ -1,0 +1,101 @@
+# Baut den Chartsbestand komplett neu: Streamzahlen von kworb, Titel und
+# Previews von Apple. Laeuft nur auf Knopfdruck, weil dabei die ganze
+# songs.json neu entsteht - der monatliche Lauf (update-songs.yml) haengt
+# dagegen nur neue Jahrzehnt-Songs an.
+#
+#   Repo -> Actions -> "Charts neu bauen" -> Run workflow
+#
+# Der Lauf braucht lange: kworb liefert ~700 Kuenstlerseiten, danach will
+# Apple fuer jeden Kuenstler einen Katalog liefern und drosselt dabei. Kommt
+# zu wenig zusammen, wird nichts committet und die alte Datei bleibt stehen.
+
+name: Charts neu bauen
+
+on:
+  workflow_dispatch:
+    inputs:
+      artists:
+        description: 'Wie viele Kuenstler von kworb'
+        default: '700'
+      catalog_seconds:
+        description: 'Sekunden fuer die Kataloge bei Apple'
+        default: '1800'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: songs-data
+  cancel-in-progress: false
+
+jobs:
+  rebuild:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            .cache
+            catalogs
+          key: songraten-charts-${{ github.run_id }}
+          restore-keys: songraten-charts-
+
+      - name: Pipeline pruefen
+        run: python3 tools/test_pipeline.py
+
+      - name: Streamzahlen von kworb
+        run: python3 tools/fetch_kworb.py ${{ github.event.inputs.artists || 700 }}
+
+      - name: Kataloge von Apple
+        run: python3 tools/fetch_catalogs.py ${{ github.event.inputs.catalog_seconds || 1800 }}
+
+      - name: songs.json bauen
+        run: python3 tools/match_local.py
+
+      # Der Neubau kennt die per add_decades geholten Songs nicht. Dank Cache
+      # kostet das Wiederherstellen keine einzige neue Anfrage.
+      - name: Jahrzehnte wieder anhaengen
+        run: python3 tools/add_decades.py 600
+
+      - name: Doppelte zusammenfuehren
+        run: python3 tools/clean_songs.py
+
+      - name: Datei pruefen
+        run: |
+          python3 - <<'PY'
+          import json, subprocess
+          d = json.load(open('data/songs.json', encoding='utf-8'))
+          songs = d['songs']
+          mit_stufe = [s for s in songs if s.get('d')]
+          assert len(songs) >= 1900, f'nur {len(songs)} Songs'
+          assert len(mit_stufe) >= 1500, f'nur {len(mit_stufe)} Songs mit Stufe - Kataloge unvollstaendig?'
+          assert all(s.get('p') and s.get('t') for s in songs), 'Songs ohne Titel oder Preview'
+          for tier in d['tiers']:
+              n = sum(1 for s in songs if s.get('d') == tier)
+              assert n >= 150, f'Stufe {tier} hat nur {n} Songs'
+          alt = subprocess.run(['git', 'show', 'HEAD:data/songs.json'],
+                               capture_output=True, text=True).stdout
+          vorher = len(json.loads(alt)['songs']) if alt else 0
+          print(f'{vorher} -> {len(songs)} Songs, davon {len(mit_stufe)} mit Stufe')
+          PY
+
+      - name: Committen
+        run: |
+          if git diff --quiet -- data/; then
+            echo "nichts Neues"
+            exit 0
+          fi
+          git config user.name  'github-actions[bot]'
+          git config user.email 'github-actions[bot]@users.noreply.github.com'
+          git add data/
+          git commit -m "Charts neu gebaut ($(date +%Y-%m-%d))"
+          git push

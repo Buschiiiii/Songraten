@@ -222,7 +222,7 @@ function buildChrome() {
 
   const chips = $('#stageChips');
   STAGES.forEach((s, i) => {
-    const c = el('button', 'chip', s < 1 ? s + 's' : s + 's');
+    const c = el('button', 'chip', String(s).replace('.', ',') + 's');
     c.onclick = () => {
       const on = settings.stages.filter(Boolean).length;
       if (settings.stages[i] && on <= 2) return;

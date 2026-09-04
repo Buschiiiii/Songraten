@@ -49,9 +49,14 @@ def cpath(name):
     return os.path.join('catalogs', re.sub(r'\W+', '_', name)[:80] + '.json')
 
 
+HINWEIS = 'fehlt - erst  python3 tools/fetch_kworb.py  laufen lassen'
+for need in ('artists_top.json', 'candidates.json'):
+    if not os.path.exists(need):
+        raise SystemExit(f'{need} {HINWEIS}')
+
 print('lade Kataloge', flush=True)
 CAT = {}
-for a in json.load(open('artists_top.json')):
+for a in json.load(open('artists_top.json', encoding='utf-8')):
     p = cpath(a['name'])
     if not os.path.exists(p):
         continue
@@ -63,13 +68,16 @@ for a in json.load(open('artists_top.json')):
     CAT[a['name']] = idx
 print(f'  {len(CAT)} Kataloge, {sum(len(v) for v in CAT.values())} Titel', flush=True)
 
-idx_html = open('.cache/' + [f for f in os.listdir('.cache') if 'artists_html' in f][0], encoding='utf-8').read()
+_idx = [f for f in os.listdir('.cache') if 'artists_html' in f] if os.path.isdir('.cache') else []
+if not _idx:
+    raise SystemExit(f'.cache/…artists_html… {HINWEIS}')
+idx_html = open('.cache/' + _idx[0], encoding='utf-8', errors='replace').read()
 canonical = set()
 for m in re.findall(r'_songs\.html"[^>]*>([^<]+)<', idx_html):
     canonical.add(norm(html.unescape(m)))
 print(f'  {len(canonical)} kanonische Kuenstlernamen', flush=True)
 
-cands = json.load(open('candidates.json'))
+cands = json.load(open('candidates.json', encoding='utf-8'))
 glob_cache = [f for f in os.listdir('.cache') if 'spotify_songs_html' in f]
 if glob_cache:
     g = open('.cache/' + glob_cache[0], encoding='utf-8').read()
@@ -298,10 +306,11 @@ if merged:
 songs.sort(key=lambda x: -x['s'])
 data = {'v': 2, 'built': time.strftime('%Y-%m-%d'),
         'tiers': [t[0] for t in TIERS], 'artists': index, 'songs': songs}
-json.dump(data, open('songs.json', 'w'), ensure_ascii=False, separators=(',', ':'))
+OUT = 'data/songs.json' if os.path.isdir('data') else 'songs.json'
+json.dump(data, open(OUT, 'w', encoding='utf-8'), ensure_ascii=False, separators=(',', ':'))
 per = {}
 for s in songs:
     per[s['d'] or 'nur Jahrzehnte'] = per.get(s['d'] or 'nur Jahrzehnte', 0) + 1
-print('\nsongs.json:', f'{os.path.getsize("songs.json")/1024:.0f} KB')
+print(f'\n{OUT}:', f'{os.path.getsize(OUT)/1024:.0f} KB')
 print('Songs:', len(songs), per)
 print('Kuenstler:', len(index))
