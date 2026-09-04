@@ -68,38 +68,43 @@ const norm = s => (s || '').toLowerCase()
 
 const enabledStages = () => STAGES.filter((_, i) => settings.stages[i]);
 
-/* Breite einer Stufe auf der logarithmischen Leiste. */
-const logW = i => Math.log10(STAGES[i] * 1000 + 1) - (i ? Math.log10(STAGES[i - 1] * 1000 + 1) : 0);
+/* Breiten der sichtbaren Kaesten: ein Kasten je Stufe, alle gleich breit.
 
-/* Breiten der sichtbaren Kaesten. Eine abgeschaltete Stufe bekommt keinen
-   eigenen Kasten - ihre Sekunden gehoeren zur naechsten aktiven Stufe, die sie
-   ja mitspielt. Ein grauer Kasten mit Trennlinie wuerde eine Grenze zeigen,
-   die es beim Hoeren nicht gibt. */
+   Nach Sekunden zu teilen geht nicht - 0,01s waere 0,07 % breit und damit
+   unsichtbar. Logarithmisch geteilt bekommt ausgerechnet der laengste
+   Abschnitt den schmalsten Kasten: von 8 auf 15 Sekunden ist nicht einmal
+   eine Verdopplung, waehrend 0,01 auf 0,1 ein Faktor zehn ist. Gleich breite
+   Kaesten sagen, was die Leiste eigentlich zeigt: sechs Versuche, du bist
+   beim vierten. Die Sekunden rechnet der laufende Balken ueber barStops()
+   sauber auf die Kanten um.
+
+   Eine abgeschaltete Stufe bekommt keinen eigenen Kasten - ihre Sekunden
+   gehoeren zur naechsten aktiven Stufe, die sie ja mitspielt, und der Kasten
+   wird entsprechend breiter. */
 function segmentWidths() {
   const out = [];
   let carry = 0;
   STAGES.forEach((_, i) => {
-    if (settings.stages[i]) { out.push(logW(i) + carry); carry = 0; }
-    else carry += logW(i);
+    if (settings.stages[i]) { out.push(1 + carry); carry = 0; }
+    else carry += 1;
   });
   return out;
 }
 
 /* Stuetzpunkte fuer den laufenden Balken: Sekunde -> Pixel. Auch die
    abgeschalteten Stufen bekommen einen Punkt, obwohl sie keinen eigenen
-   Kasten haben - sonst kroche der Balken innerhalb eines verschmolzenen
-   Kastens wieder linear statt logarithmisch. */
+   Kasten haben - sonst kroche der Balken durch einen verschmolzenen Kasten,
+   als waere darin nur eine Stufe. */
 function barStops(segs) {
   const stops = [];
   let si = 0, carry = [];
   STAGES.forEach((t, i) => {
-    if (!settings.stages[i]) { carry.push({ t, w: logW(i) }); return; }
+    if (!settings.stages[i]) { carry.push(t); return; }
     const seg = segs[si++];
     if (!seg) return;
     const x0 = seg.offsetLeft, span = seg.offsetWidth;
-    const sum = carry.reduce((a, c) => a + c.w, 0) + logW(i);
-    let acc = 0;
-    carry.forEach(c => { acc += c.w; stops.push({ t: c.t, x: x0 + span * acc / sum }); });
+    const teile = carry.length + 1;
+    carry.forEach((ct, k) => stops.push({ t: ct, x: x0 + span * (k + 1) / teile }));
     stops.push({ t, x: x0 + span });
     carry = [];
   });
