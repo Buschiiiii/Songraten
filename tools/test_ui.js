@@ -591,8 +591,11 @@ const dummy = n => ({ t: 'Song ' + n, a: 'Kuenstler ' + n, al: 'Album', y: 2020,
   assert(!/Jahrzehnte/.test($('#stats').textContent),
     'Statistik: bei nur einem Modus bleibt die Aufschluesselung weg');
 
-  /* Nachhoeren: eine Zeile mit allen Diensten */
-  G('showReveal(round[0], false)');
+  /* Nachhoeren: eine Zeile mit allen Diensten.
+     Ohne Track-ID, damit der Sammellink hier nicht mitzaehlt - seit dem
+     Chartsneubau haben die meisten Songs eine, und der Test soll die Regel
+     pruefen, nicht den Datenstand. */
+  G('delete round[0].song.k; showReveal(round[0], false)');
   assert($('#revealLinks').querySelectorAll('a').length === 1
     && $('#revealLinks').querySelector('a').textContent === 'Apple Music',
     'Aufloesung: erst einmal steht nur der eigene Dienst da');
@@ -632,17 +635,27 @@ const dummy = n => ({ t: 'Song ' + n, a: 'Kuenstler ' + n, al: 'Album', y: 2020,
   const alle = $('#revealLinks').querySelector('.all');
   assert(alle && alle.href === 'https://song.link/i/1440857781',
     'Aufloesung: mit Track-ID kommt der Sammellink dazu');
-  /* Genau diese Aufnahme: song.link loest die Track-ID in echte Adressen auf.
-     Bis die Antwort da ist, steht die Suche da - wer sofort klickt, landet
-     also trotzdem richtig. */
+  G('closeReveal()'); await tick(20);
+  [...$('#svcSeg').querySelectorAll('button')].find(b => b.textContent === 'Apple Music').click();
+  G('newRound()'); await tick(30);
+
+  /* --------------------------------------------- Genau diese Aufnahme */
+  /* Eigenes Fenster, und zwar mit Absicht: song.link laesst ohne Schluessel
+     nur acht Anfragen je Minute durch, und seit die Chartsongs Track-IDs
+     haben, verbraucht jede Aufloesung davor eine davon. Im Hauptfenster war
+     die Bremse an dieser Stelle laengst gezogen - der Test haette dem
+     Produkt einen Fehler angehaengt, den es nicht hat. */
+  const wEx = makeWindow({});
+  const X = n => wEx.__ev(n), x$ = q => wEx.document.querySelector(q);
+  await waitFor(() => !wEx.document.querySelector('#app').hidden);
+  const exLinks = () => [...x$('#revealLinks').querySelectorAll('a')];
+  const bei = n => exLinks().find(a => a.textContent === n);
+
   odesliCalls = [];
-  G('settings.svcAll = true; showReveal(round[0], false)');
-  assert(/spotify\.com\/search/.test([...$('#revealLinks').querySelectorAll('a')].find(a => a.textContent === 'Spotify').href),
+  X('settings.svcAll = true; round[0].song.k = 1440857781; showReveal(round[0], false)');
+  assert(/spotify\.com\/search/.test(bei('Spotify').href),
     'Genau: vor der Antwort steht die Suche da');
-  await waitFor(() => /open\.spotify\.com\/track\//.test(
-    ([...$('#revealLinks').querySelectorAll('a')].find(a => a.textContent === 'Spotify') || {}).href || ''), 4000);
-  const genau = [...$('#revealLinks').querySelectorAll('a')];
-  const bei = n => genau.find(a => a.textContent === n);
+  await waitFor(() => /open\.spotify\.com\/track\//.test((bei('Spotify') || {}).href || ''), 4000);
   assert(/open\.spotify\.com\/track\/abc1440857781/.test(bei('Spotify').href)
     && bei('Spotify').classList.contains('exact'),
     'Genau: Spotify zeigt danach auf den Song selbst');
@@ -654,31 +667,26 @@ const dummy = n => ({ t: 'Song ' + n, a: 'Kuenstler ' + n, al: 'Album', y: 2020,
   assert(odesliCalls.length === 1 && /platform=itunes&type=song&id=1440857781/.test(odesliCalls[0]),
     'Genau: eine einzige Anfrage je Song');
 
-  G('closeReveal()'); await tick(20);
-  G('showReveal(round[0], false)'); await tick(60);
+  X('closeReveal()'); await tick(20);
+  X('showReveal(round[0], false)'); await tick(60);
   assert(odesliCalls.length === 1, 'Genau: beim zweiten Mal kommt alles aus dem Speicher');
-  assert(/open\.spotify\.com\/track\//.test(G("Links.one(round[0].song, 'spotify')")),
+  assert(/open\.spotify\.com\/track\//.test(X("Links.one(round[0].song, 'spotify')")),
     'Genau: auch die Ergebnisliste nimmt die genaue Adresse');
 
   /* Abschaltbar, und ohne Antwort bleibt es bei der Suche */
-  $('#svcExact').checked = false;
-  $('#svcExact').dispatchEvent(new w.Event('change'));
-  assert(G('settings.exact') === false, 'Genau: laesst sich abschalten');
-  G('round[0].song.k = 666; showReveal(round[0], false)'); await tick(80);
+  x$('#svcExact').checked = false;
+  x$('#svcExact').dispatchEvent(new wEx.Event('change'));
+  assert(X('settings.exact') === false, 'Genau: laesst sich abschalten');
+  X('round[0].song.k = 666; showReveal(round[0], false)'); await tick(80);
   assert(odesliCalls.length === 1, 'Genau: abgeschaltet fragt die Seite gar nicht erst');
-  $('#svcExact').checked = true;
-  $('#svcExact').dispatchEvent(new w.Event('change'));
+  x$('#svcExact').checked = true;
+  x$('#svcExact').dispatchEvent(new wEx.Event('change'));
   await waitFor(() => odesliCalls.length === 2, 3000);
   await tick(60);
-  const nachFehler = [...$('#revealLinks').querySelectorAll('a')].map(a => a.href);
-  assert(odesliCalls.length === 2 && nachFehler.some(h => /music\.apple\.com\/de\/search/.test(h))
-    && !$('#revealLinks').querySelector('.exact'),
+  assert(odesliCalls.length === 2 && exLinks().some(a => /music\.apple\.com\/de\/search/.test(a.href))
+    && !x$('#revealLinks').querySelector('.exact'),
     'Genau: sagt song.link nichts, bleibt die Suche stehen');
-
-  G('settings.svcAll = false; delete round[0].song.k');
-  [...$('#svcSeg').querySelectorAll('button')].find(b => b.textContent === 'Apple Music').click();
-  G('closeReveal()'); await tick(20);
-  G('newRound()'); await tick(30);
+  X('closeReveal()'); await tick(20);
 
   /* Filter gelten hier genauso */
   const n0 = G('pickFiltered').length;
