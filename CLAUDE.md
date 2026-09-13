@@ -403,6 +403,61 @@ Netz; geprüft ist gegen nachgebaute Antworten (`tools/test_ui.js`), dass die
 Anfragen richtig gebaut und die Antworten richtig gelesen werden. Ob ein
 konkreter Server CORS erlaubt, zeigt erst der Versuch.
 
+## Songliste ansehen, entfernen, zurückholen
+
+„Was steckt da eigentlich drin?" beantwortet ein Overlay (`#browse`, Knopf
+*Songs ansehen* links unter den Rundenpunkten und unten in der Songauswahl).
+Gezeigt wird **genau `activePool()`** — also das, was auch wirklich gezogen
+werden kann, im Chartsmodus mit Stufen zum Beispiel nicht die Songs aus den
+Jahrescharts. Die Überschrift nennt den Bereich über `filterScope()`.
+
+Gezeichnet wird seitenweise (`BROW_PAGE`, 40), nachgeladen beim Scrollen ans
+Ende und über „n weitere" — 4000 Zeilen auf einmal braucht kein Browser. Das
+Suchfeld filtert die Liste über Titel und Künstler.
+
+Je Zeile drei Knöpfe: **▶** hört zehn Sekunden rein (`previewSong()` nimmt
+Preview, lokale Datei oder Serveradresse), **↗** klappt die Dienste auf
+(dieselbe Reihe wie in der Auflösung, samt song.link-Nachschlag), **✕** nimmt
+den Song aus der Auswahl.
+
+### Entfernte Songs
+
+`settings.blocked` ist eine Liste `{key, t, a}` und gilt in **jedem** Modus.
+Der Schlüssel ist `norm(titel) + '|' + norm(künstler)` (`songKey()`) und
+bewusst **nicht** Apples Track-ID: die wäre genauer, träfe aber nur im selben
+Pool — wer einen Song in den Charts wegräumt, will ihn auch in der eigenen
+Playlist nicht mehr sehen. `unblocked()` hängt in `applyFilters()` an jedem
+Pool.
+
+Der Reiter *Entfernt (n)* zeigt sie mit ↺ zum Zurückholen, darunter steht
+„Alle entfernten zurückholen". Beim Entfernen wird **nur die eine Zeile**
+aus dem DOM genommen, nicht die Liste neu gezeichnet — sonst stünde man nach
+dem Aussortieren des sechzigsten Songs wieder ganz oben.
+
+Die Vorschläge im Suchfeld des Spiels enthalten entfernte Songs weiterhin:
+sie sind keine Lösung mehr, aber tippen können soll man sie dürfen.
+
+## Fünf gestuft oder fünf zufällig
+
+`settings.draw` (`'tiers'` oder `'random'`, Panel *Spielweise*) schaltet die
+Stufen global ab: `usesTiers()` liefert dann überall `false`, also fünf
+gleichwertige Plätze aus `shuffled(activePool())`. Wie bei den Filtern bleibt
+die **laufende Runde unangetastet**, es gilt ab der nächsten.
+
+Ein Nebeneffekt mit Absicht: ohne Stufen zieht der Chartsmodus aus `filtered`
+statt aus `chartFiltered`. Die Songs aus den Jahrescharts haben keine
+Streamzahl und damit keine Stufe — einsortieren kann man sie nicht, mitspielen
+lassen sehr wohl. Aus 1913 werden so über 4000.
+
+## Playlist: einzeln hinzufügen
+
+Eine Playlist muss nicht aus einer Datei kommen. Das Suchfeld im Panel
+*Eigene Playlist* fragt dieselbe iTunes-Suche (`Playlist.find(q, 'song'|'album')`),
+ein Klick legt den Song dazu; bei einem Album holt `Playlist.albumTracks(id)`
+über `lookup?id=…&entity=song` alle Titel. Ohne `previewUrl` fliegt ein Titel
+raus, Doppelte fängt `Playlist.dedupe()` ab. Gespeichert wird wie beim Import
+über `Playlist.store()`, gibt es noch keine Playlist, entsteht sie dabei.
+
 ## Nachhören: Links statt eines Dienstes
 
 Die Auflösung verlinkte früher nur zu Apple Music. Abfragen lässt sich keiner
@@ -507,7 +562,8 @@ Frontend hält ein fehlendes Feld zusätzlich aus.
 Links Kopfzeile (Marke, Stufenliste, Neuwürfeln, Rundenpunkte) und darunter
 *Stufen* und *Statistik*; in der Mitte das Spielfeld; rechts *Modus*, *Eigene
 Playlist*, *Künstler*, *Eigene Musik*, *Nachhören bei*, *Spielweise* und ganz
-unten die *Songauswahl*.
+unten die *Songauswahl*. *Songs ansehen* öffnet von zwei Stellen aus
+(`.js-browse`) die Songliste.
 
 Auf schmalen Bildschirmen wird `.col-left` zu `display:contents`, damit
 `.left-head` (order 1) oben bleibt und `.left-panels` (order 4) hinter das
@@ -649,6 +705,20 @@ Actions-Cache, ein Lauf macht also dort weiter, wo der letzte aufhörte.
 Vor dem Commit prüft ein Schritt die Datei: mindestens 1900 Songs, jeder mit
 Titel und Preview, und nie weniger als vorher. Lieber nichts committen als eine
 halbe `songs.json` ausliefern — die Seite bliebe weiß.
+
+**Er läuft.** Seit dem 5. September legt jeder Tag etwas nach: 2733 → 4222
+Songs, die 1960er bis 1990er stehen jetzt bei je rund 460 statt bei 66 bis
+174. Der Guard hat unterwegs nichts abgelehnt.
+
+Zwei Dinge, die dabei aufgefallen sind:
+
+- `built` blieb auf dem Tag des letzten Chartsneubaus stehen, weil
+  `add_decades.py` die Datei nur ergänzt. Setzt es jetzt selbst.
+- Die **Track-ID `k` fehlt den Chartsongs**: `match_local.py` schreibt sie
+  zwar mit, ist aber seit der Änderung nicht mehr gelaufen — das passiert nur
+  bei *Charts neu bauen*. Die täglich dazukommenden Songs haben sie, deshalb
+  1267 von 4222. Ein manueller Lauf von *Charts neu bauen* holt den Rest nach;
+  ohne `k` gibt es nur die Suchlinks statt der genauen.
 
 Was der erste echte Lauf gezeigt hat:
 

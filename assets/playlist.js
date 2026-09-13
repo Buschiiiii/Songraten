@@ -236,6 +236,47 @@ const Playlist = (() => {
     };
   }
 
+  /* ------------------------------------ Einzeln nachlegen (Suche) */
+
+  /* Eine Playlist muss nicht aus einer Datei kommen: „Loud Rihanna" in die
+     Suche, Album anklicken, drin. Dieselbe iTunes-Suche wie oben, nur ohne
+     Titelliste davor. */
+  async function get(path, params) {
+    const url = 'https://itunes.apple.com/' + path + '?' + new URLSearchParams(params);
+    const res = await fetch(url);
+    if (res.status === 403 || res.status === 429) { const e = new Error('throttled'); e.throttled = true; throw e; }
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    return (await res.json()).results || [];
+  }
+
+  const toAlbum = c => ({
+    id: c.collectionId,
+    t: c.collectionName,
+    a: c.artistName,
+    y: c.releaseDate ? +c.releaseDate.slice(0, 4) : 0,
+    g: c.primaryGenreName || '',
+    c: c.artworkUrl100 || '',
+    n: c.trackCount || 0,
+  });
+
+  /* `kind`: 'song' oder 'album'. */
+  async function find(query, kind, country) {
+    const q = String(query || '').trim();
+    if (q.length < 2) return [];
+    const alben = kind === 'album';
+    const res = await get('search', { media: 'music', entity: alben ? 'album' : 'song',
+                                      limit: 24, country: country || 'DE', term: q });
+    return alben
+      ? res.filter(r => r.collectionId && r.collectionName).map(toAlbum)
+      : res.filter(r => r.previewUrl).map(toSong);
+  }
+
+  /* Alle Titel eines Albums. Ohne Preview taugt ein Titel nichts. */
+  async function albumTracks(id, country) {
+    const res = await get('lookup', { id, entity: 'song', limit: 200, country: country || 'DE' });
+    return res.filter(r => r.wrapperType === 'track' && r.previewUrl).map(toSong);
+  }
+
   const sleep = ms => new Promise(r => setTimeout(r, ms));
 
   /* Wartet die Drosselung ab und zaehlt dabei sichtbar herunter. */
@@ -340,5 +381,6 @@ const Playlist = (() => {
     } catch (e) { return null; }
   }
 
-  return { parse, resolve, store, restore, storeQueue, restoreQueue, MAX_TRACKS };
+  return { parse, resolve, store, restore, storeQueue, restoreQueue, find, albumTracks,
+           dedupe, MAX_TRACKS };
 })();

@@ -58,6 +58,8 @@ let settings = load('settings', {
   svcAll: false,          /* alle Dienste in der Aufloesung zeigen */
   exact: true,            /* genaue Links statt Suchseiten (ueber song.link) */
   open: {},               /* welche Panels aufgeklappt sind */
+  draw: 'tiers',          /* 'tiers' = nach Seltenheit, 'random' = fuenf zufaellige */
+  blocked: [],            /* von Hand entfernte Songs, gilt in jedem Modus */
   arFilters: Filters.DEFAULT.map(r => ({ ...r })),
   loFilters: Filters.DEFAULT.map(r => ({ ...r })),
   hard: false,
@@ -85,6 +87,45 @@ const norm = s => (s || '').toLowerCase()
   .replace(/[^a-z0-9]+/g, ' ').trim();
 
 const enabledStages = () => STAGES.filter((_, i) => settings.stages[i]);
+
+/* ---------------------------------------------------- Entfernte Songs */
+
+/* Ein Song, den man nicht mehr sehen will, soll in jedem Modus weg sein -
+   auch in der Playlist und der eigenen Mediathek, wo er unter anderer Nummer
+   steht. Der Schluessel ist deshalb Titel und Kuenstler, nicht Apples
+   Track-ID: die waere genauer, wuerde aber nur im selben Pool treffen. */
+const songKey = s => (s ? norm(s.t) + '|' + norm(s.a) : '');
+
+let blockedKeys = new Set();
+function readBlocked() {
+  settings.blocked = (settings.blocked || []).filter(b => b && b.key);
+  blockedKeys = new Set(settings.blocked.map(b => b.key));
+}
+const isBlocked = s => blockedKeys.has(songKey(s));
+const unblocked = list => (blockedKeys.size ? list.filter(s => !isBlocked(s)) : list);
+
+function blockSong(s) {
+  const key = songKey(s);
+  if (!key || blockedKeys.has(key)) return;
+  settings.blocked.push({ key, t: s.t, a: s.a });
+  save('settings', settings);
+  readBlocked();
+  applyFilters();
+}
+
+function unblockSong(key) {
+  settings.blocked = settings.blocked.filter(b => b.key !== key);
+  save('settings', settings);
+  readBlocked();
+  applyFilters();
+}
+
+function unblockAll() {
+  settings.blocked = [];
+  save('settings', settings);
+  readBlocked();
+  applyFilters();
+}
 
 /* Breiten der sichtbaren Kaesten: ein Kasten je Stufe, alle gleich breit.
 
@@ -138,6 +179,7 @@ const pool = () => (mode === 'playlist' && PL ? PL
 /* ---------------------------------------------------------------- Start */
 
 async function boot() {
+  readBlocked();
   const res = await fetch('data/songs.json');
   DB = await res.json();
   DB.songs.forEach((s, i) => {
@@ -199,6 +241,19 @@ function buildChrome() {
       focusSearch();
     };
     b.classList.toggle('on', b.dataset.v === settings.start);
+  });
+
+  /* Gestuft oder fuenf zufaellige. Wie bei den Filtern wird die laufende
+     Runde nicht angefasst - sonst waere das Umschalten ein Aufgeben. */
+  $('#drawMode').querySelectorAll('button').forEach(b => {
+    b.onclick = () => {
+      settings.draw = b.dataset.v;
+      save('settings', settings);
+      $('#drawMode').querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b));
+      applyFilters();
+      focusSearch();
+    };
+    b.classList.toggle('on', b.dataset.v === (settings.draw || 'tiers'));
   });
 
   const vol = $('#volume');
@@ -263,6 +318,12 @@ function buildChrome() {
   };
 
   document.addEventListener('keydown', e => {
+    /* Die Songliste hat ein eigenes Suchfeld und eigene Knoepfe - dort darf
+       kein Kuerzel des Spielfelds dazwischenfunken. */
+    if (!$('#browse').hidden) {
+      if (e.key === 'Escape') closeBrowse();
+      return;
+    }
     if (e.target.tagName === 'INPUT') return;
     if (!$('#reveal').hidden || !$('#summary').hidden) {
       if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); (!$('#reveal').hidden ? $('#revealNext') : $('#summaryNext')).click(); }
@@ -283,6 +344,8 @@ function buildChrome() {
   });
 
   buildPlaylistUI();
+  buildPlFindUI();
+  buildBrowseUI();
   buildArtistUI();
   buildLocalUI();
   buildServerUI();
@@ -935,6 +998,208 @@ function showSummary() {
   $('#summary').hidden = false;
 }
 
+/* --------------------------------------------------------- Songliste */
+
+/* „Was steckt eigentlich drin?" - eine Liste des aktuellen Pools, in der man
+   reinhoeren, nachhoeren und aussortieren kann. Gezeichnet wird seitenweise:
+   4000 Zeilen auf einmal braucht kein Mensch und kein Browser. */
+
+const BROW_PAGE = 40;
+let browTab = 'pool';
+let browAll = [];
+let browShown = 0;
+let browPlaying = '';        /* Schluessel des Songs, der gerade laeuft */
+
+function buildBrowseUI() {
+  document.querySelectorAll('.js-browse').forEach(b => { b.onclick = openBrowse; });
+  $('#browseClose').onclick = closeBrowse;
+  $('#browseDone').onclick = closeBrowse;
+  $('#browse').onclick = e => { if (e.target === $('#browse')) closeBrowse(); };
+  $('#browseTab').querySelectorAll('button').forEach(b => {
+    b.onclick = () => {
+      browTab = b.dataset.v;
+      $('#browseSearch').value = '';
+      renderBrowse();
+    };
+  });
+  $('#browseSearch').oninput = () => renderBrowse();
+  $('#browseReset').onclick = () => { unblockAll(); renderBrowse(); };
+  const box = $('#browseList');
+  box.onscroll = () => {
+    if (box.scrollTop + box.clientHeight >= box.scrollHeight - 80) growBrowse();
+  };
+}
+
+function openBrowse() {
+  Audio2.stop();
+  browTab = 'pool';
+  $('#browseSearch').value = '';
+  $('#browse').hidden = false;
+  renderBrowse();
+  setTimeout(() => $('#browseSearch').focus(), 0);
+}
+
+function closeBrowse() {
+  Audio2.stop();
+  browPlaying = '';
+  $('#browse').hidden = true;
+  focusSearch();
+}
+
+/* Entfernte Songs kennen nur Titel und Kuenstler - mehr wurde nicht
+   gespeichert, und mehr braucht die Zeile auch nicht. */
+function browseSource() {
+  if (browTab === 'blocked') return settings.blocked.map(b => ({ t: b.t, a: b.a, key: b.key, gone: true }));
+  return activePool();
+}
+
+function renderBrowse() {
+  if ($('#browse').hidden) return;
+  const weg = browTab === 'blocked';
+  $('#browseTab').querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.v === browTab));
+  $('#browseTitle').textContent = weg ? 'Entfernte Songs' : 'Songs · ' + filterScope();
+
+  const n = norm($('#browseSearch').value);
+  browAll = browseSource().filter(s => !n || norm(s.t).includes(n) || norm(s.a).includes(n));
+  browShown = 0;
+  const box = $('#browseList');
+  box.innerHTML = '';
+  box.scrollTop = 0;
+
+  browseNote();
+  growBrowse();
+}
+
+/* Die Zeile unter dem Suchfeld - sie aendert sich auch, wenn nur eine Zeile
+   verschwindet. */
+function browseNote() {
+  const weg = browTab === 'blocked';
+  const gesucht = !!norm($('#browseSearch').value);
+  $('#browseNote').textContent = weg
+    ? (settings.blocked.length ? 'Zurückholen mit dem Pfeil.' : 'Nichts entfernt.')
+    : `${browAll.length} Songs` + (gesucht ? ' gefunden' : ' in der Auswahl')
+      + (settings.blocked.length ? ` · ${settings.blocked.length} entfernt` : '');
+  $('#browseTab [data-v="blocked"]').textContent = `Entfernt (${settings.blocked.length})`;
+  $('#browseReset').hidden = !settings.blocked.length;
+}
+
+function growBrowse() {
+  const box = $('#browseList');
+  const next = browAll.slice(browShown, browShown + BROW_PAGE);
+  if (!next.length) return false;
+  const alt = box.querySelector('.brow-more');
+  if (alt) alt.remove();
+  next.forEach(s => box.appendChild(browRow(s)));
+  browShown += next.length;
+  const rest = browAll.length - browShown;
+  if (rest > 0) {
+    const m = el('button', 'brow-more', `${rest} weitere`);
+    m.onclick = () => growBrowse();
+    box.appendChild(m);
+  }
+  return true;
+}
+
+function browRow(s) {
+  const weg = !!s.gone;
+  const key = s.key || songKey(s);
+  const row = el('div', 'brow' + (weg ? ' gone' : ''));
+  row.dataset.key = key;
+  if (!weg && s.d && TIERS.some(t => t.id === s.d)) row.style.borderLeftColor = `var(--t-${s.d})`;
+
+  const txt = el('div', 'bt');
+  txt.appendChild(el('b', null, s.t || '–'));
+  const unten = [s.a, s.y || null].filter(Boolean).join(' · ');
+  txt.appendChild(el('span', null, unten));
+  row.appendChild(txt);
+
+  const act = el('div', 'bact');
+  if (!weg && (s.p || s.file || s.full)) {
+    const play = el('button', 'bplay' + (browPlaying === key ? ' on' : ''),
+      browPlaying === key ? '■' : '▶');
+    play.title = 'Kurz reinhören';
+    play.onclick = () => {
+      if (browPlaying === key) { Audio2.stop(); browPlaying = ''; return renderBrowsePlaying(); }
+      browPlaying = key;
+      renderBrowsePlaying();
+      previewSong(s, () => { if (browPlaying === key) { browPlaying = ''; renderBrowsePlaying(); } });
+    };
+    act.appendChild(play);
+  }
+
+  const link = el('button', '', '↗');
+  link.title = 'Wo man ihn hören kann';
+  link.onclick = () => {
+    const da = row.querySelector('.blinks');
+    if (da) return da.remove();
+    rowLinks(row, s);
+    /* Wie in der Aufloesung: erst die Suche, dann - falls song.link etwas
+       weiss - die genaue Adresse. */
+    if (settings.exact && s.k && !Links.known(s)) {
+      Links.exact(s).then(hit => { if (hit && row.querySelector('.blinks')) rowLinks(row, s); });
+    }
+  };
+  act.appendChild(link);
+
+  const raus = el('button', '', weg ? '↺' : '✕');
+  raus.title = weg ? 'Wieder aufnehmen' : 'Aus der Auswahl nehmen';
+  raus.onclick = () => {
+    if (weg) unblockSong(key); else blockSong(s);
+    /* Nur diese Zeile verschwindet. Die ganze Liste neu zu zeichnen wuerde
+       die Scrollposition verlieren - wer den sechzigsten Song aussortiert,
+       stuende sonst wieder ganz oben. */
+    browAll = browAll.filter(x => (x.key || songKey(x)) !== key);
+    browShown = Math.max(0, browShown - 1);
+    row.remove();
+    browseNote();
+  };
+  act.appendChild(raus);
+
+  row.appendChild(act);
+  return row;
+}
+
+/* Die Dienste unter einer Zeile - dieselbe Reihe wie in der Aufloesung. */
+function rowLinks(row, s) {
+  const alt = row.querySelector('.blinks');
+  const box = el('div', 'blinks svc-row');
+  Links.forSong(s, settings.service).forEach(l => {
+    const a = el('a', 'svc' + (l.all ? ' all' : l.id === settings.service ? ' on' : '')
+      + (l.shop ? ' shop' : '') + (l.exact ? ' exact' : ''));
+    a.href = l.url;
+    a.target = '_blank';
+    a.rel = 'noopener noreferrer';
+    a.textContent = l.name;
+    box.appendChild(a);
+  });
+  if (alt) alt.replaceWith(box); else row.appendChild(box);
+}
+
+/* Nur die Abspielknoepfe nachziehen - die ganze Liste neu zu zeichnen wuerde
+   die Scrollposition verlieren. */
+function renderBrowsePlaying() {
+  $('#browseList').querySelectorAll('.brow').forEach(row => {
+    const b = row.querySelector('.bplay');
+    if (!b) return;
+    const an = row.dataset.key === browPlaying;
+    b.classList.toggle('on', an);
+    b.textContent = an ? '■' : '▶';
+  });
+}
+
+/* Kurz reinhoeren: zehn Sekunden reichen, um zu wissen, was das ist. */
+async function previewSong(s, done) {
+  Audio2.unlock();
+  try {
+    let buf;
+    if (s.file || s.full) {
+      const cut = await Audio2.loadFile(s.file || s.full, { start: settings.start, seconds: 12 });
+      buf = cut.buffer;
+    } else buf = await Audio2.load(s.p);
+    Audio2.play(buf, 0, Math.min(10, buf.duration), done);
+  } catch (e) { if (done) done(); }
+}
+
 /* ------------------------------------------------------- Ausklappbares */
 
 /* Mit sechs Modi, drei Quellen und den Einstellungen wird die Spalte lang.
@@ -979,7 +1244,8 @@ function panelSum(k) {
   }
   if (k === 'service') return [Links.name(settings.service), false];
   if (k === 'play') {
-    return [`${settings.hard ? 'Hardmode' : 'normal'} · `
+    return [`${settings.draw === 'random' ? '5 zufällige' : 'gestuft'}`
+      + `${settings.hard ? ' · Hardmode' : ''} · `
       + `${settings.start === 'random' ? 'zufällige Stelle' : 'Anfang'} · `
       + `${Math.round(settings.volume * 100)} %`, false];
   }
@@ -1115,9 +1381,12 @@ function renderStats() {
 /* ---- Auswahl im Jahrzehnte- und Genremodus ---- */
 
 const PICKED = ['decades', 'genres', 'artist'];   /* Modi mit Auswahlleiste oben */
+/* Ohne Stufen gibt es keinen Grund, die Songs aus den Jahrescharts
+   auszulassen - die fehlende Streamzahl stoert nur beim Einsortieren. */
 const activePool = () => (mode === 'playlist' ? plFiltered
   : mode === 'local' ? loFiltered
-  : PICKED.includes(mode) ? pickFiltered : chartFiltered);
+  : PICKED.includes(mode) ? pickFiltered
+  : usesTiers() ? chartFiltered : filtered);
 
 /* Ein Jahrzehnt oder Genre braucht genug Songs, sonst ist die Runde nach zwei
    Partien auswendig gelernt. Genres brauchen mehr, weil sie sich nicht ueber
@@ -1162,7 +1431,7 @@ const inPick = (s, value) => (mode === 'decades'
    Genre wie eine Playlist gespielt: fuenf zufaellige Songs, keine Stufen.
    Im Kuenstlermodus gibt es nie Stufen - wer einen Kuenstler mit einem
    grossen Hit waehlt, haette den sonst als Easy sofort auf dem Tisch. */
-const usesTiers = () => (mode === 'charts'
+const usesTiers = () => settings.draw !== 'random' && (mode === 'charts'
   || (PICKED.includes(mode) && mode !== 'artist' && pickFiltered.length >= TIER_MIN * TIERS.length));
 
 /* Das gespeicherte Jahrzehnt oder Genre kann durch Filter oder neue Daten
@@ -1213,18 +1482,18 @@ function renderPicker() {
 /* Der Pool wird neu gerechnet, die laufende Runde aber nicht angefasst -
    sonst waere ein Klick auf einen Filter dasselbe wie Aufgeben. */
 function applyFilters() {
-  filtered = Filters.apply(DB.songs, settings.filters, DB);
+  filtered = unblocked(Filters.apply(DB.songs, settings.filters, DB));
   /* Songs aus den Jahrescharts haben keine Streamzahl und damit keine Stufe -
      die Charts lassen sie aus, im Jahrzehntmodus spielen sie mit. */
   chartFiltered = filtered.filter(s => s.d);
-  plFiltered = PL ? Filters.apply(PL.songs, settings.plFilters, PL) : [];
-  loFiltered = LO ? Filters.apply(LO.songs, settings.loFilters, LO) : [];
+  plFiltered = PL ? unblocked(Filters.apply(PL.songs, settings.plFilters, PL)) : [];
+  loFiltered = LO ? unblocked(Filters.apply(LO.songs, settings.loFilters, LO)) : [];
 
   if (mode === 'artist') {
     /* Der Kuenstlerkatalog kommt nicht aus songs.json, sondern von Apple. */
     const now = currentPick();
     AR = now ? buildPlaylist(Artist.fromCache(now.value)) : null;
-    pickFiltered = AR ? Filters.apply(AR.songs, settings.arFilters, AR) : [];
+    pickFiltered = AR ? unblocked(Filters.apply(AR.songs, settings.arFilters, AR)) : [];
   } else if (PICKED.includes(mode)) {
     const now = currentPick();
     pickFiltered = now ? filtered.filter(s => inPick(s, now.value)) : [];
@@ -1645,6 +1914,102 @@ async function scanFiles(list, name, opts) {
   /* Beim Wiederherstellen nach dem Neuladen bleibt der Modus, wo er war. */
   if (loPlayable() && mode !== 'local' && (!opts.silent || settings.mode === 'local')) setMode('local');
   else if (mode === 'local') newRound();
+}
+
+/* ------------------------------------- Playlist: einzeln hinzufuegen */
+
+/* Eine Playlist muss nicht aus einer Datei kommen. „Loud Rihanna" eintippen,
+   Album anklicken, drin - dieselbe iTunes-Suche wie beim Import, nur ohne
+   Titelliste davor. */
+let plFindKind = 'song';
+let plFindTimer = null;
+let plFindBusy = false;
+
+function buildPlFindUI() {
+  const inp = $('#plFind');
+  if (!inp) return;
+  $('#plFindKind').querySelectorAll('button').forEach(b => {
+    b.onclick = () => {
+      plFindKind = b.dataset.v;
+      $('#plFindKind').querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b));
+      if (inp.value.trim().length >= 2) runFind(inp.value.trim());
+    };
+  });
+  inp.oninput = () => {
+    clearTimeout(plFindTimer);
+    const q = inp.value.trim();
+    if (q.length < 2) return renderFinds([]);
+    plFindTimer = setTimeout(() => runFind(q), 450);
+  };
+  inp.onkeydown = e => {
+    if (e.key !== 'Enter') return;
+    e.preventDefault();
+    clearTimeout(plFindTimer);
+    if (inp.value.trim().length >= 2) runFind(inp.value.trim());
+  };
+}
+
+async function runFind(q) {
+  if (plFindBusy) return;
+  plFindBusy = true;
+  plFindNote('Wird gesucht …');
+  try {
+    const hits = await Playlist.find(q, plFindKind);
+    renderFinds(hits);
+    plFindNote(hits.length ? '' : 'Nichts gefunden.');
+  } catch (e) {
+    renderFinds([]);
+    plFindNote(e && e.throttled ? 'Apple bremst gerade – gleich nochmal.' : 'Die Suche hat nicht geklappt.');
+  }
+  plFindBusy = false;
+}
+
+function plFindNote(msg) { $('#plFindNote').textContent = msg; }
+
+function renderFinds(hits) {
+  const box = $('#plHits');
+  box.innerHTML = '';
+  const drin = new Set((PL ? PL.songs : []).map(songKey));
+  hits.slice(0, 20).forEach(h => {
+    const alben = plFindKind === 'album';
+    const schon = !alben && drin.has(songKey(h));
+    const row = el('button', 'arhit' + (schon ? ' on' : ''));
+    row.appendChild(el('span', 'nm', h.t + (h.a ? ' – ' + h.a : '')));
+    row.appendChild(el('span', 'sub', alben ? `${h.n || '?'} Titel` : (schon ? 'drin' : String(h.y || ''))));
+    row.onclick = () => (alben ? addAlbum(h) : addSongs([h], h.t));
+    box.appendChild(row);
+  });
+}
+
+async function addAlbum(album) {
+  if (plFindBusy) return;
+  plFindBusy = true;
+  plFindNote(`${album.t}: Titel werden geholt …`);
+  try {
+    const songs = await Playlist.albumTracks(album.id);
+    plFindBusy = false;
+    if (!songs.length) return plFindNote('Von dem Album gibt es keine Hörproben.');
+    addSongs(songs, album.t);
+  } catch (e) {
+    plFindBusy = false;
+    plFindNote(e && e.throttled ? 'Apple bremst gerade – gleich nochmal.' : 'Das Album kam nicht durch.');
+  }
+}
+
+/* Dazugelegt wird zur bestehenden Playlist; Doppelte fallen weg. */
+function addSongs(songs, was) {
+  const vorher = PL ? PL.songs.length : 0;
+  const alle = Playlist.dedupe([...(PL ? PL.songs : []), ...songs]);
+  const name = PL ? PL.name : 'Eigene Playlist';
+  PL = buildPlaylist({ name, songs: alle, missed: PL ? PL.missed : [] });
+  Playlist.store({ name, songs: alle, missed: PL.missed });
+  applyFilters();
+  renderPlaylist();
+  renderFinds([]);
+  $('#plFind').value = '';
+  const neu = PL.songs.length - vorher;
+  plFindNote(neu ? `${was}: ${neu} Titel dazu.` : `${was} war schon drin.`);
+  if (plPlayable() && mode !== 'playlist') setMode('playlist');
 }
 
 /* Beim Start: den gemerkten Ordner wieder oeffnen, wenn der Browser das kann

@@ -227,6 +227,8 @@ if __name__ == '__main__':
         data['songs'], merged = merge_duplicates(data['songs'])
         add_fame(data['songs'])
         data['v'] = 2
+        # Sonst stuende in der Datei ewig der Tag des letzten Chartsneubaus.
+        data['built'] = time.strftime('%Y-%m-%d')
         json.dump(data, open(SONGS, 'w', encoding='utf-8'), ensure_ascii=False, separators=(',', ':'))
 
     counts = {}

@@ -30,6 +30,11 @@
         Alle neu würfeln
       </button>
 
+      <button class="btn-ghost js-browse btn-list">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M8 6h12M8 12h12M8 18h12M3.5 6h.01M3.5 12h.01M3.5 18h.01"/></svg>
+        Songs ansehen
+      </button>
+
       <div class="round-score">
         <span class="label">Runde</span>
         <strong id="roundScore">0</strong>
@@ -122,6 +127,16 @@
       <button id="plClear" class="pl-link" hidden>Playlist entfernen</button>
       <p class="note">CSV, TSV, TXT, M3U oder JSON aus Exportify, TuneMyMusic, Soundiiz,
         der Musik-App oder Google Takeout – Datei hierher ziehen geht auch.</p>
+
+      <p class="fhead">Einzeln hinzufügen</p>
+      <div class="seg seg-row" id="plFindKind">
+        <button data-v="song" class="on">Songs</button>
+        <button data-v="album">Alben</button>
+      </div>
+      <input id="plFind" type="text" placeholder="z. B. Loud Rihanna"
+             autocomplete="off" spellcheck="false">
+      <div id="plHits" class="fopts"></div>
+      <p id="plFindNote" class="note"></p>
     </details>
 
     <details class="panel" data-k="artist" id="artistPanel">
@@ -199,6 +214,14 @@
     <details class="panel" data-k="play">
       <summary><h2>Spielweise</h2><span class="psum"></span></summary>
 
+      <p class="fhead">Fünf Songs je Runde</p>
+      <div class="seg" id="drawMode">
+        <button data-v="tiers" class="on">Nach Seltenheit gestuft</button>
+        <button data-v="random">Fünf zufällige</button>
+      </div>
+      <p class="note">Gestuft gibt es Easy bis Impossible, zufällig fünf
+        gleichwertige Songs aus dem ganzen Pool. Gilt ab der nächsten Runde.</p>
+
       <label class="switch" for="hardMode">
         <input type="checkbox" id="hardMode">
         <span class="track"></span>
@@ -253,6 +276,7 @@
       </details>
 
       <p id="filterCount" class="note"></p>
+      <button class="btn-ghost js-browse">Songs ansehen</button>
       <p class="note">nur schränkt ein, ohne wirft raus, dazu holt zurück.
         Filter wirken ab der nächsten Runde.</p>
     </details>
@@ -271,6 +295,27 @@
     <p class="svc-head">Nachhören bei</p>
     <div id="revealLinks" class="svc-row"></div>
     <button id="revealNext" class="btn-action">Weiter</button>
+  </div>
+</div>
+
+<div id="browse" class="reveal" hidden>
+  <div class="reveal-card list">
+    <div class="browse-head">
+      <h3 id="browseTitle">Songs</h3>
+      <button id="browseClose" class="browse-x" aria-label="Schließen">×</button>
+    </div>
+    <div class="seg seg-row" id="browseTab">
+      <button data-v="pool" class="on">In der Auswahl</button>
+      <button data-v="blocked">Entfernt</button>
+    </div>
+    <input id="browseSearch" type="text" placeholder="In der Liste suchen …"
+           autocomplete="off" spellcheck="false">
+    <p id="browseNote" class="note"></p>
+    <div id="browseList" class="browse-list"></div>
+    <div class="browse-foot">
+      <button id="browseReset" class="pl-link">Alle entfernten zurückholen</button>
+      <button id="browseDone" class="btn-action">Fertig</button>
+    </div>
   </div>
 </div>
 

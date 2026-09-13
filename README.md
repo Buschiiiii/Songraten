@@ -22,6 +22,31 @@ kombinieren lassen.
 
 ---
 
+## Nachsehen, was drin ist
+
+Links unter den Rundenpunkten (und unten in der Songauswahl) steht **Songs
+ansehen**. Die Liste zeigt genau die Songs, aus denen im aktuellen Modus
+gezogen wird, und lädt beim Scrollen nach. Oben ein Suchfeld, je Zeile drei
+Knöpfe:
+
+| | |
+|---|---|
+| ▶ | zehn Sekunden reinhören |
+| ↗ | die Streamingdienste aufklappen |
+| ✕ | den Song aus der Auswahl nehmen |
+
+Entfernte Songs sind **in jedem Modus** weg – auch in der eigenen Playlist.
+Der Reiter *Entfernt* zeigt sie, ↺ holt einen zurück, und
+*Alle entfernten zurückholen* setzt alles wieder auf Anfang.
+
+## Gestuft oder einfach fünf zufällige
+
+Unter **Spielweise** steht, wie eine Runde gezogen wird: *Nach Seltenheit
+gestuft* (Easy bis Impossible, wie bisher) oder *Fünf zufällige*. Zufällig
+spielen im Chartsmodus auch die Songs mit, die keine Streamzahl haben und
+deshalb in keine Stufe passen – aus rund 1900 werden über 4000. Die laufende
+Runde bleibt, die Umstellung gilt ab der nächsten.
+
 ## Aufgeräumt: alles klappt zu
 
 Rechts und links stehen die Einstellungen in Panels, die **zugeklappt**
@@ -137,6 +162,13 @@ Geht etwas schief, steht in der Meldung, woran es vermutlich liegt.
 Gespielt wird bei Subsonic und Jellyfin ein umgerechnetes MP3, nicht die
 ganze FLAC – der Server macht das selbst. Zugangsdaten bleiben im Browser
 (unverschlüsselt); *Zugang vergessen* räumt sie weg.
+
+## Einzelne Songs und Alben hinzufügen
+
+Im Panel **Eigene Playlist** gibt es ein Suchfeld – zwischen *Songs* und
+*Alben* umschalten, Namen eintippen, Enter. „Loud Rihanna" unter *Alben*
+anklicken, und das ganze Album liegt in der Playlist. Gibt es noch keine
+Playlist, entsteht sie dabei; Doppelte fallen weg.
 
 ## Nachhören, egal bei welchem Dienst
 

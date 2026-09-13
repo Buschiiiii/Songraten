@@ -197,6 +197,41 @@ function makeWindow(store, patchDb) {
       return { ok: true, status: 200, arrayBuffer: async () => new ArrayBuffer(4096) };
     }
 
+    /* Alben suchen und ihre Titel holen - fuer "einzeln hinzufuegen". */
+    if (url.includes('itunes.apple.com/search') && url.includes('entity=album')) {
+      itunesCalls++;
+      return { ok: true, status: 200, json: async () => ({ results: [
+        { collectionId: 77, collectionName: 'Loud', artistName: 'Rihanna',
+          releaseDate: '2010-11-12', primaryGenreName: 'Pop', trackCount: 3,
+          artworkUrl100: 'https://art/loud/100x100bb.jpg' },
+        { collectionId: 78, collectionName: 'Ohne Hoerproben', artistName: 'Niemand', trackCount: 2 },
+      ] }) };
+    }
+    if (url.includes('itunes.apple.com/lookup')) {
+      itunesCalls++;
+      const id = +(/id=(\d+)/.exec(url) || [0, 0])[1];
+      if (id !== 77) return { ok: true, status: 200, json: async () => ({ results: [] }) };
+      const t = i => ({ wrapperType: 'track', trackName: 'Loudsong ' + i, artistName: 'Rihanna',
+                        collectionName: 'Loud', releaseDate: '2010-11-12', primaryGenreName: 'Pop',
+                        trackId: 7700 + i, previewUrl: 'https://audio/loud' + i,
+                        artworkUrl100: 'https://art/loud/100x100bb.jpg' });
+      return { ok: true, status: 200, json: async () => ({ results: [
+        { wrapperType: 'collection', collectionId: 77 }, t(1), t(2),
+        { wrapperType: 'track', trackName: 'Ohne Probe', artistName: 'Rihanna', trackId: 7799 },
+      ] }) };
+    }
+    /* Songsuche fuer "einzeln hinzufuegen": ein eigener Begriff, damit sie
+       sich vom Aufloesen einer Importliste unterscheidet. */
+    if (url.includes('itunes.apple.com/search') && /term=neuer/i.test(url)) {
+      itunesCalls++;
+      return { ok: true, status: 200, json: async () => ({ results: [
+        { trackName: 'Neuer Song', artistName: 'Neue Band', collectionName: 'Neu',
+          releaseDate: '2024-03-01', primaryGenreName: 'Rock', trackId: 4242,
+          previewUrl: 'https://audio/neu', artworkUrl100: 'https://art/neu/100x100bb.jpg' },
+        { trackName: 'Ohne Probe', artistName: 'Neue Band', trackId: 4243 },
+      ] }) };
+    }
+
     if (url.includes('itunes.apple.com/search')) {
       itunesCalls++;
       const term = sortKey(decodeURIComponent(url.split('term=')[1]));
@@ -279,7 +314,7 @@ const dummy = n => ({ t: 'Song ' + n, a: 'Kuenstler ' + n, al: 'Album', y: 2020,
   assert(sumOf('stages') === '6 von 6', 'Panels: und wie viele Stufen an sind');
   assert(sumOf('playlist') === 'nichts geladen' && sumOf('local') === 'nichts geladen',
     'Panels: leere Quellen sagen das');
-  assert(/normal · Anfang · \d+ %/.test(sumOf('play')), 'Panels: Spielweise auf einen Blick (' + sumOf('play') + ')');
+  assert(/gestuft · Anfang · \d+ %/.test(sumOf('play')), 'Panels: Spielweise auf einen Blick (' + sumOf('play') + ')');
 
   const filterPanel = $('details.panel[data-k="filter"]');
   filterPanel.open = true;
@@ -296,6 +331,129 @@ const dummy = n => ({ t: 'Song ' + n, a: 'Kuenstler ' + n, al: 'Album', y: 2020,
   assert(wPanel.document.querySelector('details.panel[data-k="filter"]').open
     && !wPanel.document.querySelector('details.panel[data-k="play"]').open,
     'Panels: nach dem Neuladen steht wieder offen, was offen war');
+
+  /* ---------------------------------------------------- Songliste */
+  /* „Was steckt da eigentlich drin?" - mit Reinhoeren, Diensten und
+     Aussortieren. Gezeichnet wird seitenweise. */
+  $('.js-browse').click();
+  assert(!$('#browse').hidden, 'Songliste: laesst sich oeffnen');
+  const zeilen = () => [...$('#browseList').querySelectorAll('.brow')];
+  assert(zeilen().length === G('BROW_PAGE'), 'Songliste: erst eine Seite (' + zeilen().length + ')');
+  assert(G('browAll').length === G('activePool().length'),
+    'Songliste: sie zeigt genau den Pool des Modus');
+  assert(/^Songs · Charts/.test($('#browseTitle').textContent),
+    'Songliste: die Ueberschrift sagt, woraus (' + $('#browseTitle').textContent + ')');
+
+  $('#browseList').querySelector('.brow-more').click();
+  assert(zeilen().length === 2 * G('BROW_PAGE'), 'Songliste: „weitere" laedt die naechste Seite nach');
+  const bliste = $('#browseList');
+  bliste.scrollTop = bliste.scrollHeight;
+  bliste.dispatchEvent(new w.Event('scroll'));
+  assert(zeilen().length === 3 * G('BROW_PAGE'), 'Songliste: unten angekommen laedt sie von selbst nach');
+
+  /* Suchen in der Liste */
+  const suchTitel = G('activePool()[0].t');
+  $('#browseSearch').value = suchTitel;
+  $('#browseSearch').dispatchEvent(new w.Event('input'));
+  assert(G('browAll').length >= 1 && G('browAll').every(x => new RegExp(G('norm')(suchTitel), 'i').test(G('norm')(x.t + ' ' + x.a))),
+    'Songliste: das Suchfeld filtert die Liste');
+  $('#browseSearch').value = '';
+  $('#browseSearch').dispatchEvent(new w.Event('input'));
+
+  /* Reinhoeren */
+  const erste = zeilen()[0];
+  assert(erste.querySelector('.bplay') && erste.querySelector('.bact').children.length === 3,
+    'Songliste: jede Zeile hat Abspielen, Dienste und Entfernen');
+  erste.querySelector('.bplay').click();
+  await waitFor(() => G('browPlaying') !== '', 3000);
+  assert(G('browPlaying') === erste.dataset.key && erste.querySelector('.bplay').textContent === '■',
+    'Songliste: Reinhoeren laeuft und der Knopf zeigt es');
+  erste.querySelector('.bplay').click();
+  assert(G('browPlaying') === '' && erste.querySelector('.bplay').textContent === '▶',
+    'Songliste: nochmal druecken hoert auf');
+
+  /* Dienste aufklappen */
+  erste.querySelector('.bact button:nth-child(2)').click();
+  assert(erste.querySelector('.blinks') && erste.querySelectorAll('.blinks a').length > 1,
+    'Songliste: die Dienste klappen unter der Zeile auf');
+  erste.querySelector('.bact button:nth-child(2)').click();
+  assert(!erste.querySelector('.blinks'), 'Songliste: und wieder zu');
+
+  /* Entfernen wirkt sofort und ueberall */
+  const wegTitel = zeilen()[0].querySelector('b').textContent;
+  const poolVorher = G('activePool().length');
+  bliste.scrollTop = 400;
+  const gezeigt = zeilen().length;
+  zeilen()[0].querySelector('.bact button:last-child').click();
+  assert(zeilen().length === gezeigt - 1 && bliste.scrollTop === 400,
+    'Songliste: nur die eine Zeile verschwindet, die Liste springt nicht');
+  assert(G('activePool().length') === poolVorher - 1, 'Songliste: Entfernen nimmt den Song aus dem Pool');
+  assert(G('settings.blocked.length') === 1 && G('settings.blocked')[0].t === wegTitel,
+    'Songliste: und merkt ihn sich');
+  assert(G("filtered.every(s => s.t !== " + JSON.stringify(wegTitel) + " || s.a !== settings.blocked[0].a)"),
+    'Songliste: auch aus der ungefilterten Auswahl');
+  assert(/1 entfernt/.test($('#browseNote').textContent), 'Songliste: die Zeile sagt, wie viele weg sind');
+
+  /* Der Reiter „Entfernt" holt sie zurueck */
+  $('#browseTab [data-v="blocked"]').click();
+  assert(/Entfernt \(1\)/.test($('#browseTab [data-v="blocked"]').textContent),
+    'Songliste: der Reiter zaehlt mit');
+  assert(zeilen().length === 1 && zeilen()[0].querySelector('b').textContent === wegTitel,
+    'Songliste: der entfernte Song steht dort');
+  assert(!zeilen()[0].querySelector('.bplay'), 'Songliste: ohne Datei kein Abspielknopf');
+  zeilen()[0].querySelector('.bact button:last-child').click();
+  assert(G('settings.blocked.length') === 0 && G('activePool().length') === poolVorher,
+    'Songliste: zurueckholen bringt ihn wieder in den Pool');
+
+  /* Der Reset-Knopf raeumt alles weg */
+  $('#browseTab [data-v="pool"]').click();
+  zeilen()[0].querySelector('.bact button:last-child').click();
+  zeilen()[0].querySelector('.bact button:last-child').click();
+  assert(G('settings.blocked.length') === 2, 'Songliste: mehrere lassen sich entfernen');
+  $('#browseReset').click();
+  assert(G('settings.blocked.length') === 0 && G('activePool().length') === poolVorher,
+    'Songliste: „Alle zurückholen" setzt alles zurueck');
+
+  /* Entfernt heisst ueberall entfernt, auch in der Playlist */
+  const gleicher = G("({ t: activePool()[0].t, a: activePool()[0].a })");
+  G("blockSong(activePool()[0])");
+  assert(G(`Filters.apply(DB.songs, [], DB).some(s => s.t === ${JSON.stringify(gleicher.t)})`)
+    && G(`filtered.every(s => s.t !== ${JSON.stringify(gleicher.t)} || s.a !== ${JSON.stringify(gleicher.a)})`),
+    'Songliste: der Schluessel haengt an Titel und Kuenstler, nicht an der Nummer im Pool');
+  G('unblockAll()');
+
+  /* Entfernte Songs ueberleben das Neuladen */
+  zeilen()[0].querySelector('.bact button:last-child').click();
+  const wegStand = w.localStorage.getItem('songrate:settings');
+  const wBlock = makeWindow({ 'songrate:settings': wegStand });
+  await waitFor(() => !wBlock.document.querySelector('#app').hidden);
+  assert(wBlock.__ev('settings.blocked.length') === 1
+    && wBlock.__ev("filtered.every(s => songKey(s) !== settings.blocked[0].key)"),
+    'Songliste: entfernte Songs bleiben auch nach dem Neuladen draussen');
+  $('#browseReset').click();
+
+  w.__ev('closeBrowse()');
+  assert($('#browse').hidden, 'Songliste: schliesst wieder');
+
+  /* ------------------------------------------- Fuenf zufaellige Songs */
+  assert(G('usesTiers()') && G('slots().length') === 5 && G('slots()[0].id') === 'easy',
+    'Ziehung: voreingestellt sind die Stufen');
+  const chartsPool = G('activePool().length');
+  $('#drawMode [data-v="random"]').click();
+  assert(G('settings.draw') === 'random' && !G('usesTiers()'),
+    'Ziehung: fuenf zufaellige lassen sich waehlen');
+  assert(G('activePool().length') > chartsPool,
+    'Ziehung: ohne Stufen spielen auch die Songs aus den Jahrescharts mit ('
+    + chartsPool + ' → ' + G('activePool().length') + ')');
+  assert(G('round')[0].tier.id === 'easy', 'Ziehung: die laufende Runde bleibt, wie sie ist');
+  G('newRound()'); await tick(30);
+  assert(G('round').every(r => r.tier.mult === 1) && G('round').length === 5,
+    'Ziehung: die naechste Runde hat fuenf gleichwertige Plaetze');
+  assert(new Set(G('round').map(r => r.song.i)).size === 5, 'Ziehung: fuenf verschiedene Songs');
+  assert(/5 zufällige/.test(G("panelSum('play')[0]")), 'Ziehung: die Panelzeile sagt es');
+  $('#drawMode [data-v="tiers"]').click();
+  G('newRound()'); await tick(30);
+  assert(G('usesTiers()') && G('round')[0].tier.id === 'easy', 'Ziehung: und wieder zurueck');
 
   /* ---------------------------------------------------- Playlist-Modus */
   const csv = 'Track Name,Artist Name(s)\nUnstoppable,Sia\nBlinding Lights,The Weeknd\nLevitating,Dua Lipa\n'
@@ -321,8 +479,8 @@ const dummy = n => ({ t: 'Song ' + n, a: 'Kuenstler ' + n, al: 'Album', y: 2020,
   assert(/\d+ von \d+ erraten/.test($('#summaryHits').textContent),
     'Rundenende: es steht da, wie viele erraten wurden (' + $('#summaryHits').textContent + ')');
   assert(G('stats.byTier.playlist') != null && G('stats.byTier.pl1') == null, 'Playlist: Statistik unter einem Schluessel');
-  const zeilen = [...$('#summaryList').querySelectorAll('.s-link')];
-  assert(zeilen.length === 5 && zeilen.every(a => /^https:\/\/music\.apple\.com/.test(a.href)),
+  const ergZeilen = [...$('#summaryList').querySelectorAll('.s-link')];
+  assert(ergZeilen.length === 5 && ergZeilen.every(a => /^https:\/\/music\.apple\.com/.test(a.href)),
     'Rundenende: jede Zeile verlinkt zum Lieblingsdienst');
   assert(G("PL.songs.every(s => s.k)"), 'Playlist: Apples Track-ID wird mitgenommen');
   $('#summaryNext').click(); await tick(30);
@@ -976,6 +1134,57 @@ const dummy = n => ({ t: 'Song ' + n, a: 'Kuenstler ' + n, al: 'Album', y: 2020,
   w2.__ev("setMode('charts')"); await tick(30);
   assert(JSON.stringify(w2.__ev('settings.filters')) === chartRules && !/Playlist/.test(w2.document.querySelector('#filterPanel .psum').textContent),
     'Playlist-Filter: zurück im Chartsmodus gelten wieder die alten Regeln');
+
+  /* ------------------------------- Playlist: einzeln hinzufuegen */
+  /* Eine Playlist muss nicht aus einer Datei kommen - Suchfeld, Album
+     anklicken, drin. */
+  const w9 = makeWindow({});
+  const P = n => w9.__ev(n), p$ = q => w9.document.querySelector(q);
+  await waitFor(() => !w9.document.querySelector('#app').hidden);
+
+  assert(P('PL') === null, 'Hinzufuegen: vorher gibt es keine Playlist');
+  p$('#plFind').value = 'neuer song';
+  p$('#plFind').dispatchEvent(new w9.KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+  await waitFor(() => p$('#plHits').querySelectorAll('.arhit').length > 0, 5000);
+  const treffer = [...p$('#plHits').querySelectorAll('.arhit')];
+  assert(treffer.length === 1 && /Neuer Song – Neue Band/.test(treffer[0].textContent),
+    'Hinzufuegen: die Songsuche zeigt nur, was eine Hoerprobe hat');
+
+  treffer[0].click();
+  await waitFor(() => P('PL') != null, 3000);
+  assert(P('PL.songs.length') === 1 && P("PL.songs[0].t") === 'Neuer Song',
+    'Hinzufuegen: ein Klick legt den Song in die Playlist');
+  assert(P("PL.songs[0].k") === 4242, 'Hinzufuegen: mit Apples Track-ID');
+  assert(p$('#plFind').value === '' && p$('#plHits').children.length === 0,
+    'Hinzufuegen: danach ist das Suchfeld wieder frei');
+
+  /* Ein ganzes Album */
+  p$('#plFindKind [data-v="album"]').click();
+  p$('#plFind').value = 'loud rihanna';
+  p$('#plFind').dispatchEvent(new w9.KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+  await waitFor(() => p$('#plHits').querySelectorAll('.arhit').length > 0, 5000);
+  const alben = [...p$('#plHits').querySelectorAll('.arhit')];
+  assert(/Loud – Rihanna/.test(alben[0].textContent) && /3 Titel/.test(alben[0].textContent),
+    'Hinzufuegen: Alben stehen mit Titelzahl da');
+  alben[0].click();
+  await waitFor(() => P('PL.songs.length') === 3, 5000);
+  assert(P("PL.songs.filter(s => s.al === 'Loud').length") === 2,
+    'Hinzufuegen: das Album kommt komplett, ohne den Titel ohne Hoerprobe');
+  assert(/Loud: 2 Titel dazu/.test(p$('#plFindNote').textContent),
+    'Hinzufuegen: und die Meldung sagt, wie viele (' + p$('#plFindNote').textContent + ')');
+
+  /* Zweimal dasselbe Album aendert nichts */
+  p$('#plFind').value = 'loud rihanna';
+  p$('#plFind').dispatchEvent(new w9.KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+  await waitFor(() => p$('#plHits').querySelectorAll('.arhit').length > 0, 5000);
+  p$('#plHits').querySelector('.arhit').click();
+  await waitFor(() => /schon drin/.test(p$('#plFindNote').textContent), 5000);
+  assert(P('PL.songs.length') === 3, 'Hinzufuegen: dasselbe Album zweimal bleibt dasselbe');
+
+  /* Und es ueberlebt das Neuladen */
+  const w9b = makeWindow({ 'songrate:playlist': w9.localStorage.getItem('songrate:playlist') });
+  await waitFor(() => !w9b.document.querySelector('#app').hidden);
+  assert(w9b.__ev('PL.songs.length') === 3, 'Hinzufuegen: die Playlist ist nach dem Neuladen noch da');
 
   /* -------------------------------------------------- Eigene Musik */
   /* Dateien vom Geraet: nichts wird hochgeladen, Titel und Kuenstler kommen

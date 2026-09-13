@@ -81,6 +81,7 @@ main{
 }
 .btn-ghost:hover{background:var(--panel-2);color:var(--text)}
 
+.btn-list{margin-top:8px}
 .left-panels{margin-top:12px}
 .left-panels .panel{margin-bottom:12px}
 .round-score{margin-top:22px;padding:14px 16px;border-radius:var(--r);background:var(--panel);display:flex;justify-content:space-between;align-items:baseline}
@@ -315,6 +316,15 @@ details.panel[open] > summary .psum{opacity:.55}
 .arhit .nm{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .arhit .sub{font-size:11px;color:var(--grey);white-space:nowrap}
 
+/* Suchfeld im Playlist-Panel - wie das im Kuenstlerpanel. */
+#plPanel #plFind{
+  width:100%;padding:8px 11px;margin-top:6px;border-radius:9px;background:var(--panel-2);
+  border:1px solid var(--line);color:var(--text);font:inherit;font-size:12.5px;outline:none;
+}
+#plPanel #plFind:focus{border-color:var(--green-dim)}
+#plHits{max-height:230px;margin-top:6px}
+#plHits:empty{display:none}
+
 /* ---------- Mediathek-Server ---------- */
 .srv{display:flex;flex-direction:column;gap:6px;padding-bottom:4px}
 .srv input[type="url"],.srv input[type="text"],.srv input[type="password"]{
@@ -387,6 +397,51 @@ body.dragging::after{
   text-decoration:underline;text-underline-offset:3px;
 }
 .reveal-file:hover{color:var(--text)}
+
+/* ---------- Songliste ---------- */
+.reveal-card.list{
+  max-width:520px;text-align:left;display:flex;flex-direction:column;
+  max-height:min(720px,88vh);padding:20px 20px 16px;
+}
+.browse-head{display:flex;align-items:center;gap:10px;margin-bottom:12px}
+.browse-head h3{flex:1;font-size:18px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.browse-x{font-size:24px;line-height:1;color:var(--muted);padding:0 4px}
+.browse-x:hover{color:var(--text)}
+.reveal-card.list #browseSearch{
+  width:100%;margin-top:8px;padding:9px 12px;border-radius:10px;background:var(--panel-2);
+  border:1px solid var(--line);color:var(--text);font:inherit;font-size:13px;outline:none;
+}
+.reveal-card.list #browseSearch:focus{border-color:var(--green-dim)}
+#browseNote{margin:8px 0 0}
+.browse-list{
+  flex:1;min-height:120px;overflow:auto;overscroll-behavior:contain;
+  margin:8px -6px 0;padding:0 6px;
+}
+.brow{
+  display:flex;flex-wrap:wrap;align-items:center;gap:9px;padding:7px 8px;border-radius:10px;
+  font-size:13px;border-left:3px solid transparent;
+}
+.brow:hover{background:var(--panel-2)}
+.brow.gone{opacity:.55}
+.brow .bt{flex:1;min-width:0}
+.brow .bt b{display:block;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.brow .bt span{display:block;color:var(--muted);font-size:11.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.brow .bact{display:flex;gap:2px;flex:none}
+.brow .bact button{
+  width:30px;height:30px;border-radius:8px;color:var(--muted);display:grid;place-items:center;
+  font-size:13px;transition:.12s;
+}
+.brow .bact button:hover{background:var(--panel);color:var(--text)}
+.brow .bact button.on{color:var(--green)}
+.brow .blinks{flex:0 0 100%;order:9;padding:2px 0 6px}
+.browse-foot{display:flex;align-items:center;gap:12px;margin-top:12px;padding-top:12px;border-top:1px solid var(--line)}
+.browse-foot .pl-link{flex:1}
+.browse-foot .btn-action{padding:10px 22px}
+.brow-more{
+  width:100%;padding:9px 0;margin-top:4px;color:var(--muted);font-size:12px;
+  border-radius:9px;background:var(--panel-2);
+}
+.brow-more:hover{color:var(--text)}
 
 /* ---------- Nachhoeren bei ---------- */
 .svc-head{font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--grey);margin:-4px 0 8px}
