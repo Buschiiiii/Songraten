@@ -707,19 +707,27 @@ Vor dem Commit prüft ein Schritt die Datei: mindestens 1900 Songs, jeder mit
 Titel und Preview, und nie weniger als vorher. Lieber nichts committen als eine
 halbe `songs.json` ausliefern — die Seite bliebe weiß.
 
-**Er läuft.** Seit dem 5. September legt jeder Tag etwas nach: 2733 → 4222
-Songs, die 1960er bis 1990er stehen jetzt bei je rund 460 statt bei 66 bis
-174. Der Guard hat unterwegs nichts abgelehnt.
+**Er läuft.** Seit dem 5. September legt jeder Tag etwas nach. Der Guard hat
+unterwegs nichts abgelehnt.
 
-Zwei Dinge, die dabei aufgefallen sind:
+Eine Sache, die dabei aufgefallen ist: `built` blieb auf dem Tag des letzten
+Chartsneubaus stehen, weil `add_decades.py` die Datei nur ergänzt. Setzt es
+jetzt selbst.
 
-- `built` blieb auf dem Tag des letzten Chartsneubaus stehen, weil
-  `add_decades.py` die Datei nur ergänzt. Setzt es jetzt selbst.
-- Die **Track-ID `k` fehlt den Chartsongs**: `match_local.py` schreibt sie
-  zwar mit, ist aber seit der Änderung nicht mehr gelaufen — das passiert nur
-  bei *Charts neu bauen*. Die täglich dazukommenden Songs haben sie, deshalb
-  1267 von 4222. Ein manueller Lauf von *Charts neu bauen* holt den Rest nach;
-  ohne `k` gibt es nur die Suchlinks statt der genauen.
+**Stand nach dem Chartsneubau vom 13. September** (der erste, der
+zusammenführt statt zu ersetzen):
+
+| | 4. Sept. | 13. Sept. |
+|---|---|---|
+| Songs | 2733 | **5224** |
+| davon mit Stufe | 1917 | **2977** |
+| mit Track-ID `k` | 0 | **3679** |
+
+Die 1950er bis 1990er liegen bei je 460 bis 490 statt bei 66 bis 174, und
+jede Stufe hat zwischen 431 und 729 Songs. Die Track-ID fehlte den Chartsongs
+vorher komplett, weil `match_local.py` sie erst seit der Änderung mitschreibt
+und nur bei *Charts neu bauen* läuft — ohne sie gibt es nur Suchlinks statt
+der genauen.
 
 Was der erste echte Lauf gezeigt hat:
 
@@ -775,6 +783,14 @@ Zwei Actions-Caches, zwei Präfixe: `songraten-cache-` (täglicher Lauf, nur
 sieht die Titelsuchen des täglichen Laufs also **nicht** — `restore-keys`
 stellt immer nur einen Cache wieder her. Deshalb der Umweg über die alte
 Datei statt über den Cache.
+
+### Action-Versionen
+
+`checkout@v7`, `setup-python@v7`, `cache/restore@v6` und `cache/save@v6` —
+alle auf Node 24. Die Vorgänger (v4/v5) liefen noch auf Node 20 und wurden von
+GitHub mit einer Warnung zwangsweise auf Node 24 gehoben; das funktionierte,
+war aber auf Dauer keine Grundlage. Beim Anheben nachsehen, was aktuell ist,
+statt eine Nummer zu raten.
 
 ### Ein gescheiterter Lauf muss seine Kataloge behalten
 

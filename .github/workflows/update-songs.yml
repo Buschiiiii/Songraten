@@ -35,9 +35,9 @@ jobs:
     timeout-minutes: 45
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.12'
 
@@ -46,7 +46,7 @@ jobs:
       # faellt bei einem fehlgeschlagenen Job aus. Die Titelsuchen dieses
       # Laufs waeren dann umsonst gewesen.
       - name: Cache holen
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v6
         with:
           path: .cache
           key: songraten-cache-${{ github.run_id }}
@@ -68,7 +68,7 @@ jobs:
       # bleibt weiss, wenn songs.json kaputt ist.
       - name: Gefundene Titel sichern
         if: always()
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v6
         with:
           path: .cache
           key: songraten-cache-${{ github.run_id }}
