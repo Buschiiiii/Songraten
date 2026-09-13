@@ -61,9 +61,15 @@ jobs:
       - name: songs.json bauen
         run: python3 tools/match_local.py
 
-      # Der Neubau kennt die per add_decades geholten Songs nicht. Dank Cache
-      # kostet das Wiederherstellen keine einzige neue Anfrage.
-      - name: Jahrzehnte wieder anhaengen
+      # Der Neubau kennt die per add_decades geholten Songs nicht - die
+      # stehen aber noch in der alten Datei und werden von dort uebernommen.
+      # Sie neu zu suchen kostet je Song eine Anfrage bei Apple, und davon
+      # kaeme aus GitHubs Rechenzentren nur ein Bruchteil zurueck.
+      - name: Jahrzehnte aus der alten Datei uebernehmen
+        run: python3 tools/keep_extras.py
+
+      # Und danach noch holen, was seitdem dazugekommen ist.
+      - name: Jahrzehnte nachlegen
         run: python3 tools/add_decades.py 600
 
       - name: Doppelte zusammenfuehren
@@ -93,6 +99,11 @@ jobs:
           assert len(mit_stufe) >= vorher_stufe * 0.99, (
               f'{vorher_stufe} -> {len(mit_stufe)} Songs mit Stufe: der Lauf hat welche verloren, '
               'vermutlich fehlen Kataloge. Nichts committet.')
+          # Dasselbe fuer den Gesamtbestand: die Jahrzehnt-Songs sind ueber
+          # Wochen zusammengekommen, ein Neubau darf sie nicht wegwerfen.
+          assert len(songs) >= len(frueher) * 0.99, (
+              f'{len(frueher)} -> {len(songs)} Songs insgesamt: der Lauf hat welche verloren. '
+              'Nichts committet.')
           print(f'{len(frueher)} -> {len(songs)} Songs, davon {vorher_stufe} -> {len(mit_stufe)} mit Stufe')
           PY
 

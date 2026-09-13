@@ -174,6 +174,61 @@ def decades():
         shutil.rmtree(d, ignore_errors=True)
 
 
+def rebuild_keeps_extras():
+    """Ein Chartsneubau darf die ueber Wochen gesammelten Jahrzehnt-Songs
+       nicht wegwerfen. match_local.py baut songs.json komplett neu und kennt
+       sie nicht - keep_extras.py holt sie aus der alten Datei zurueck."""
+    d = tempfile.mkdtemp()
+    try:
+        alt = {
+            'v': 2, 'built': '2026-01-01', 'tiers': ['easy'],
+            'artists': ['Toto', 'Sia', 'Gaste'],
+            'songs': [
+                {'t': 'Unstoppable', 'a': 'Sia', 'ar': [1], 'y': 2016, 'g': 'Pop',
+                 's': 2000000000, 'd': 'easy', 'p': 'x', 'c': 'y'},
+                {'t': 'Africa', 'a': 'Toto', 'ar': [0], 'y': 1982, 'g': 'Rock',
+                 's': 0, 'r': 3, 'd': '', 'p': 'x', 'c': 'y'},
+                {'t': 'Rosanna', 'a': 'Toto', 'ar': [0, 2], 'y': 1982, 'g': 'Rock',
+                 's': 0, 'r': 9, 'd': '', 'p': 'x', 'c': 'y'},
+            ],
+        }
+        # So sieht der Neubau aus: nur Chartsongs, eigene Kuenstlerliste in
+        # anderer Reihenfolge - genau da gehen IDs sonst schief.
+        neu = {
+            'v': 2, 'built': '2026-02-02', 'tiers': ['easy'],
+            'artists': ['Sia'],
+            'songs': [{'t': 'Unstoppable', 'a': 'Sia', 'ar': [0], 'y': 2016, 'g': 'Pop',
+                       's': 2000000000, 'd': 'easy', 'p': 'x', 'c': 'y'}],
+        }
+        json.dump(alt, open(os.path.join(d, 'alt.json'), 'w'), ensure_ascii=False)
+        json.dump(neu, open(os.path.join(d, 'neu.json'), 'w'), ensure_ascii=False)
+
+        r = run('keep_extras.py', os.path.join(d, 'alt.json'), os.path.join(d, 'neu.json'))
+        check(r.returncode == 0, 'keep_extras.py laeuft durch'
+              + ('' if r.returncode == 0 else ': ' + r.stderr.strip()[-300:]))
+
+        out = json.load(open(os.path.join(d, 'neu.json'), encoding='utf-8'))
+        titel = {s['t']: s for s in out['songs']}
+        check(len(out['songs']) == 3, f'die Jahrzehnt-Songs sind wieder da (jetzt {len(out["songs"])})')
+        check(titel['Africa']['r'] == 3 and titel['Africa']['d'] == '',
+              'mit Jahresplatz und ohne Stufe')
+        namen = [out['artists'][a] for a in titel['Rosanna']['ar']]
+        check(namen == ['Toto', 'Gaste'], f'die Kuenstler-IDs zeigen richtig ({namen})')
+        check(all(a < len(out['artists']) for s in out['songs'] for a in s['ar']),
+              'keine ID zeigt ins Leere')
+        check(all(s.get('f') is not None for s in out['songs']), 'Bekanntheit neu gerechnet')
+
+        # Zweimal laufen aendert nichts.
+        run('keep_extras.py', os.path.join(d, 'alt.json'), os.path.join(d, 'neu.json'))
+        out2 = json.load(open(os.path.join(d, 'neu.json'), encoding='utf-8'))
+        check(len(out2['songs']) == 3, f'ein zweiter Lauf doppelt nichts (jetzt {len(out2["songs"])})')
+
+        # Was der Neubau selbst gefunden hat, gewinnt.
+        check(titel['Unstoppable']['s'] == 2000000000, 'Chartsongs bleiben die des Neubaus')
+    finally:
+        shutil.rmtree(d, ignore_errors=True)
+
+
 if __name__ == '__main__':
     print('Selbsttests der Skripte')
     selftests()
@@ -181,5 +236,7 @@ if __name__ == '__main__':
     pipeline()
     print('\nJahrzehnte nachtragen')
     decades()
+    print('\nChartsneubau wirft nichts weg')
+    rebuild_keeps_extras()
     print('\n' + (f'{len(fails)} Fehler' if fails else 'Pipeline in Ordnung'))
     sys.exit(1 if fails else 0)

@@ -659,7 +659,8 @@ Playlist"). Das steht jetzt in der Zeile (`filterScope()`) — eine lange
 wie von Apple, Kandidaten wie von kworb, zwei Jahrescharts-Zeilen), lässt
 `match_local.py` darauf laufen und prüft das Ergebnis: Stufen aus den
 Streamgrenzen, Jahrescharts-Songs ohne Stufe mit Jahresplatz, Künstler-IDs,
-Bekanntheit, zusammengeführte Doppel. Dazu laufen die `--selftest`-Parser aller
+Bekanntheit, zusammengeführte Doppel. Dazu, dass ein Chartsneubau die
+Jahrzehnt-Songs behält und ihre Künstler-IDs richtig umnummeriert. Dazu laufen die `--selftest`-Parser aller
 Skripte. Beide Workflows starten damit, bevor sie irgendwo anfragen.
 
 ## Testen der Tags ohne Musikdateien
@@ -735,6 +736,35 @@ an kworb, und dessen Vorstufe (`artists_top.json`, `candidates.json`, die
 HTML-Schnappschüsse in `.cache`) liegt nicht im Repo. Ob Apple und Wikipedia
 aus GitHubs Rechenzentren überhaupt antworten, ist ungetestet — der erste Lauf
 zeigt es.
+
+## Ein Chartsneubau darf nichts wegwerfen
+
+`match_local.py` baut `songs.json` **komplett neu** — und kennt dabei nur, was
+kworb und die Kataloge hergeben. Die über Wochen von `add_decades.py`
+gesammelten Jahrzehnt-Songs (leeres `d`: keine Streamzahl, keine Stufe) stehen
+dort nicht drin. Beim Stand vom 13. September wären das 2305 von 4222 Songs
+gewesen, die ein Neubau stillschweigend verschluckt hätte.
+
+Sie neu zu beschaffen kostet je Song eine Anfrage bei Apple, und davon kommt
+aus GitHubs Rechenzentren nur ein Bruchteil zurück. Sie stehen aber noch in
+der alten Datei: **`tools/keep_extras.py`** liest `HEAD:data/songs.json`,
+übernimmt jeden stufenlosen Song, den der Neubau nicht selbst gefunden hat,
+und bildet dabei die Künstler-IDs auf die neue Künstlerliste ab — die Nummern
+zeigen in zwei Dateien woandershin, das ist die Stelle, an der es sonst
+kaputtgeht. Danach `ensure_ids`, `merge_duplicates`, `add_fame`. Chartsongs
+bleiben die des Neubaus.
+
+Der Schritt steht in `rebuild-charts.yml` **vor** `add_decades.py` (das holt
+danach nur noch, was seitdem dazugekommen ist). Und die Prüfung vor dem Commit
+verlangt jetzt auch für den **Gesamtbestand** mindestens 99 % des bisherigen,
+nicht nur für die Chartsongs — genau dieser Fall wäre sonst durchgerutscht,
+weil die Chartsongs ja vollzählig gewesen wären.
+
+Zwei Actions-Caches, zwei Präfixe: `songraten-cache-` (täglicher Lauf, nur
+`.cache`) und `songraten-charts-` (Neubau, `.cache` + `catalogs`). Der Neubau
+sieht die Titelsuchen des täglichen Laufs also **nicht** — `restore-keys`
+stellt immer nur einen Cache wieder her. Deshalb der Umweg über die alte
+Datei statt über den Cache.
 
 ## Offene Punkte
 
