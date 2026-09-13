@@ -192,13 +192,18 @@ def rebuild_keeps_extras():
                  's': 0, 'r': 9, 'd': '', 'p': 'x', 'c': 'y'},
             ],
         }
-        # So sieht der Neubau aus: nur Chartsongs, eigene Kuenstlerliste in
-        # anderer Reihenfolge - genau da gehen IDs sonst schief.
+        # So sieht ein gedrosselter Neubau aus: der Katalog von Queen fehlt,
+        # also fehlt auch "Bohemian Rhapsody" - und die Kuenstlerliste ist
+        # eine andere, genau da gehen die IDs sonst schief. Die Streamzahl
+        # von "Unstoppable" ist frisch.
+        alt['artists'].append('Queen')
+        alt['songs'].append({'t': 'Bohemian Rhapsody', 'a': 'Queen', 'ar': [3], 'y': 1975,
+                             'g': 'Rock', 's': 900000000, 'd': 'easy', 'p': 'x', 'c': 'y'})
         neu = {
             'v': 2, 'built': '2026-02-02', 'tiers': ['easy'],
             'artists': ['Sia'],
             'songs': [{'t': 'Unstoppable', 'a': 'Sia', 'ar': [0], 'y': 2016, 'g': 'Pop',
-                       's': 2000000000, 'd': 'easy', 'p': 'x', 'c': 'y'}],
+                       's': 2200000000, 'd': 'easy', 'p': 'x', 'c': 'y'}],
         }
         json.dump(alt, open(os.path.join(d, 'alt.json'), 'w'), ensure_ascii=False)
         json.dump(neu, open(os.path.join(d, 'neu.json'), 'w'), ensure_ascii=False)
@@ -209,7 +214,11 @@ def rebuild_keeps_extras():
 
         out = json.load(open(os.path.join(d, 'neu.json'), encoding='utf-8'))
         titel = {s['t']: s for s in out['songs']}
-        check(len(out['songs']) == 3, f'die Jahrzehnt-Songs sind wieder da (jetzt {len(out["songs"])})')
+        check(len(out['songs']) == 4, f'die Jahrzehnt-Songs sind wieder da (jetzt {len(out["songs"])})')
+        check('Bohemian Rhapsody' in titel and titel['Bohemian Rhapsody']['d'] == 'easy',
+              'ein Chartsong ohne Katalog geht auch nicht verloren')
+        check([out['artists'][a] for a in titel['Bohemian Rhapsody']['ar']] == ['Queen'],
+              'und behaelt seinen Kuenstler')
         check(titel['Africa']['r'] == 3 and titel['Africa']['d'] == '',
               'mit Jahresplatz und ohne Stufe')
         namen = [out['artists'][a] for a in titel['Rosanna']['ar']]
@@ -221,10 +230,12 @@ def rebuild_keeps_extras():
         # Zweimal laufen aendert nichts.
         run('keep_extras.py', os.path.join(d, 'alt.json'), os.path.join(d, 'neu.json'))
         out2 = json.load(open(os.path.join(d, 'neu.json'), encoding='utf-8'))
-        check(len(out2['songs']) == 3, f'ein zweiter Lauf doppelt nichts (jetzt {len(out2["songs"])})')
+        check(len(out2['songs']) == 4, f'ein zweiter Lauf doppelt nichts (jetzt {len(out2["songs"])})')
 
-        # Was der Neubau selbst gefunden hat, gewinnt.
-        check(titel['Unstoppable']['s'] == 2000000000, 'Chartsongs bleiben die des Neubaus')
+        # Was der Neubau selbst gefunden hat, gewinnt - mitsamt frischer
+        # Streamzahl. Sonst waere ein Neubau sinnlos.
+        check(titel['Unstoppable']['s'] == 2200000000,
+              'der Neubau gewinnt, wo er etwas gefunden hat')
     finally:
         shutil.rmtree(d, ignore_errors=True)
 

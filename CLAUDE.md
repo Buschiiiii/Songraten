@@ -745,14 +745,22 @@ gesammelten Jahrzehnt-Songs (leeres `d`: keine Streamzahl, keine Stufe) stehen
 dort nicht drin. Beim Stand vom 13. September wären das 2305 von 4222 Songs
 gewesen, die ein Neubau stillschweigend verschluckt hätte.
 
-Sie neu zu beschaffen kostet je Song eine Anfrage bei Apple, und davon kommt
-aus GitHubs Rechenzentren nur ein Bruchteil zurück. Sie stehen aber noch in
-der alten Datei: **`tools/keep_extras.py`** liest `HEAD:data/songs.json`,
-übernimmt jeden stufenlosen Song, den der Neubau nicht selbst gefunden hat,
-und bildet dabei die Künstler-IDs auf die neue Künstlerliste ab — die Nummern
-zeigen in zwei Dateien woandershin, das ist die Stelle, an der es sonst
-kaputtgeht. Danach `ensure_ids`, `merge_duplicates`, `add_fame`. Chartsongs
-bleiben die des Neubaus.
+Und es bleibt nicht dabei: auch **Chartsongs** verliert ein gedrosselter Lauf,
+nämlich die, deren Künstlerkatalog nicht durchkam. Am 13. September waren das
+54 von 1917 — genug, dass die Prüfung den Commit verweigerte.
+
+Beides steht noch in der alten Datei. **`tools/keep_extras.py`** liest
+`HEAD:data/songs.json` und übernimmt **jeden** Song, den der Neubau nicht
+selbst gefunden hat, und bildet dabei die Künstler-IDs auf die neue
+Künstlerliste ab — die Nummern zeigen in zwei Dateien woandershin, das ist die
+Stelle, an der es sonst kaputtgeht. Danach `ensure_ids`, `merge_duplicates`,
+`add_fame`.
+
+**Damit ist ein Neubau kein Ersetzen mehr, sondern ein Zusammenführen:** was
+der Lauf gefunden hat, gewinnt und bringt frische Streamzahlen mit; was er
+nicht gefunden hat, bleibt mit seinen alten Werten stehen, statt zu
+verschwinden. Genau deshalb kommt ein Neubau jetzt überhaupt durch — vorher
+scheiterte er an seinen eigenen Lücken.
 
 Der Schritt steht in `rebuild-charts.yml` **vor** `add_decades.py` (das holt
 danach nur noch, was seitdem dazugekommen ist). Im Lauf vom 13. September hat
@@ -785,15 +793,18 @@ seine Kataloge trotzdem da, und der nächste baut darauf auf.
 
 ## Offene Punkte
 
-1. **Apple drosselt den Katalog-Schritt.** *Charts neu bauen* lief durch, aber
-   in 25 Minuten kamen nicht alle Kataloge zusammen — der erste Neubau hatte
-   35 Chartsongs weniger, „Bohemian Rhapsody" verlor dabei seine Stufe. Die
-   Prüfung lässt so einen Lauf nicht mehr durch (weniger als 99 % der
-   bisherigen Chartsongs = kein Commit). Der Weg zu einem vollständigen
-   Bestand sind mehrere Läufe hintereinander — was seit dem getrennten
-   Cache-Speichern (siehe oben) auch wirklich funktioniert. Das Zeitbudget für
-   die Kataloge steht auf 2700 s (45 min); mehr passt nicht ins Timeout von 90
-   Minuten, weil kworb 12 und `add_decades` 10 Minuten brauchen.
+1. **Apple drosselt den Katalog-Schritt** — in 30 bis 45 Minuten kommen nicht
+   alle Kataloge zusammen. Das kostet jetzt keinen Bestand mehr (`keep_extras`
+   trägt Fehlendes aus der alten Datei nach), aber die betroffenen Songs
+   behalten ihre alten Streamzahlen, bis ihr Katalog einmal durchkommt. Über
+   mehrere Läufe holt sich das ein, seit ein gescheiterter Lauf seine Kataloge
+   im Cache lässt. Zeitbudget: 2700 s (45 min); mehr passt nicht ins Timeout
+   von 90 Minuten, weil kworb 12 und `add_decades` 10 Minuten brauchen.
+
+   Die Prüfung (99 % der Chartsongs, 99 % des Gesamtbestands) bleibt als Netz
+   für echte Ausfälle — kworb baut seine Tabellen um, Apple antwortet gar
+   nicht. Sie sollte jetzt nicht mehr regelmäßig auslösen; tut sie es doch,
+   ist wirklich etwas kaputt.
 2. **Playlist-Modus.** Steht (siehe oben). Offen bleibt: die Trefferquote der
    iTunes-Suche ist bei Remixen und Live-Versionen mager. Wie lange Apple nach
    einem 403 wirklich dichthält, ist nicht dokumentiert — die Wartestufen sind
