@@ -755,7 +755,9 @@ kaputtgeht. Danach `ensure_ids`, `merge_duplicates`, `add_fame`. Chartsongs
 bleiben die des Neubaus.
 
 Der Schritt steht in `rebuild-charts.yml` **vor** `add_decades.py` (das holt
-danach nur noch, was seitdem dazugekommen ist). Und die Prüfung vor dem Commit
+danach nur noch, was seitdem dazugekommen ist). Im Lauf vom 13. September hat
+er getan, was er soll: aus 1863 frisch gebauten Chartsongs wurden 4032, statt
+dass 2305 Songs verschwinden. Und die Prüfung vor dem Commit
 verlangt jetzt auch für den **Gesamtbestand** mindestens 99 % des bisherigen,
 nicht nur für die Chartsongs — genau dieser Fall wäre sonst durchgerutscht,
 weil die Chartsongs ja vollzählig gewesen wären.
@@ -766,15 +768,32 @@ sieht die Titelsuchen des täglichen Laufs also **nicht** — `restore-keys`
 stellt immer nur einen Cache wieder her. Deshalb der Umweg über die alte
 Datei statt über den Cache.
 
+### Ein gescheiterter Lauf muss seine Kataloge behalten
+
+`actions/cache` sichert erst in seinem **Post-Schritt** — und der wird
+übersprungen, wenn der Job fehlschlägt. Genau das ist im Lauf vom 13.
+September passiert: 30 Minuten Kataloge geholt, danach an der Prüfung
+gescheitert (1917 → 1863 Chartsongs), Cache verworfen. Der nächste Lauf hätte
+wieder beim Stand vom 4. September angefangen und wäre genauso gescheitert —
+eine Schleife ohne Fortschritt. Das erklärt rückblickend, warum „mehrere Läufe
+hintereinander" als Rezept nie gegriffen hat.
+
+Deshalb sind `restore` und `save` in beiden Workflows getrennt: *Cache holen*
+(`actions/cache/restore`) am Anfang, *Kataloge sichern* (`actions/cache/save`,
+`if: always()`) **vor** der Prüfung. Ein Lauf, der nichts committen darf, lässt
+seine Kataloge trotzdem da, und der nächste baut darauf auf.
+
 ## Offene Punkte
 
 1. **Apple drosselt den Katalog-Schritt.** *Charts neu bauen* lief durch, aber
    in 25 Minuten kamen nicht alle Kataloge zusammen — der erste Neubau hatte
    35 Chartsongs weniger, „Bohemian Rhapsody" verlor dabei seine Stufe. Die
-   Prüfung lässt so einen Lauf inzwischen nicht mehr durch (weniger als 99 %
-   der bisherigen Chartsongs = kein Commit), aber der eigentliche Weg zu einem
-   vollständigen Bestand sind mehrere Läufe hintereinander: der Cache behält
-   die Kataloge.
+   Prüfung lässt so einen Lauf nicht mehr durch (weniger als 99 % der
+   bisherigen Chartsongs = kein Commit). Der Weg zu einem vollständigen
+   Bestand sind mehrere Läufe hintereinander — was seit dem getrennten
+   Cache-Speichern (siehe oben) auch wirklich funktioniert. Das Zeitbudget für
+   die Kataloge steht auf 2700 s (45 min); mehr passt nicht ins Timeout von 90
+   Minuten, weil kworb 12 und `add_decades` 10 Minuten brauchen.
 2. **Playlist-Modus.** Steht (siehe oben). Offen bleibt: die Trefferquote der
    iTunes-Suche ist bei Remixen und Live-Versionen mager. Wie lange Apple nach
    einem 403 wirklich dichthält, ist nicht dokumentiert — die Wartestufen sind

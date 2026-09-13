@@ -19,7 +19,10 @@ on:
         default: '700'
       catalog_seconds:
         description: 'Sekunden fuer die Kataloge bei Apple'
-        default: '1800'
+        # 45 statt 30 Minuten: mit kworb (12) und add_decades (10) bleibt das
+        # unter dem Timeout von 90, und je mehr Kataloge ein Lauf schafft,
+        # desto eher kommt der Bestand vollstaendig zusammen.
+        default: '2700'
 
 permissions:
   contents: write
@@ -40,8 +43,13 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Cache
-        uses: actions/cache@v4
+      # Bewusst restore und save getrennt: `actions/cache` sichert erst im
+      # Post-Schritt, und der wird bei einem fehlgeschlagenen Job
+      # uebersprungen. Genau das ist passiert - ein Lauf holte 30 Minuten
+      # lang Kataloge, scheiterte danach an der Pruefung und warf sie weg.
+      # Der naechste Lauf fing wieder bei null an und scheiterte genauso.
+      - name: Cache holen
+        uses: actions/cache/restore@v4
         with:
           path: |
             .cache
@@ -74,6 +82,18 @@ jobs:
 
       - name: Doppelte zusammenfuehren
         run: python3 tools/clean_songs.py
+
+      # Vor der Pruefung, und mit always(): auch ein Lauf, der am Ende nichts
+      # committen darf, soll seine Kataloge dalassen. So kommt der Bestand
+      # ueber mehrere Laeufe zusammen, statt bei jedem Versuch zu verpuffen.
+      - name: Kataloge sichern
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            .cache
+            catalogs
+          key: songraten-charts-${{ github.run_id }}
 
       - name: Datei pruefen
         run: |

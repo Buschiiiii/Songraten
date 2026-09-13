@@ -42,8 +42,11 @@ jobs:
           python-version: '3.12'
 
       # Gefundene Titel und geladene Wikipedia-Seiten ueberleben so den Lauf.
-      - name: Cache
-        uses: actions/cache@v4
+      # Getrennt, weil `actions/cache` erst im Post-Schritt sichert - und der
+      # faellt bei einem fehlgeschlagenen Job aus. Die Titelsuchen dieses
+      # Laufs waeren dann umsonst gewesen.
+      - name: Cache holen
+        uses: actions/cache/restore@v4
         with:
           path: .cache
           key: songraten-cache-${{ github.run_id }}
@@ -63,6 +66,13 @@ jobs:
 
       # Lieber nichts committen als eine halbe Datei ausliefern: die Seite
       # bleibt weiss, wenn songs.json kaputt ist.
+      - name: Gefundene Titel sichern
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: .cache
+          key: songraten-cache-${{ github.run_id }}
+
       - name: Datei pruefen
         run: |
           python3 - <<'PY'
