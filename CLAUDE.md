@@ -662,7 +662,11 @@ Playlist"). Das steht jetzt in der Zeile (`filterScope()`) — eine lange
    zeigt es nur, wenn mehr als ein Modus bespielt wurde.
 10. localStorage-Schlüssel: `songrate:settings` (enthält auch `filters`),
    `songrate:stats`,
-   `songrate:recent` (letzte 60 Songs, gegen Wiederholungen),
+   `songrate:recent` (letzte 60 Songs, gegen Wiederholungen — als
+   `songKey()`, **nicht** als Nummer im Pool: die verschiebt sich bei jedem
+   Datenlauf, nach dem Update vom 13. September zeigten davon noch 26 von
+   4222 auf denselben Song, und die Liste sperrte sechzig zufällige statt der
+   gespielten),
    `songrate:playlist` (aufgelöste Playlist), `songrate:artists`
    (geladene Künstlerkataloge), `songrate:localmeta` (gelesene Tags der
    eigenen Musik), `songrate:server` (Zugang zum Mediathek-Server),

@@ -80,7 +80,12 @@ const SUG_PAGE = 12;      /* so viele kommen pro Nachladen dazu */
 function load(k, d) { try { return { ...d, ...JSON.parse(localStorage.getItem('songrate:' + k) || '{}') }; } catch (e) { return d; } }
 function loadArr(k) { try { return JSON.parse(localStorage.getItem('songrate:' + k) || '[]'); } catch (e) { return []; } }
 function save(k, v) { try { localStorage.setItem('songrate:' + k, JSON.stringify(v)); } catch (e) {} }
-recent = loadArr('recent');
+/* Frueher standen hier die Nummern der Songs in songs.json. Die verschieben
+   sich bei jedem Datenlauf: nach dem Update vom 13. September zeigten davon
+   noch 26 von 4222 auf denselben Song. Die Liste sperrte also nicht die
+   zuletzt gespielten, sondern sechzig zufaellige. Jetzt steht dort derselbe
+   Schluessel wie in der Blockliste, und alte Zahlen fliegen raus. */
+recent = loadArr('recent').filter(x => typeof x === 'string');
 
 const norm = s => (s || '').toLowerCase()
   .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
@@ -420,7 +425,7 @@ function drawSong(tier, used) {
   let pool = (byTier[tier] || []).filter(s => !used.has(s.i));
   if (!pool.length) pool = activePool().filter(s => !used.has(s.i));
   if (!pool.length) return null;
-  const fresh = pool.filter(s => !recent.includes(s.i));
+  const fresh = pool.filter(s => !recent.includes(songKey(s)));
   const arr = fresh.length > 20 ? fresh : pool;
   return arr[Math.floor(Math.random() * arr.length)];
 }
@@ -456,7 +461,7 @@ function newRound() {
     };
   });
   if (mode !== 'playlist' && mode !== 'local') {
-    recent = [...round.map(r => r.song && r.song.i).filter(x => x != null), ...recent].slice(0, RECENT_MAX);
+    recent = [...round.map(r => r.song && songKey(r.song)).filter(Boolean), ...recent].slice(0, RECENT_MAX);
     save('recent', recent);
   }
   active = 0;

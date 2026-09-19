@@ -309,6 +309,24 @@ const dummy = n => ({ t: 'Song ' + n, a: 'Kuenstler ' + n, al: 'Album', y: 2020,
   G('newRound()'); await tick(30);
   assert(G('round').every(r => r.status === 'playing'), 'Neu wuerfeln: alles auf Anfang');
 
+  /* ----------------------------------------- Keine Wiederholungen */
+  /* Die Liste der zuletzt gespielten haengt an Titel und Kuenstler, nicht an
+     der Nummer im Pool - die verschiebt sich bei jedem Datenlauf. */
+  G('newRound()'); await tick(30);
+  const gespielt = G('round.map(r => r.song.t)');
+  for (let i = 0; i < 5; i++) { G('choose(round[active].song); submit()'); await tick(10); G('closeReveal()'); await tick(10); }
+  assert(G('recent').every(x => typeof x === 'string'),
+    'Wiederholungen: gemerkt wird ein Schluessel aus Titel und Kuenstler');
+  assert(gespielt.every(t => G('recent').some(k => k.startsWith(G('norm')(t) + '|'))),
+    'Wiederholungen: die gerade gespielten stehen drin');
+  $('#summaryNext').click(); await tick(30);
+
+  const altStand = JSON.stringify([12, 34, 56]);
+  const wAlt2 = makeWindow({ 'songrate:recent': altStand });
+  await waitFor(() => !wAlt2.document.querySelector('#app').hidden);
+  assert(wAlt2.__ev('recent').every(x => typeof x === 'string' && x.includes('|')),
+    'Wiederholungen: alte Nummern werden verworfen, nicht als Schluessel gelesen');
+
   /* --------------------------------------------------- Ausklappbares */
   /* Neun Panels waeren eine Scrollstrecke. Zugeklappt steht das Wichtigste in
      der Zeile, aufgeklappt bleibt nur, was man wirklich braucht. */
