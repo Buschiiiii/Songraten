@@ -234,6 +234,23 @@ sonst besteht die halbe Runde aus Fassungen desselben Songs. Von Dubletten
 bleibt die **älteste** Fassung, das ist meistens das Original. Danach müssen
 mindestens `MIN_SONGS` (5) übrig sein, sonst bleibt der Modus gesperrt.
 
+**Der Titel weist keinen Künstler aus.** `tidy()` hat lange `norm(artistName)
+.includes(n) || norm(trackName).includes(n)` geprüft — und damit „A$AP &
+Rihanna" von CÉLINE in eine Rihanna-Runde gelassen, einen deutschen Rapsong.
+`belongs()` prüft jetzt drei Dinge, alle eng: Apples `artistId` trifft, der
+Name steht als **eigenes Wort** im Künstlerfeld (`wort()` setzt Leerzeichen
+als Grenze, was nach `norm()` reicht), oder er steht **hinter einer
+Feature-Angabe** im Titel (`feat.`, `ft.`, `featuring`, `with`). Ein Name
+irgendwo im Titel zählt nicht mehr.
+
+**Fassungen, die man am Anfang nicht unterscheiden kann.** „Only Girl (In the
+World)" und „Only Girl (In the World) [Extended Club]" klingen die ersten
+Sekunden identisch — die Wahl zwischen beiden wäre geraten, nicht gewusst.
+`plain()` gruppiert deshalb nach dem Titel **ohne angehängte Klammerzusätze**
+(`base()`, mehrfach angewandt, weil der Extended-Titel zwei davon hat) und
+behält je Gruppe den kürzesten Titel. Gibt es nur die eine Fassung, bleibt sie
+— die Regel wirft nie den einzigen Vertreter weg.
+
 **Keine Stufen, fünf zufällige Songs.** Nach Bekanntheit sortieren ginge nur
 über die Streamzahlen, die es hier nicht gibt — und wäre auch falsch: bei einem
 Künstler mit einem einzigen großen Hit wäre der als Easy sofort geraten.

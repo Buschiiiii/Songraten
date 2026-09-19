@@ -118,6 +118,11 @@ function makeWindow(store, patchDb) {
       songs.push({ trackName: 'Katalogsong 1 (Live)', artistName: 'Testband', collectionName: 'Live',
                    releaseDate: '2016-01-01', trackId: 901, previewUrl: 'https://audio/live' });
       songs.push({ trackName: 'Ohne Preview', artistName: 'Testband', trackId: 902 });
+      /* Eine Clubfassung, die es auch schlicht gibt - am Anfang nicht zu
+         unterscheiden, also raus. */
+      songs.push({ trackName: 'Katalogsong 2 [Extended Club]', artistName: 'Testband',
+                   collectionName: 'Album', releaseDate: '2015-06-01', trackId: 903,
+                   previewUrl: 'https://audio/club' });
       return { ok: true, status: 200, json: async () => ({ results: songs }) };
     }
     /* Gastauftritte: entity=song ohne attribute. Die Playlist-Suche sieht
@@ -130,6 +135,10 @@ function makeWindow(store, patchDb) {
           releaseDate: '2018-01-01', primaryGenreName: 'Pop', trackId: 500,
           previewUrl: 'https://audio/g1', artworkUrl100: 'https://art/g/100x100bb.jpg' },
         { trackName: 'Fremder Song', artistName: 'Ganz Andere', trackId: 501, previewUrl: 'https://audio/g2' },
+        /* Der Fall aus dem Spiel: ein fremder Song, der den gesuchten
+           Kuenstler nur im Titel nennt. */
+        { trackName: 'Testband & Wer Anders', artistName: 'Dritte Band', collectionName: 'Y',
+          releaseDate: '2022-01-01', trackId: 502, previewUrl: 'https://audio/g3' },
       ] }) };
     }
     /* ---- song.link: die genauen Adressen je Dienst ---- */
@@ -796,6 +805,11 @@ const dummy = n => ({ t: 'Song ' + n, a: 'Kuenstler ' + n, al: 'Album', y: 2020,
     'Kuenstler: Katalog und Gastauftritt zusammen, ohne Dubletten (' + K('AR.songs').length + ')');
   assert(K("AR.songs.some(s => /Gastsong/.test(s.t))"), 'Kuenstler: der Gastauftritt ist dabei');
   assert(K("AR.songs.every(s => !/\\(Live\\)/.test(s.t))"), 'Kuenstler: Livefassungen fliegen raus');
+  assert(K("AR.songs.every(s => s.t !== 'Testband & Wer Anders')"),
+    'Kuenstler: ein fremder Song, der ihn nur im Titel nennt, bleibt draussen');
+  assert(K("AR.songs.some(s => s.t === 'Katalogsong 2')")
+    && K("AR.songs.every(s => !/Extended Club/.test(s.t))"),
+    'Kuenstler: gibt es den Song auch schlicht, faellt die Clubfassung weg');
   assert(K("AR.songs.every(s => s.p)"), 'Kuenstler: alles hat eine Preview');
   assert(K("AR.songs.filter(s => s.t === 'Katalogsong 1').length") === 1,
     'Kuenstler: dieselbe Nummer steht nur einmal drin');

@@ -65,21 +65,68 @@ const Artist = (() => {
     };
   }
 
+  /* Steht der Name als eigenes Wort drin? `norm` macht aus allem
+     "wort wort wort", also reichen Leerzeichen als Grenze. */
+  const wort = (heuhaufen, nadel) => ` ${heuhaufen} `.includes(` ${nadel} `);
+
+  /* Gastauftritte stehen als "(feat. X)", "ft. X" oder "with X" im Titel. */
+  const FEAT = /\b(?:feat|ft|featuring|with)\b\.?\s*/i;
+
+  /* Gehoert der Song wirklich zu diesem Kuenstler?
+
+     Der Titel allein reicht dafuer **nicht**: "A$AP & Rihanna" ist ein Song
+     von CELINE und hatte sich so in eine Rihanna-Runde geschmuggelt. Es
+     zaehlt also nur, was den Kuenstler wirklich ausweist - Apples artistId,
+     sein Name als eigenes Wort im Kuenstlerfeld, oder eine Feature-Angabe
+     im Titel, hinter der sein Name steht. */
+  function belongs(t, artist) {
+    if (artist.id != null && t.artistId === artist.id) return true;
+    const n = norm(artist.name);
+    if (wort(norm(t.artistName), n)) return true;
+    const teile = String(t.trackName || '').split(FEAT);
+    return teile.length > 1 && teile.slice(1).some(x => wort(norm(x), n));
+  }
+
   /* Dubletten: Apple fuehrt denselben Song auf Single, Album und Deluxe. Es
      bleibt die aelteste Fassung - das ist meistens das Original. */
-  function tidy(tracks, wanted) {
-    const n = norm(wanted);
+  function tidy(tracks, artist) {
     const best = new Map();
     tracks.forEach(t => {
       if (!t.previewUrl || !t.trackName) return;
-      const gehoert = norm(t.artistName).includes(n) || norm(t.trackName).includes(n);
-      if (!gehoert) return;
+      if (!belongs(t, artist)) return;
       if (BAD.test(t.trackName) || BAD.test(t.collectionName || '')) return;
       const key = norm(t.trackName);
       const alt = best.get(key);
       if (!alt || (t.releaseDate || '9') < (alt.releaseDate || '9')) best.set(key, t);
     });
-    return [...best.values()].map(toSong);
+    return plain([...best.values()]).map(toSong);
+  }
+
+  /* Der Titel ohne seine angehaengten Klammerzusaetze. Wiederholt, weil
+     "Only Girl (In the World) [Extended Club]" zwei davon hat. */
+  function base(titel) {
+    let s = String(titel || '');
+    for (let i = 0; i < 4; i++) {
+      const kurz = s.replace(/\s*[([][^)\]]*[)\]]\s*$/, '');
+      if (kurz === s) break;
+      s = kurz;
+    }
+    return norm(s) || norm(titel);
+  }
+
+  /* Fassungen, die man am Anfang nicht auseinanderhalten kann: steht
+     derselbe Song auch ohne Zusatz im Katalog, bleibt nur der schlichte.
+     "Only Girl (In the World)" und "... [Extended Club]" klingen die ersten
+     Sekunden gleich - die Wahl zwischen beiden waere geraten, nicht
+     gewusst. Gibt es nur die eine Fassung, bleibt sie natuerlich. */
+  function plain(tracks) {
+    const gruppen = new Map();
+    tracks.forEach(t => {
+      const k = base(t.trackName);
+      const alt = gruppen.get(k);
+      if (!alt || t.trackName.length < alt.trackName.length) gruppen.set(k, t);
+    });
+    return [...gruppen.values()];
   }
 
   /* Holt den Katalog. Zuerst der Cache - ein zweiter Besuch beim selben
@@ -100,7 +147,7 @@ const Artist = (() => {
       if (e.throttled) throw e;      /* der Katalog allein taugt auch */
     }
 
-    const entry = { id: artist.id, name: artist.name, songs: tidy([...katalog, ...gaeste], artist.name) };
+    const entry = { id: artist.id, name: artist.name, songs: tidy([...katalog, ...gaeste], artist) };
     if (entry.songs.length >= MIN_SONGS) store(entry);
     return entry;
   }
@@ -128,5 +175,5 @@ const Artist = (() => {
     } catch (e) {}
   }
 
-  return { find, load, all, fromCache, forget, MIN_SONGS };
+  return { find, load, all, fromCache, forget, tidy, base, MIN_SONGS };
 })();
