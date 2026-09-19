@@ -842,6 +842,15 @@ const dummy = n => ({ t: 'Song ' + n, a: 'Kuenstler ' + n, al: 'Album', y: 2020,
   assert(itunesCalls === vorher, 'Kuenstler: ein zweiter Besuch kommt aus dem Speicher');
   assert(K("Artist.all().length") === 1, 'Kuenstler: der Katalog liegt gespeichert vor');
 
+  /* Ein Katalog aus einer aelteren Fassung von tidy() enthaelt noch das,
+     was inzwischen aussortiert wird - der wird nicht wiederverwendet. */
+  const alterStand = JSON.stringify([{ id: 1, name: 'Testband', songs: [{ t: 'Altlast', a: 'X' }] }]);
+  const wAlt = makeWindow({ 'songrate:artists': alterStand });
+  await waitFor(() => !wAlt.document.querySelector('#app').hidden);
+  assert(wAlt.__ev('Artist.all().length') === 0
+    && wAlt.document.querySelector('#modeSeg [data-v="artist"]').disabled,
+    'Kuenstler: ein Katalog ohne Versionsstempel wird verworfen');
+
   /* Filter wirken auch hier, mit eigenem Regelsatz */
   const arN0 = K('pickFiltered').length;
   K(`settings.arFilters.push({ mode: 'ohne', type: 'genre', value: 'pop', text: 'Pop' }); applyFilters()`);

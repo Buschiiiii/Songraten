@@ -12,6 +12,8 @@
 const Artist = (() => {
 
   const CACHE_KEY = 'songrate:artists';
+  /* Hochzaehlen, sobald tidy() anders aussortiert - siehe all(). */
+  const CACHE_VER = 2;
   const KEEP = 12;             /* so viele Kuenstler bleiben gespeichert */
   const MIN_SONGS = 5;         /* darunter laesst sich keine Runde bauen */
   const LIMIT = 200;
@@ -147,15 +149,23 @@ const Artist = (() => {
       if (e.throttled) throw e;      /* der Katalog allein taugt auch */
     }
 
-    const entry = { id: artist.id, name: artist.name, songs: tidy([...katalog, ...gaeste], artist) };
+    const entry = { id: artist.id, name: artist.name, v: CACHE_VER,
+                    songs: tidy([...katalog, ...gaeste], artist) };
     if (entry.songs.length >= MIN_SONGS) store(entry);
     return entry;
   }
 
   /* --------------------------------------------------------- Speicher */
 
+  /* Nach einer Aenderung an `tidy()` taugen die gespeicherten Kataloge
+     nichts mehr - im Speicher stecken dann noch die Songs, die gerade erst
+     aussortiert wurden. Deshalb die Version: was nicht passt, wird beim
+     naechsten Besuch einfach neu geholt. */
   function all() {
-    try { return JSON.parse(localStorage.getItem(CACHE_KEY) || '[]'); } catch (e) { return []; }
+    try {
+      const liste = JSON.parse(localStorage.getItem(CACHE_KEY) || '[]');
+      return Array.isArray(liste) ? liste.filter(a => a && a.v === CACHE_VER) : [];
+    } catch (e) { return []; }
   }
 
   function fromCache(id) {

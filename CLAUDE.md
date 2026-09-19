@@ -256,7 +256,10 @@ behält je Gruppe den kürzesten Titel. Gibt es nur die eine Fassung, bleibt sie
 Künstler mit einem einzigen großen Hit wäre der als Easy sofort geraten.
 
 Geladene Kataloge liegen in `songrate:artists` (die letzten 12), ein zweiter
-Besuch kostet keine Anfrage. Die Pfeile oben springen durch die geladenen
+Besuch kostet keine Anfrage. Sie tragen einen **Versionsstempel**
+(`CACHE_VER`): ändert sich `tidy()`, steckt im Speicher sonst weiter genau
+das, was gerade erst aussortiert wurde — beim Hochzählen wird jeder alte
+Katalog verworfen und beim nächsten Besuch neu geholt. Die Pfeile oben springen durch die geladenen
 Künstler. Eigener Regelsatz: `settings.arFilters`.
 
 ## Playlist-Modus
