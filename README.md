@@ -356,6 +356,10 @@ zuerst:
    Titel daraus. Zwei Anfragen je Titel, nur für Titel, die sonst nirgends
    zu finden waren.
 
+Geht etwas schief, steht neben der Meldung ein kleines **?** – darüber
+fahren oder antippen sagt, was genau passiert ist: welche Adresse, welcher
+Fehler, woran es liegen kann.
+
 Apple erlaubt nur rund zwanzig Anfragen pro Minute. Die Seite hält sich
 daran, statt in die Sperre zu laufen: nach einer Sperre langsam, nach vierzig
 sauberen Anfragen wieder schneller. Unter dem Fortschritt steht, wie lange es

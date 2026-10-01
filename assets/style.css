@@ -532,6 +532,15 @@ body.dragging::after{
 }
 #spLists{max-height:260px}
 #spNote:empty{display:none}
+/* Das ?-Knoepfchen an einer Meldung: Hover zeigt die Erklaerung als Tooltip,
+   Tippen klappt sie darunter auf. */
+.why{display:inline-flex;align-items:center;justify-content:center;width:17px;height:17px;margin-left:6px;padding:0;
+  border:1px solid var(--line);border-radius:50%;background:var(--panel-2);color:var(--grey);
+  font:600 11px/1 inherit;font-family:inherit;cursor:pointer;vertical-align:-3px}
+.why:hover{color:var(--text);border-color:var(--text)}
+.whybox{display:block;margin:7px 0 2px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;
+  background:var(--panel-2);color:var(--text);font-size:11.5px;line-height:1.45;
+  white-space:pre-wrap;overflow-wrap:anywhere;text-align:left;cursor:default}
 #spLists:empty{display:none}
 #spLists .arhit.dim{opacity:.6}
 #spLists .arhit.dim:hover{opacity:1}

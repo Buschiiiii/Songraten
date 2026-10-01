@@ -90,7 +90,8 @@ const Spotify = (() => {
         body: new URLSearchParams(params).toString(),
       });
     } catch (e) {
-      throw new Error('Spotify ist gerade nicht erreichbar.');
+      throw Object.assign(new Error('Spotify ist gerade nicht erreichbar.'),
+                          { url: TOKEN, net: true, cause: String(e && e.message || e) });
     }
   }
 
@@ -124,7 +125,10 @@ const Spotify = (() => {
       grant_type: 'authorization_code', code: q.get('code'), redirect_uri: redirectUri(),
       client_id: clientId(), code_verifier: verifier || '',
     });
-    if (!res.ok) return { ok: false, error: `Spotify hat die Anmeldung nicht angenommen (${res.status}).` };
+    if (!res.ok) {
+      return { ok: false, error: `Spotify hat die Anmeldung nicht angenommen (${res.status}).`,
+               cause: Object.assign(new Error('HTTP ' + res.status), { url: TOKEN, status: res.status }) };
+    }
     keep(load(), await res.json());
     return { ok: true };
   }
@@ -160,7 +164,8 @@ const Spotify = (() => {
       res = await fetch(url, { headers: { Authorization: 'Bearer ' + await token() } });
     } catch (e) {
       if (e && e.auth) throw e;
-      throw new Error('Spotify ist gerade nicht erreichbar.');
+      throw Object.assign(new Error('Spotify ist gerade nicht erreichbar.'),
+                          { url, net: true, cause: String(e && e.message || e) });
     }
     if (res.status === 401 && !nochmal) {
       const st = load(); st.exp = 0; save(st);
@@ -172,8 +177,8 @@ const Spotify = (() => {
       await sleep(Math.min(30, +(h || 5)) * 1000);
       return api(path, true);
     }
-    if (res.status === 403) throw Object.assign(new Error('Das gibt Spotify nicht heraus.'), { forbidden: true });
-    if (!res.ok) throw new Error(`Spotify antwortet mit ${res.status}.`);
+    if (res.status === 403) throw Object.assign(new Error('Das gibt Spotify nicht heraus.'), { forbidden: true, url, status: 403 });
+    if (!res.ok) throw Object.assign(new Error(`Spotify antwortet mit ${res.status}.`), { url, status: res.status });
     return res.json();
   }
 

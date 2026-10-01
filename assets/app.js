@@ -61,6 +61,76 @@ const TIER_MIN = 5;       /* so viele Songs braucht jede Stufe mindestens */
 const $ = s => document.querySelector(s);
 const el = (t, c, x) => { const n = document.createElement(t); if (c) n.className = c; if (x != null) n.textContent = x; return n; };
 
+/* ------------------------------------------------ Fehler erklaeren */
+
+/* „Die Suche kam nicht durch" sagt nichts. Jeder Fehler aus den Modulen
+   traegt Adresse (`url`), Status (`status`), Netzfehler (`net`) und Ursache
+   (`cause`) mit; daraus wird hier ein Text, der sagt, was genau passiert
+   ist. Er haengt als ?-Knopf an der Meldung: Hover zeigt ihn als Tooltip,
+   Tippen klappt ihn darunter auf (Handy). */
+const HTTP_TEXT = {
+  400: 'die Anfrage war fehlerhaft gebaut', 401: 'Anmeldung fehlt oder ist abgelaufen',
+  403: 'die Anfrage wurde abgelehnt – bei Apple heißt das meist: zu viele Anfragen in kurzer Zeit',
+  404: 'das gibt es dort nicht', 408: 'Zeitüberschreitung', 429: 'zu viele Anfragen in kurzer Zeit',
+  500: 'Fehler auf dem Server', 502: 'der Server ist gerade nicht erreichbar',
+  503: 'der Server ist überlastet oder in Wartung', 504: 'der Server hat nicht rechtzeitig geantwortet',
+};
+const SECRET_PARAMS = /^(t|s|p|u|token|apikey|api_key|access_token|refresh_token|code|x-plex-token|password|pass|authorization)$/i;
+
+/* Die Adresse ohne Geheimnisse: Mediathek-Passwort, Token und Salz werden
+   ausgeblendet, der Rest bleibt lesbar. */
+function cleanUrl(u) {
+  try {
+    const x = new URL(u);
+    [...x.searchParams.keys()].forEach(k => { if (SECRET_PARAMS.test(k)) x.searchParams.set(k, '…'); });
+    return decodeURIComponent(x.toString()).replace(/\+/g, ' ');
+  } catch (e) { return String(u); }
+}
+const hostOf = u => { try { return new URL(u).host; } catch (e) { return ''; } };
+
+function whyOf(e) {
+  if (!e) return '';
+  const wo = hostOf(e.url) || 'der Dienst';
+  const z = [];
+  if (e.throttled) {
+    z.push(`${wo} hat die Anfrage mit HTTP ${e.status || 403} abgelehnt: zu viele Anfragen in kurzer Zeit. Das legt sich von selbst, meist nach ein bis fünf Minuten; die Seite wartet und versucht es dann wieder.`);
+  } else if (e.net) {
+    z.push(`Die Anfrage an ${wo} ist nicht angekommen oder blieb ohne Antwort – der Browser hat sie abgebrochen, bevor eine Antwort da war. Typische Gründe: kein Netz oder Flugmodus, ein Werbe- oder Inhaltsblocker (im Browser, als App oder im WLAN), ein VPN oder Jugendschutzfilter, eine Verbindung, die mittendrin abgerissen ist`
+      + (/^http:/.test(e.url || '') ? ', oder Mixed Content: die Seite läuft über https und darf nichts von http laden' : '')
+      + (e.network ? ', oder der Server erlaubt keine fremde Herkunft (CORS)' : '') + '.');
+  } else if (e.status) {
+    z.push(`${wo} hat mit HTTP ${e.status} geantwortet – ${HTTP_TEXT[e.status] || 'ein Fehler auf der anderen Seite'}.`);
+  } else if (e.auth) {
+    z.push('Die Anmeldung gilt nicht mehr – Token oder Zugangsdaten werden nicht angenommen.');
+  } else if (e.message) {
+    z.push(e.message);
+  }
+  if (e.url) z.push('Adresse: ' + cleanUrl(e.url));
+  if (e.cause) z.push('Technisch: ' + e.cause);
+  else if (e.name && e.name !== 'Error' && e.message) z.push('Technisch: ' + e.name + ': ' + e.message);
+  z.push('Zeit: ' + new Date().toLocaleTimeString('de-DE'));
+  return z.join('\n');
+}
+
+/* Meldung setzen, mit ?-Knopf, wenn es einen Fehler zu erklaeren gibt. */
+function putNote(box, msg, e) {
+  if (!box) return;
+  box.textContent = msg || '';
+  const why = e ? whyOf(e) : '';
+  if (!why || !msg) return;
+  const b = el('button', 'why', '?');
+  b.type = 'button';
+  b.title = why;
+  b.setAttribute('aria-label', 'Was genau ist passiert?');
+  b.onclick = ev => {
+    ev.stopPropagation();
+    const offen = box.querySelector('.whybox');
+    if (offen) offen.remove();
+    else box.appendChild(el('div', 'whybox', why));
+  };
+  box.appendChild(b);
+}
+
 let DB = null;            /* { artists:[], songs:[] } */
 let PL = null;            /* aufgeloeste Playlist, gleiche Form wie DB */
 let mode = 'charts';      /* 'charts' | 'decades' | 'genres' | 'artist' | 'playlist' */
@@ -429,14 +499,16 @@ async function boot() {
   readBlocked();
   let res;
   try {
-    res = await fetch('data/songs.json');
-    if (!res.ok) throw new Error('HTTP ' + res.status);
+    try { res = await fetch('data/songs.json'); }
+    catch (e) { throw Object.assign(new Error('Netzfehler'), { net: true, cause: String(e && e.message || e) }); }
+    if (!res.ok) throw Object.assign(new Error('HTTP ' + res.status), { status: res.status });
     DB = await res.json();
     if (!DB || !Array.isArray(DB.songs) || !Array.isArray(DB.artists)) throw new Error('kaputte Datei');
   } catch (e) {
     /* Ohne Songliste bliebe die Seite stumm beim Pulsieren stehen. */
     const box = $('#boot'), p = $('#boot p');
-    if (p) p.textContent = 'Die Songliste ließ sich nicht laden – Verbindung prüfen und die Seite neu laden.';
+    putNote(p, 'Die Songliste ließ sich nicht laden – Verbindung prüfen und die Seite neu laden.',
+            Object.assign(e || new Error('?'), { url: e && e.url || location.origin + location.pathname + 'data/songs.json' }));
     if (box) box.classList.add('failed');
     return;
   }
@@ -618,6 +690,7 @@ function buildChrome() {
        ist kein Klick daneben - sonst schliesst „weitere" die Liste. */
     if (!e.target.isConnected) return;
     if (!e.target.closest('.guess-row')) hideSuggest();
+    if (!e.target.closest('.whybox, .why')) document.querySelectorAll('.whybox').forEach(x => x.remove());
   });
 
   buildPlaylistUI();
@@ -1956,7 +2029,7 @@ function impFinder(t) {
         songs.forEach(h => hits.appendChild(songZeile(h)));
       } catch (e) {
         if (meins !== lauf) return;
-        note.textContent = e && e.throttled ? 'Apple bremst gerade – gleich nochmal.' : 'Das Album kam nicht durch.';
+        putNote(note, e && e.throttled ? 'Apple bremst gerade – gleich nochmal.' : 'Das Album kam nicht durch.', e);
       }
     };
     return wahl;
@@ -1977,7 +2050,7 @@ function impFinder(t) {
       res.slice(0, 15).forEach(h => hits.appendChild(impKind === 'album' ? albumZeile(h) : songZeile(h)));
     } catch (e) {
       if (meins !== lauf) return;
-      note.textContent = e && e.throttled ? 'Apple bremst gerade – gleich nochmal.' : 'Die Suche kam nicht durch.';
+      putNote(note, e && e.throttled ? 'Apple bremst gerade – gleich nochmal.' : 'Die Suche kam nicht durch.', e);
     }
   };
   inp.oninput = () => { clearTimeout(timer); timer = setTimeout(go, 400); };
@@ -2540,7 +2613,7 @@ async function searchArtists(q) {
     arNote(hits.length ? '' : 'Keinen Künstler mit diesem Namen gefunden.');
   } catch (e) {
     arNote(e.throttled ? 'Apple bremst gerade – in ein paar Minuten nochmal.'
-      : 'Die Suche hat nicht geklappt.');
+      : 'Die Suche hat nicht geklappt.', e);
   }
   arBusy = false;
 }
@@ -2564,7 +2637,7 @@ function renderArtists(hits) {
   });
 }
 
-function arNote(msg) { $('#arStatus').textContent = msg; }
+function arNote(msg, e) { putNote($('#arStatus'), msg, e); }
 
 /* Katalog holen (oder aus dem Speicher nehmen) und in den Modus wechseln. */
 async function pickArtist(h) {
@@ -2588,7 +2661,7 @@ async function pickArtist(h) {
     renderArtists();
   } catch (e) {
     arNote(e.throttled ? 'Apple bremst gerade – in ein paar Minuten nochmal.'
-      : 'Der Katalog liess sich nicht laden.');
+      : 'Der Katalog liess sich nicht laden.', e);
     arBusy = false;
   }
 }
@@ -2606,7 +2679,7 @@ let loStop = false;
 
 const loPlayable = () => !!LO && LO.songs.length >= Local.MIN;
 
-function loNote(msg) { $('#loStatus').textContent = msg; }
+function loNote(msg, e) { putNote($('#loStatus'), msg, e); }
 
 function buildLocalUI() {
   const dir = $('#loDir'), files = $('#loFiles');
@@ -2619,7 +2692,7 @@ function buildLocalUI() {
       await scanHandle(handle);
     } catch (e) {
       /* Abbrechen im Dateidialog ist kein Fehler. */
-      if (e && e.name !== 'AbortError') loNote('Der Ordner ließ sich nicht öffnen.');
+      if (e && e.name !== 'AbortError') loNote('Der Ordner ließ sich nicht öffnen.', e);
     }
   };
   dir.onchange = () => { const f = [...dir.files]; dir.value = ''; if (f.length) scanFiles(f); };
@@ -2678,7 +2751,7 @@ async function scanHandle(handle) {
   } catch (e) {
     loBusy = false;
     renderLocal();
-    return loNote('Der Ordner ließ sich nicht lesen.');
+    return loNote('Der Ordner ließ sich nicht lesen.', e);
   }
   loBusy = false;
   if (!files.length) { renderLocal(); return loNote('In dem Ordner steckt keine Musik.'); }
@@ -2751,12 +2824,12 @@ async function runFind(q) {
     plFindNote(hits.length ? '' : 'Nichts gefunden.');
   } catch (e) {
     renderFinds([]);
-    plFindNote(e && e.throttled ? 'Apple bremst gerade – gleich nochmal.' : 'Die Suche hat nicht geklappt.');
+    plFindNote(e && e.throttled ? 'Apple bremst gerade – gleich nochmal.' : 'Die Suche hat nicht geklappt.', e);
   }
   plFindBusy = false;
 }
 
-function plFindNote(msg) { $('#plFindNote').textContent = msg; }
+function plFindNote(msg, e) { putNote($('#plFindNote'), msg, e); }
 
 function renderFinds(hits) {
   const box = $('#plHits');
@@ -2784,7 +2857,7 @@ async function addAlbum(album) {
     addSongs(songs, album.t);
   } catch (e) {
     plFindBusy = false;
-    plFindNote(e && e.throttled ? 'Apple bremst gerade – gleich nochmal.' : 'Das Album kam nicht durch.');
+    plFindNote(e && e.throttled ? 'Apple bremst gerade – gleich nochmal.' : 'Das Album kam nicht durch.', e);
   }
 }
 
@@ -2851,7 +2924,7 @@ async function srvRestore() {
 let srvKind = 'subsonic';
 let srvBusy = false;
 
-const srvNote = m => { const n = $('#srvNote'); if (n) n.textContent = m; };
+const srvNote = (m, e) => putNote($('#srvNote'), m, e);
 
 function srvCfg() {
   return {
@@ -2939,7 +3012,7 @@ async function loadServer(cfg, opts) {
     if (loPlayable() && mode !== 'local' && (!opts.silent || settings.mode === 'local')) setMode('local');
     else if (mode === 'local') newRound();
   } catch (e) {
-    srvNote(e && e.message ? e.message : 'Das hat nicht geklappt.');
+    srvNote(e && e.message ? e.message : 'Das hat nicht geklappt.', e);
   }
   srvBusy = false;
   $('#srvGo').disabled = false;
@@ -2953,7 +3026,7 @@ async function loadServer(cfg, opts) {
 let spLists = null;          /* null = noch nicht geholt */
 let spOwn = false;           /* Anleitung fuer die eigene App aufgeklappt */
 let spBusy = false;
-const spNote = m => { $('#spNote').textContent = m; };
+const spNote = (m, e) => putNote($('#spNote'), m, e);
 
 function buildSpotifyUI() {
   if (!$('#spBox')) return;
@@ -2966,7 +3039,7 @@ function buildSpotifyUI() {
   };
   $('#spLogin').onclick = async () => {
     if (!$('#spSetup').hidden) Spotify.setClientId($('#spClient').value);
-    try { await Spotify.login(); } catch (e) { spNote(e.message); }
+    try { await Spotify.login(); } catch (e) { spNote(e.message, e); }
   };
   $('#spOwnToggle').onclick = () => { spOwn = !spOwn; renderSpotify(); };
   $('#spLogout').onclick = () => {
@@ -2990,9 +3063,9 @@ function buildSpotifyUI() {
     panel.open = true;
     $('#spBox').open = true;
     renderSpotify();
-    if (!r.ok) return spNote(r.error);
+    if (!r.ok) return spNote(r.error, r.cause);
     if (!spLists) loadSpotifyLists();
-  }).catch(() => spNote('Die Anmeldung kam nicht durch.'));
+  }).catch(e => spNote('Die Anmeldung kam nicht durch.', e));
 }
 
 function renderSpotify() {
@@ -3019,7 +3092,7 @@ async function loadSpotifyLists() {
     spNote(`${u ? u.name + ': ' : ''}${spLists.length} Playlists`);
   } catch (e) {
     spLists = null;
-    spNote(e.auth ? 'Die Anmeldung ist abgelaufen – bitte neu anmelden.' : e.message);
+    spNote(e.auth ? 'Die Anmeldung ist abgelaufen – bitte neu anmelden.' : e.message, e);
   }
   spBusy = false;
   renderSpotify();
@@ -3061,10 +3134,10 @@ async function importSpotify(p) {
     });
   } catch (e) {
     spBusy = false;
-    if (e.auth) { renderSpotify(); return spNote('Die Anmeldung ist abgelaufen – bitte neu anmelden.'); }
+    if (e.auth) { renderSpotify(); return spNote('Die Anmeldung ist abgelaufen – bitte neu anmelden.', e); }
     return spNote(e.forbidden
       ? `${p.name} gibt Spotify nicht heraus – sie gehört ${p.owner || 'jemand anderem'}, und lesbar sind nur eigene und gemeinsame. Ausweg: in Spotify „Zu Playlist hinzufügen“ in eine eigene, oder per Exportify als CSV.`
-      : e.message);
+      : e.message, e);
   }
   spBusy = false;
   if (!list.length) return spNote(`${p.name} ist leer.`);
@@ -3291,13 +3364,13 @@ async function runResolve(j) {
   renderImport();
 
   const total = j.tracks.length, f = j.found.size;
-  if (res.throttled) plNote(`${f} von ${total} gefunden – Apple bremst. Später auf „Weiter suchen“ tippen.`);
+  if (res.throttled) plNote(`${f} von ${total} gefunden – Apple bremst. Später auf „Weiter suchen“ tippen.`, res.error);
   else if (!res.complete) plNote(`Angehalten bei ${total - j.pending.length} von ${total} – „Weiter suchen“ macht dort weiter.`);
-  else if (!f) plNote('Kein einziger Titel gefunden. Stimmen Titel- und Künstlerspalte?');
+  else if (!f) plNote('Kein einziger Titel gefunden. Stimmen Titel- und Künstlerspalte?', res.error);
   else if (!plPlayable()) plNote(`Nur ${f} von ${total} Titeln gefunden – für eine Runde braucht es ${PL_MIN}.`);
 }
 
-function plNote(msg) { $('#plStatus').textContent = msg; }
+function plNote(msg, e) { putNote($('#plStatus'), msg, e); }
 
 /* Der Fortschritt bleibt stehen, auch wenn Apple bremst - die Wartezeit
    steht darunter, statt ihn zu verdraengen. */

@@ -30,16 +30,22 @@ const Artist = (() => {
     .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
     .replace(/[^a-z0-9]+/g, ' ').trim();
 
+  /* Fehler tragen Adresse, Status und Ursache mit - fuer die Erklaerung
+     hinter dem ?-Knopf (`whyOf()` in app.js). */
+  async function holen(url) {
+    let res;
+    try { res = await fetch(url); }
+    catch (e) { throw Object.assign(new Error('Netzfehler'), { url, net: true, cause: String(e && e.message || e) }); }
+    if (res.status === 403 || res.status === 429) {
+      throw Object.assign(new Error('throttled'), { throttled: true, url, status: res.status });
+    }
+    if (!res.ok) throw Object.assign(new Error('HTTP ' + res.status), { url, status: res.status });
+    return res.json();
+  }
+
   async function get(params) {
     const url = 'https://itunes.apple.com/search?' + new URLSearchParams(params);
-    const res = await fetch(url);
-    if (res.status === 403 || res.status === 429) {
-      const e = new Error('throttled');
-      e.throttled = true;
-      throw e;
-    }
-    if (!res.ok) throw new Error('HTTP ' + res.status);
-    return (await res.json()).results || [];
+    return (await holen(url)).results || [];
   }
 
   /* Erst den Kuenstler selbst suchen: "billie" soll eine Auswahl ergeben,
@@ -157,9 +163,7 @@ const Artist = (() => {
       if (opts.onProgress) opts.onProgress('Nachschlag …');
       try {
         const url = 'https://itunes.apple.com/lookup?' + new URLSearchParams({ id: artist.id, entity: 'song', limit: LIMIT, country: 'DE' });
-        const res = await fetch(url);
-        if (res.status === 403 || res.status === 429) { const e = new Error('throttled'); e.throttled = true; throw e; }
-        if (res.ok) direkt = ((await res.json()).results || []).filter(r => r.wrapperType === 'track');
+        direkt = ((await holen(url)).results || []).filter(r => r.wrapperType === 'track');
       } catch (e) {
         if (e.throttled) throw e;
       }

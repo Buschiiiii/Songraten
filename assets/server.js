@@ -100,16 +100,12 @@ const Server = (() => {
       res = await fetch(url, { headers: opts.headers || {}, method: opts.method || 'GET',
                                body: opts.body, mode: 'cors' });
     } catch (e) {
-      const e2 = new Error(hint(url));
-      e2.network = true;
-      throw e2;
+      throw Object.assign(new Error(hint(url)), { network: true, net: true, url, cause: String(e && e.message || e) });
     }
     if (res.status === 401 || res.status === 403) {
-      const e = new Error('Zugangsdaten stimmen nicht.');
-      e.auth = true;
-      throw e;
+      throw Object.assign(new Error('Zugangsdaten stimmen nicht.'), { auth: true, url, status: res.status });
     }
-    if (!res.ok) throw new Error('Der Server antwortet mit ' + res.status + '.');
+    if (!res.ok) throw Object.assign(new Error('Der Server antwortet mit ' + res.status + '.'), { url, status: res.status });
     if (opts.raw) return res;
     return res.json();
   }

@@ -350,13 +350,24 @@ const Playlist = (() => {
     return out;
   }
 
+  /* Jede Anfrage an Apple laeuft hier durch. Geht etwas schief, traegt der
+     Fehler Adresse, Status und Ursache - die Meldung im Panel kann dann
+     sagen, was genau passiert ist (`whyOf()` in app.js). */
+  async function holen(url) {
+    let res;
+    try { res = await fetch(url); }
+    catch (e) { throw Object.assign(new Error('Netzfehler'), { url, net: true, cause: String(e && e.message || e) }); }
+    if (res.status === 403 || res.status === 429) {
+      throw Object.assign(new Error('throttled'), { throttled: true, url, status: res.status });
+    }
+    if (!res.ok) throw Object.assign(new Error('HTTP ' + res.status), { url, status: res.status });
+    return res.json();
+  }
+
   async function lookup(q) {
     const url = 'https://itunes.apple.com/search?media=music&entity=song&limit=' + q.limit
       + '&country=' + q.country + '&term=' + encodeURIComponent(q.term);
-    const res = await fetch(url);
-    if (res.status === 403 || res.status === 429) { const e = new Error('throttled'); e.throttled = true; throw e; }
-    if (!res.ok) throw new Error('HTTP ' + res.status);
-    const data = await res.json();
+    const data = await holen(url);
     return (data.results || []).filter(r => r.previewUrl);
   }
 
@@ -402,10 +413,7 @@ const Playlist = (() => {
      Titelliste davor. */
   async function get(path, params) {
     const url = 'https://itunes.apple.com/' + path + '?' + new URLSearchParams(params);
-    const res = await fetch(url);
-    if (res.status === 403 || res.status === 429) { const e = new Error('throttled'); e.throttled = true; throw e; }
-    if (!res.ok) throw new Error('HTTP ' + res.status);
-    return (await res.json()).results || [];
+    return (await holen(url)).results || [];
   }
 
   const toAlbum = c => ({
@@ -622,7 +630,7 @@ const Playlist = (() => {
     if (prefill(j, opts.local, cache) && opts.onFound) opts.onFound(null);
     tell();
 
-    let waits = 0, throttled = false;
+    let waits = 0, throttled = false, fehler = null;
     while (j.pending.length && !stop()) {
       const t = j.pending[0];
       if (misses.has(t.key)) { hit(t, null); continue; }
@@ -706,6 +714,7 @@ const Playlist = (() => {
         else { misses.add(t.key); hit(t, null); }
         waits = 0;
       } catch (e) {
+        fehler = e;
         if (!e.throttled) { if (j.pending.includes(t)) hit(t, null); continue; }
         saveCache(cache);
         paceThrottled();
@@ -718,7 +727,7 @@ const Playlist = (() => {
     j.current = null;
     saveCache(cache);
     tell();
-    return { throttled, complete: !j.pending.length };
+    return { throttled, complete: !j.pending.length, error: fehler };
   }
 
   /* Vorziehen: an die Spitze der Warteschlange. Mehrere behalten ihre

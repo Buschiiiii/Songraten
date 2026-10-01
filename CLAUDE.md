@@ -752,6 +752,34 @@ Developer-Token, also einen Server. Wer direkt abspielen will, nimmt die
 eigene Musik oder den eigenen Mediathek-Server — dort läuft der Ton wirklich
 aus der Seite heraus.
 
+## Fehler erklären: das ?-Knöpfchen
+
+„Die Suche kam nicht durch" hat dem Besitzer nichts gesagt – zu Recht. Jede
+Meldung, hinter der ein Fehler steckt, trägt jetzt einen kleinen ?-Knopf
+(`.why`): Hover zeigt die Erklärung als Tooltip (`title`), Tippen klappt sie
+als Kasten darunter auf (`.whybox`, Handy), ein Klick daneben schließt sie.
+
+- **Konvention für geworfene Fehler** in `playlist.js`, `artist.js`,
+  `spotify.js`, `server.js` und `boot()`: `url` (die Adresse), `status`
+  (HTTP), `net: true` (fetch hat geworfen, also kein Netz, Blocker, CORS,
+  Mixed Content), `cause` (die technische Meldung), dazu die bestehenden
+  `throttled`/`auth`/`forbidden`. Die Holer heißen `holen(url)`.
+- **`whyOf(e)`** (app.js) macht daraus den Text: was passiert ist, mögliche
+  Gründe, `HTTP_TEXT` übersetzt den Status, dann Adresse, technische
+  Ursache und Uhrzeit. `cleanUrl()` blendet Geheimnisse aus
+  (`SECRET_PARAMS`: Subsonic-`t`/`s`/`p`/`u`, Token, Codes) – das
+  Mediathek-Passwort darf nicht im Tooltip stehen.
+- **`putNote(box, msg, e)`** setzt die Meldung und hängt den Knopf an; alle
+  Note-Helfer (`arNote`, `loNote`, `plFindNote`, `srvNote`, `spNote`,
+  `plNote`) nehmen den Fehler als zweites Argument. `Playlist.run()` gibt
+  den letzten Fehler als `error` zurück, damit „Apple bremst" am Ende des
+  Imports ihn erklären kann.
+
+Was „nicht durchgekommen" wirklich heißt: `fetch` hat geworfen (TypeError),
+der Browser hat die Anfrage also abgebrochen, bevor eine Antwort da war –
+kein Netz, ein Content-Blocker, VPN, abgerissene Verbindung. Ein HTTP-Status
+wäre separat genannt.
+
 ## Vorschläge beim Raten (`settings.suggest`)
 
 `'all'` (Voreinstellung): `suggestSource()` vereinigt alles, was die Seite

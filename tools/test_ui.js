@@ -390,6 +390,9 @@ function makeWindow(store, patchDb, url) {
       itunesCalls++;
       const term = decodeURIComponent(url.split('term=')[1].split('&')[0]);
       searchTerms.push(term);
+      /* Zwei Arten von Scheitern, fuer die Erklaerung hinter dem ?-Knopf. */
+      if (/kaputt/i.test(term)) throw new TypeError('Failed to fetch');
+      if (/fuenfhundert/i.test(term)) return { ok: false, status: 500, json: async () => ({}) };
       return { ok: true, status: 200, json: async () => ({
         results: appleSearch(term, [...Object.values(CATALOG), ...EXTRA]) }) };
     }
@@ -1690,6 +1693,42 @@ const dummy = n => ({ t: 'Song ' + n, a: 'Kuenstler ' + n, al: 'Album', y: 2020,
   await waitFor(() => /schon drin/.test(p$('#plFindNote').textContent), 5000);
   assert(P('PL.songs.length') === 3, 'Hinzufuegen: dasselbe Album zweimal bleibt dasselbe');
 
+  {
+  /* ------------------------- Fehler erklaeren: das ?-Knoepfchen an der Meldung */
+  const fehlSuche = async q => {
+    p$('#plFind').value = q;
+    p$('#plFind').dispatchEvent(new w9.KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+    await waitFor(() => p$('#plFindNote .why'), 5000);
+    return p$('#plFindNote .why');
+  };
+  p$('#plFindKind button[data-v="song"]').click();
+  let why = await fehlSuche('kaputt lied');
+  assert(p$('#plFindNote').textContent.startsWith('Die Suche hat nicht geklappt.') && why,
+    'Fehler: an der Meldung haengt ein ?-Knopf');
+  assert(/nicht angekommen/.test(why.title) && /itunes\.apple\.com/.test(why.title) && /Failed to fetch/.test(why.title)
+    && /blocker/i.test(why.title),
+    'Fehler: der Tooltip nennt Netzfehler, Adresse, Ursache und moegliche Gruende (' + why.title.slice(0, 50) + '…)');
+  why.click();
+  const box = p$('#plFindNote .whybox');
+  assert(box && box.textContent === why.title, 'Fehler: Tippen klappt die Erklaerung darunter auf');
+  why.click();
+  assert(!p$('#plFindNote .whybox'), 'Fehler: nochmal Tippen klappt sie zu');
+  why.click();
+  w9.document.body.click();
+  assert(!p$('#plFindNote .whybox'), 'Fehler: ein Klick daneben schliesst sie');
+  why = await fehlSuche('fuenfhundert lied');
+  assert(/HTTP 500/.test(why.title) && /Fehler auf dem Server/.test(why.title),
+    'Fehler: ein HTTP-Status wird genannt und uebersetzt (' + why.title.split('\n')[0].slice(0, 60) + ')');
+  assert(P("whyOf({ status: 500, url: 'https://musik.example.org/rest/ping?u=ben&t=abc123&s=salz&v=1.16' })").includes('t=…')
+    && !P("whyOf({ status: 500, url: 'https://musik.example.org/rest/ping?u=ben&t=abc123&s=salz&v=1.16' })").includes('abc123'),
+    'Fehler: Geheimnisse in der Adresse werden ausgeblendet');
+  assert(/zu viele Anfragen/.test(P("whyOf({ throttled: true, status: 403, url: 'https://itunes.apple.com/search?term=x' })")),
+    'Fehler: die Bremse wird erklaert');
+  await fehlSuche('loud rihanna');
+  await waitFor(() => !p$('#plFindNote .why'), 5000);
+  assert(!p$('#plFindNote .why'), 'Fehler: eine gute Meldung hat keinen ?-Knopf');
+
+  }
   /* Und es ueberlebt das Neuladen */
   const w9b = makeWindow({ 'songrate:playlist': w9.localStorage.getItem('songrate:playlist') });
   await waitFor(() => !w9b.document.querySelector('#app').hidden);
@@ -1940,6 +1979,11 @@ const dummy = n => ({ t: 'Song ' + n, a: 'Kuenstler ' + n, al: 'Album', y: 2020,
   s$('#srvGo').click();
   await waitFor(() => /CORS/.test(s$('#srvNote').textContent), 5000);
   assert(/CORS/.test(s$('#srvNote').textContent), 'Server: sonst wird nach Adresse und CORS gefragt');
+  {
+    const why = s$('#srvNote .why');
+    assert(why && /musik\.kaputt\.org/.test(why.title) && /Failed to fetch/.test(why.title) && !/geheim/.test(why.title),
+      'Server: der ?-Knopf nennt Adresse und Ursache, aber kein Passwort (' + (why ? why.title.slice(-80) : '-') + ')');
+  }
 
   srvFill('subsonic', 'https://musik.example.org', 'falsch', 'geheim');
   s$('#srvGo').click();
