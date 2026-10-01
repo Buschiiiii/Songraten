@@ -92,8 +92,14 @@ const Filters = (() => {
   }
 
   /* Auswahlmoeglichkeiten fuer die Eingabe, jeweils nur was auch vorkommt. */
+  const optCache = new WeakMap();
   function options(type, db) {
     if (type === 'instrumental') return [];
+    /* Wie counts(): die Liste wird bei jedem Neuzeichnen der Filter
+       gebraucht, und 3000 Namen zu sortieren ist nichts fuer jeden Klick. */
+    let per = optCache.get(db);
+    if (!per) optCache.set(db, per = {});
+    if (per[type]) return per[type];
     const out = new Map();
     if (type === 'genre') {
       db.songs.forEach(s => { const g = genreOf(s); if (g) out.set(norm(g), g); });
@@ -105,8 +111,8 @@ const Filters = (() => {
         if (s.a) out.set(norm(s.a), s.a);
       });
     }
-    return [...out].map(([value, text]) => ({ value, text }))
-      .sort((a, b) => String(a.text).localeCompare(String(b.text), 'de', { numeric: true }));
+    return (per[type] = [...out].map(([value, text]) => ({ value, text }))
+      .sort((a, b) => String(a.text).localeCompare(String(b.text), 'de', { numeric: true })));
   }
 
   /* Wie viele Songs haengen an einem Wert - steht neben den Haekchen, damit

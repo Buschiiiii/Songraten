@@ -3,6 +3,10 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<!-- Skripte nur von hier; Daten (Apple, song.link, Spotify, eigener Server)
+     nur ueber https. Faellt jemandem eine Luecke in die Seite, kann er
+     wenigstens kein fremdes Skript nachladen. -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' https: data: blob:; connect-src 'self' https:; media-src 'self' https: blob:; object-src 'none'; base-uri 'none'; form-action 'none'">
 <title>Songraten</title>
 <meta name="description" content="Erkenne den Song in 0,01 Sekunden.">
 <link rel="stylesheet" href="assets/style.css">

@@ -6,6 +6,11 @@ const Audio2 = (() => {
   let ctx = null;
   let gain = null;
   let current = null;
+  /* Eine dekodierte Preview belegt rund 10 MB (30 s Stereo als Float). Ohne
+     Grenze waeren nach zwanzig Runden 1 GB belegt, und Safari auf dem iPhone
+     wirft den Tab weg. Die Runde haelt ihre fuenf Puffer selbst - der Cache
+     muss nur das Doppelte eines Rundenwechsels ueberbruecken. */
+  const CACHE_MAX = 12;
   const cache = new Map();
   let volume = 0.8;
 
@@ -51,7 +56,13 @@ const Audio2 = (() => {
   }
 
   async function load(url) {
-    if (cache.has(url)) return cache.get(url);
+    if (cache.has(url)) {
+      /* Zuletzt gebraucht nach hinten, damit es nicht als Erstes faellt. */
+      const p = cache.get(url);
+      cache.delete(url);
+      cache.set(url, p);
+      return p;
+    }
     const p = (async () => {
       const res = await fetch(url, { mode: 'cors' });
       if (!res.ok) throw new Error('HTTP ' + res.status);
@@ -60,6 +71,7 @@ const Audio2 = (() => {
     })();
     cache.set(url, p);
     p.catch(() => cache.delete(url));
+    while (cache.size > CACHE_MAX) cache.delete(cache.keys().next().value);
     return p;
   }
 
@@ -158,5 +170,5 @@ const Audio2 = (() => {
   function warm(url) { load(url).catch(() => {}); }
 
   return { load, loadFile, excerpt, firstSound, play, stop, setVolume, warm, ensure, unlock,
-           state: () => (ctx ? ctx.state : 'none') };
+           state: () => (ctx ? ctx.state : 'none'), cached: () => cache.size };
 })();

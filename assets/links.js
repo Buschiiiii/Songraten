@@ -118,14 +118,24 @@ const Links = (() => {
   }
 
   /* Was schon bekannt ist, ohne Anfrage. */
+  /* Auch der Cache wird geprueft - er stammt aus demselben localStorage,
+     in dem jeder Tab schreiben darf. */
   function known(song) {
-    return song && song.k ? (load()[String(song.k)] || null) : null;
+    const hit = song && song.k ? load()[String(song.k)] : null;
+    if (!hit) return null;
+    const out = {};
+    Object.keys(hit).forEach(k => { if (safe(hit[k])) out[k] = hit[k]; });
+    return out;
   }
+
+  /* Was von aussen kommt, landet als href im Dokument - also nur echte
+     https-Adressen, nie etwas wie javascript:. */
+  const safe = u => (typeof u === 'string' && /^https:\/\/[^\s]+$/i.test(u) ? u : '');
 
   function pick(links, id) {
     for (const key of (PLATFORM[id] || [])) {
       const hit = links[key];
-      if (hit && hit.url) return hit.url;
+      if (hit && safe(hit.url)) return hit.url;
     }
     return '';
   }
@@ -151,7 +161,7 @@ const Links = (() => {
       const links = data.linksByPlatform || {};
       const out = {};
       Object.keys(PLATFORM).forEach(id => { const u = pick(links, id); if (u) out[id] = u; });
-      if (data.pageUrl) out.songlink = data.pageUrl;
+      if (safe(data.pageUrl)) out.songlink = data.pageUrl;
       store(key, out);
       return out;
     } catch (e) { return null; }

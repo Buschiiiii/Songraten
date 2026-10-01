@@ -161,11 +161,17 @@ const Artist = (() => {
      nichts mehr - im Speicher stecken dann noch die Songs, die gerade erst
      aussortiert wurden. Deshalb die Version: was nicht passt, wird beim
      naechsten Besuch einfach neu geholt. */
+  /* Gemerkt, weil all() bei jedem Zeichnen der Panelzeilen gebraucht wird -
+     zwoelf Kataloge aus dem localStorage zu parsen kostet jedes Mal
+     Millisekunden. */
+  let memo = null;
   function all() {
+    if (memo) return memo;
     try {
       const liste = JSON.parse(localStorage.getItem(CACHE_KEY) || '[]');
-      return Array.isArray(liste) ? liste.filter(a => a && a.v === CACHE_VER) : [];
-    } catch (e) { return []; }
+      memo = Array.isArray(liste) ? liste.filter(a => a && a.v === CACHE_VER) : [];
+    } catch (e) { memo = []; }
+    return memo;
   }
 
   function fromCache(id) {
@@ -177,12 +183,14 @@ const Artist = (() => {
       const rest = all().filter(a => String(a.id) !== String(entry.id));
       localStorage.setItem(CACHE_KEY, JSON.stringify([entry, ...rest].slice(0, KEEP)));
     } catch (e) {}
+    memo = null;
   }
 
   function forget(id) {
     try {
       localStorage.setItem(CACHE_KEY, JSON.stringify(all().filter(a => String(a.id) !== String(id))));
     } catch (e) {}
+    memo = null;
   }
 
   return { find, load, all, fromCache, forget, tidy, base, MIN_SONGS };

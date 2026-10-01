@@ -511,6 +511,17 @@ die Anzahl Songs pro Stufe, alles frei änderbar.
 - **Farben**: `assets/style.css`, Block `:root`.
 - **Name**: `index.html`, Überschrift `brand`, und `<title>`.
 
+## Was die Seite nach außen schickt
+
+Nichts, was nicht sein muss. Titel und Künstler einer Playlist gehen an
+Apples Suche, damit es eine Hörprobe gibt; Apples Track-IDs gehen an
+song.link, wenn *Genau diese Aufnahme* an ist; nach der Spotify-Anmeldung
+holt die Seite deine Playlists direkt bei Spotify. Eigene Musikdateien
+bleiben auf dem Gerät. Alles Gespeicherte – Einstellungen, Statistik,
+Playlist, Spotify-Anmeldung, Zugang zum Mediathek-Server – liegt im Browser,
+unverschlüsselt; *Zugang vergessen* und *Bei Spotify abmelden* räumen auf.
+Eine Content-Security-Policy erlaubt nur eigene Skripte.
+
 ## Bekannte Eigenheiten
 
 - Der erste Klick auf Abspielen aktiviert die Audioausgabe des Browsers.

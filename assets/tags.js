@@ -344,6 +344,9 @@ const Tags = (() => {
         let q = from + 4;
         while (q + 8 <= Math.min(u.length, from + size)) {
           const k = ascii(u, q, 4), n = le32(u, q + 4);
+          /* Eine negative Laenge (oberstes Bit gesetzt) wuerde q rueckwaerts
+             schieben und die Schleife ueber Minuten festhalten. */
+          if (n < 0) break;
           const key = WAV_KEYS[k];
           if (key) {
             const s = dec(u.subarray(q + 8, q + 8 + n), 'utf-8').replace(/\0/g, '').trim();

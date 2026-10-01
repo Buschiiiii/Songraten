@@ -65,6 +65,7 @@ const appleSearch = (term, list) => {
 };
 let searchTerms = [];
 let spotifyCalls = [];
+let failSongs = false;       /* songs.json absichtlich scheitern lassen */
 let itunesCalls = 0;
 let srvCalls = [];
 let odesliCalls = [];
@@ -130,6 +131,7 @@ function makeWindow(store, patchDb, url) {
        fragen - hier genauso. */
     if (url.startsWith('http://')) { srvCalls.push(url); throw new TypeError('Failed to fetch'); }
     if (url.includes('songs.json')) {
+      if (failSongs) return { ok: false, status: 500, json: async () => ({}) };
       const db = JSON.parse(read('data/songs.json'));
       if (patchDb) patchDb(db);
       return { ok: true, status: 200, json: async () => db };
@@ -234,6 +236,10 @@ function makeWindow(store, patchDb, url) {
         ] });
       }
       if (pfad.startsWith('playlists/pl3/items')) return { ok: false, status: 403, json: async () => ({}) };
+      if (pfad.startsWith('playlists/pl4/items')) {
+        return json({ total: 2, next: 'https://evil.example/steal?token', items: [
+          { item: { type: 'track', name: 'Hello', artists: [{ name: 'Adele' }], album: { name: '25' } } } ] });
+      }
       return { ok: false, status: 404, json: async () => ({}) };
     }
 
@@ -241,6 +247,11 @@ function makeWindow(store, patchDb, url) {
     if (url.includes('api.song.link')) {
       odesliCalls.push(url);
       if (/id=666/.test(url)) return { ok: false, status: 429, json: async () => ({}) };
+      /* Eine boeswillige Antwort: javascript: statt https. */
+      if (/id=777/.test(url)) return { ok: true, status: 200, json: async () => ({
+        pageUrl: 'javascript:alert(1)',
+        linksByPlatform: { spotify: { url: 'javascript:alert(2)' }, tidal: { url: 'https://tidal.com/browse/track/777' } },
+      }) };
       const id = (/id=(\d+)/.exec(url) || [0, '0'])[1];
       return { ok: true, status: 200, json: async () => ({
         pageUrl: 'https://song.link/i/' + id,
@@ -1932,6 +1943,67 @@ const dummy = n => ({ t: 'Song ' + n, a: 'Kuenstler ' + n, al: 'Album', y: 2020,
   assert(w.__ev('PL.songs.length') === 6 && /Weiter suchen \(2 offen\)/.test(w.document.querySelector('#plResume').textContent),
     'Neuladen: Playlist und „Weiter suchen" sind da');
 
+  /* ------------------------------------------- Sicherheit und Randfaelle */
+  {
+    /* Ein manipulierter Link-Cache liegt schon im Speicher, bevor die Seite startet. */
+    w = makeWindow({ 'songrate:links': JSON.stringify({ 778: { spotify: 'javascript:alert(3)', deezer: 'https://www.deezer.com/track/778' } }) });
+    await waitFor(() => !w.document.querySelector('#app').hidden);
+    const R = x => w.__ev(x), r$ = q => w.document.querySelector(q);
+
+    /* Odesli: nur https kommt als Link ins Dokument. */
+    const treffer = await R("Links.exact({ k: 777 })");
+    assert(treffer && treffer.tidal === 'https://tidal.com/browse/track/777' && !treffer.spotify && !treffer.songlink,
+      'Links: javascript:-Adressen von song.link werden verworfen, https bleibt (' + JSON.stringify(treffer) + ')');
+    const alt = R("Links.known({ k: 778 })");
+    assert(alt && !alt.spotify && alt.deezer, 'Links: auch ein manipulierter Cache liefert nur https');
+    assert(R("Links.forSong({ t: 'x', a: 'y', k: 778 }, 'spotify').every(l => /^https:\\/\\//.test(l.url))"),
+      'Links: jede Adresse in der Aufloesung beginnt mit https');
+
+    /* Leertaste im Textfeld der Playlist tippt ein Leerzeichen, spielt nichts ab. */
+    let gespielt = 0;
+    const altPlay = R('playCurrent');
+    w.__ev('playCurrent = () => { window.__p = (window.__p || 0) + 1; }');
+    const ta = r$('#plPaste');
+    ta.hidden = false; ta.focus();
+    const ev = new w.KeyboardEvent('keydown', { key: ' ', bubbles: true, cancelable: true });
+    ta.dispatchEvent(ev);
+    gespielt = R('window.__p || 0');
+    assert(!ev.defaultPrevented && gespielt === 0, 'Tasten: die Leertaste im Textfeld bleibt ein Leerzeichen');
+    const ev2 = new w.KeyboardEvent('keydown', { key: '3', bubbles: true, cancelable: true });
+    ta.dispatchEvent(ev2);
+    assert(R('active') === 0, 'Tasten: eine Ziffer im Textfeld wechselt keinen Platz');
+    w.document.body.focus();
+    const ev3 = new w.KeyboardEvent('keydown', { key: ' ', bubbles: true, cancelable: true });
+    w.document.body.dispatchEvent(ev3);
+    assert(R('window.__p') === 1, 'Tasten: ausserhalb spielt die Leertaste ab');
+
+    /* Audio: der Cache dekodierter Previews bleibt begrenzt. */
+    for (let i = 0; i < 30; i++) await R(`Audio2.load('https://audio/cache${i}.m4a')`);
+    assert(R('Audio2.cached()') <= 12, 'Audio: der Cache dekodierter Previews bleibt begrenzt (' + R('Audio2.cached()') + ' von 30)');
+    const nochDa = await Promise.all([0, 29].map(i => R(`Audio2.load('https://audio/cache${i}.m4a').then(() => true)`)));
+    assert(nochDa.every(Boolean), 'Audio: alte Previews lassen sich wieder laden');
+
+    /* Stufenlabel bleibt lesbar, wenn ein fertiger Platz eine Stufe hat, die es nicht mehr gibt. */
+    R("round[0].status = 'won'; round[0].stage = 5; settings.ladder = [0.5, 2]; setLadder([0.5, 2]); active = 0; render()");
+    assert(r$('#stageLabel').textContent === '2s', 'Stufen: ein fertiger Platz jenseits der Leiter zeigt die letzte Laenge (' + r$('#stageLabel').textContent + ')');
+
+    /* Gespeicherte Grenzen, von Hand verbogen, werden beim Laden repariert. */
+    const wT = makeWindow({ 'songrate:settings': JSON.stringify({ tiers: { global: [90, 5, 'x', 200, 1], scopes: { charts: [50, 50, 50, 50, 50] } } }) });
+    await waitFor(() => !wT.document.querySelector('#app').hidden);
+    const steigend = a => a.length === 5 && a.every((v, i) => Number.isInteger(v) && v >= 1 && v <= 100 && (!i || v > a[i - 1]));
+    assert(steigend(wT.__ev('settings.tiers.global')) && steigend(wT.__ev('settings.tiers.scopes.charts'))
+      && wT.__ev('settings.tiers.global')[0] === 90 && wT.__ev('settings.tiers.global')[4] === 100,
+      'Schwierigkeit: kaputte gespeicherte Grenzen werden steigend gemacht (' + wT.__ev('settings.tiers.global').join() + ' / ' + wT.__ev('settings.tiers.scopes.charts').join() + ')');
+
+    /* Ohne Songliste bleibt die Seite nicht stumm stehen. */
+    failSongs = true;
+    const wB = makeWindow({});
+    failSongs = false;
+    await waitFor(() => /nicht laden/.test(wB.document.querySelector('#boot p').textContent), 3000);
+    assert(/nicht laden/.test(wB.document.querySelector('#boot p').textContent) && wB.document.querySelector('#boot').classList.contains('failed'),
+      'Start: ohne Songliste steht eine Meldung da');
+  }
+
   { /* eigener Block: die Namen hier gibt es weiter oben schon */
   /* ------------------------------------------------------------ Spotify */
   w = makeWindow({});
@@ -2012,6 +2084,15 @@ const dummy = n => ({ t: 'Song ' + n, a: 'Kuenstler ' + n, al: 'Album', y: 2020,
   await waitFor(() => w.__ev('spLists'), 3000);
   assert(spotifyCalls[0] === 'token:refresh_token' && w.__ev('spLists.length') === 3,
     'Spotify: ein abgelaufenes Token wird mit dem Refresh-Token erneuert');
+
+  /* Eine Antwort, die mit dem Token woandershin verweist, wird nicht befolgt. */
+  spotifyCalls = [];
+  let fremdFehler = '';
+  await w.__ev("Spotify.tracks('pl4').catch(e => { window.__fremd = e.message; })");
+  await waitFor(() => w.__ev('window.__fremd'), 3000);
+  fremdFehler = w.__ev('window.__fremd') || '';
+  assert(/fremde Adresse/.test(fremdFehler) && !spotifyCalls.some(c => /evil/.test(c)),
+    'Spotify: ein `next` auf einen fremden Host bekommt das Token nicht (' + fremdFehler + ')');
 
   s$('#spLogout').click();
   assert(!w.__ev('Spotify.loggedIn()') && !s$('#spLogin').hidden

@@ -782,6 +782,62 @@ Die Überschrift der *Songauswahl* wurde früher umgeschrieben („Songauswahl �
 Playlist"). Das steht jetzt in der Zeile (`filterScope()`) — eine lange
 Überschrift hätte den Wert rechts hinausgedrückt.
 
+## Sicherheit
+
+Die Seite verarbeitet Fremdes an fünf Stellen: Antworten von Apple, song.link
+und Spotify, Dateien und Playlists des Nutzers, und was andere Tabs in den
+localStorage geschrieben haben. Prüfung vom 1. Oktober, Befunde und was
+daraus wurde:
+
+- **Nur `textContent`, nie `innerHTML` mit Fremdem.** Die zwei `innerHTML`
+  in `app.js` setzen feste SVG-Konstanten (`LUPE`, `NACH_VORN`). Damit das so
+  bleibt, steht eine **Content-Security-Policy** im `<head>`: Skripte nur von
+  hier, Stile nur von hier, Daten nur über https, kein `object`, kein
+  `base`. Inline-Styles gibt es nicht (nur CSSOM, das ist erlaubt). Geprüft
+  in Chromium: keine Verstöße.
+- **`href` nur https.** Odesli-Antworten landen als Link im Dokument;
+  `Links.safe()` lässt nur `https://` durch – beim Holen **und** beim Lesen
+  aus dem Cache, denn `songrate:links` kann jeder Tab beschreiben. Ein
+  `javascript:`-Link von dort wäre sonst ein Klick zur Codeausführung.
+- **Das Spotify-Token geht nur an `api.spotify.com`.** `page.next` kommt aus
+  der Antwort und wird als Adresse weiterverwendet – `api()` weigert sich,
+  wenn sie nicht mit der API-Basis beginnt.
+- **Tokens und Zugangsdaten liegen im localStorage**, unverschlüsselt
+  (Spotify-Tokens, Mediathek-Passwort oder -Token). Mit CSP und ohne
+  `innerHTML` ist das die übliche Lage einer statischen Seite; wer den
+  Browser teilt, nutzt *Zugang vergessen* und *Bei Spotify abmelden*.
+- **PKCE sauber:** Verifier und State liegen nur bis zur Rückkehr im
+  Speicher, der State wird verglichen, die Adresse danach bereinigt, ein Code
+  wird nie zweimal eingelöst. Die Client ID ist öffentlich und darf es sein.
+- **Eigene Dateien** werden nur gelesen, nie hochgeladen. `tags.js` liest
+  Längenfelder aus der Datei – eine negative WAV-INFO-Länge (`0x80000000`)
+  hat die Schleife vorher **30 Sekunden** festgehalten, jetzt bricht sie ab.
+  Alle anderen Parser haben Längenprüfungen und Schleifenwächter (`guard`).
+- **Was an Dritte geht:** Titel und Künstler der eigenen Playlist an Apples
+  Suche, Apples Track-IDs an song.link, nichts an sonst wen. Das steht so
+  auch in der README.
+
+### Was die Prüfung sonst gefunden hat
+
+- **Speicherleck:** `Audio2.load()` hat jede dekodierte Preview für immer
+  behalten – rund 10 MB je Song. Nach zwanzig Runden 1 GB; auf dem iPhone
+  stirbt der Tab früher. Jetzt `CACHE_MAX` 12 (die Runde hält ihre fünf
+  Puffer selbst).
+- **Leertaste im Textfeld der Playlist** hat den Song abgespielt und
+  Ziffern haben den Platz gewechselt – der globale Handler kannte nur
+  `INPUT`, nicht `TEXTAREA`. Jetzt `closest('input, textarea, …')`.
+- **Startfehler:** ohne `songs.json` pulsierte der Startbildschirm stumm
+  weiter. Jetzt steht eine Meldung da.
+- **Kaputte gespeicherte Grenzen** (`settings.tiers`) laufen beim Laden
+  durch `cleanCuts()`.
+- **Stufenlabel** eines fertigen Platzes jenseits einer kürzer gewordenen
+  Leiter zeigte `undefineds`.
+- **Leistung:** `Artist.all()` parste bei jedem Zeichnen der Panelzeilen
+  zwölf Kataloge aus dem localStorage, `Filters.options()` sortierte bei
+  jedem Filterklick 3000 Namen – beides jetzt gemerkt.
+- **Spotify-Feld** für die eigene Client ID war mit der eingebauten
+  vorbelegt; ein Klick auf *Anmelden* hätte sie als „eigene" gespeichert.
+
 ## Fallstricke im Frontend
 
 0. **Einspaltige Raster brauchen `minmax(0,1fr)`, nicht `1fr`.** `1fr` heißt

@@ -111,8 +111,12 @@ let settings = load('settings', {
   tiers: { global: TIER_PRESETS.normal.slice(), scopes: {} },
 });
 settings.tiers = settings.tiers && Array.isArray(settings.tiers.global)
-  ? { global: settings.tiers.global, scopes: settings.tiers.scopes || {} }
+  ? { global: cleanCuts(settings.tiers.global), scopes: {} }
   : { global: TIER_PRESETS.normal.slice(), scopes: {} };
+/* Gespeichertes kann von Hand verbogen sein - jede Liste geht durch cleanCuts. */
+Object.entries((load('settings', {}).tiers || {}).scopes || {}).forEach(([k, v]) => {
+  if (Array.isArray(v)) settings.tiers.scopes[k] = cleanCuts(v);
+});
 if (Array.isArray(settings.ladder) && settings.ladder.length >= MIN_STAGES) STAGES = settings.ladder.slice();
 if (!Array.isArray(settings.stages) || settings.stages.length !== STAGES.length) settings.stages = STAGES.map(() => true);
 /* Zusammengefasste Genres: alte Regeln auf den neuen Namen ziehen. */
@@ -399,8 +403,19 @@ const pool = () => (mode === 'playlist' && PL ? PL
 
 async function boot() {
   readBlocked();
-  const res = await fetch('data/songs.json');
-  DB = await res.json();
+  let res;
+  try {
+    res = await fetch('data/songs.json');
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    DB = await res.json();
+    if (!DB || !Array.isArray(DB.songs) || !Array.isArray(DB.artists)) throw new Error('kaputte Datei');
+  } catch (e) {
+    /* Ohne Songliste bliebe die Seite stumm beim Pulsieren stehen. */
+    const box = $('#boot'), p = $('#boot p');
+    if (p) p.textContent = 'Die Songliste ließ sich nicht laden – Verbindung prüfen und die Seite neu laden.';
+    if (box) box.classList.add('failed');
+    return;
+  }
   DB.songs.forEach((s, i) => {
     s.i = i;
     s.n = norm(s.t);
@@ -548,7 +563,9 @@ function buildChrome() {
       if (e.key === 'Escape') closeImport();
       return;
     }
-    if (e.target.tagName === 'INPUT') return;
+    /* Auch das Textfeld der Playlist und die Zahlenfelder: dort darf die
+       Leertaste keinen Song abspielen und eine Ziffer keinen Platz wechseln. */
+    if (e.target.closest && e.target.closest('input, textarea, select, [contenteditable]')) return;
     if (!$('#reveal').hidden || !$('#summary').hidden) {
       if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); (!$('#reveal').hidden ? $('#revealNext') : $('#summaryNext')).click(); }
       return;
@@ -2033,8 +2050,10 @@ function render() {
     bar.appendChild(seg);
   });
 
-  const secs = r ? stages[r.stage] : stages[0];
-  $('#stageLabel').textContent = String(secs).replace('.', ',') + 's';
+  /* Ein fertiger Platz behaelt seine alte Stufennummer, auch wenn die
+     Leiter inzwischen kuerzer ist - deshalb die Klammer. */
+  const secs = r ? stages[Math.min(r.stage, stages.length - 1)] : stages[0];
+  $('#stageLabel').textContent = fmtS(secs);
 
   const gl = $('#guessList');
   gl.innerHTML = '';
@@ -2882,7 +2901,7 @@ const spNote = m => { $('#spNote').textContent = m; };
 function buildSpotifyUI() {
   if (!$('#spBox')) return;
   $('#spRedirect').textContent = Spotify.redirectUri();
-  $('#spClient').value = Spotify.clientId();
+  $('#spClient').value = Spotify.ownId();
   $('#spClient').onchange = () => Spotify.setClientId($('#spClient').value);
   $('#spCopy').onclick = () => {
     const ok = () => spNote('Adresse kopiert.');

@@ -83,11 +83,15 @@ const Spotify = (() => {
   }
 
   async function tokenCall(params) {
-    return fetch(TOKEN, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams(params).toString(),
-    });
+    try {
+      return await fetch(TOKEN, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams(params).toString(),
+      });
+    } catch (e) {
+      throw new Error('Spotify ist gerade nicht erreichbar.');
+    }
   }
 
   function keep(st, tok) {
@@ -148,7 +152,16 @@ const Spotify = (() => {
 
   async function api(path, nochmal) {
     const url = path.startsWith('https://') ? path : API + path;
-    const res = await fetch(url, { headers: { Authorization: 'Bearer ' + await token() } });
+    /* `next` kommt aus der Antwort. Das Token geht nur an Spotify selbst -
+       eine Antwort, die woandershin zeigt, wird nicht befolgt. */
+    if (!url.startsWith(API)) throw new Error('Spotify verweist auf eine fremde Adresse.');
+    let res;
+    try {
+      res = await fetch(url, { headers: { Authorization: 'Bearer ' + await token() } });
+    } catch (e) {
+      if (e && e.auth) throw e;
+      throw new Error('Spotify ist gerade nicht erreichbar.');
+    }
     if (res.status === 401 && !nochmal) {
       const st = load(); st.exp = 0; save(st);
       return api(path, true);
