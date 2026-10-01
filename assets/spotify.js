@@ -237,6 +237,9 @@ const Spotify = (() => {
           artist: (t.artists || []).map(a => a && a.name).filter(Boolean).join(';'),
           lead: ((t.artists || [])[0] || {}).name || '',
           album: (t.album && t.album.name) || '',
+          /* Spotifys Track-ID: damit spielt der eingebettete Player in der
+             Aufloesung das ganze Lied, ohne erst suchen zu muessen. */
+          sp: t.id || undefined,
         });
       });
       if (opts.onProgress) opts.onProgress(out.length, page.total || out.length);
@@ -245,6 +248,20 @@ const Spotify = (() => {
     return out.slice(0, max);
   }
 
-  return { clientId, ownId, setClientId, redirectUri, ready, login, callback, loggedIn, logout,
+  /* Die Spotify-ID zu einem Song, fuer den eingebetteten Player. Eine
+     Anfrage je Song; was nicht passt, bleibt null - dann spielt Apples
+     Player. Ob die Suche im Entwicklungsmodus erlaubt ist, zeigt der
+     Versuch (403 -> null). */
+  async function findTrack(title, artist) {
+    const q = `track:${String(title || '').replace(/[()\[\]"-].*$/, '').trim()} artist:${String(artist || '').split(/[,;&]|feat\.?/i)[0].trim()}`;
+    let page;
+    try { page = await api('search?' + new URLSearchParams({ q, type: 'track', limit: 3 })); }
+    catch (e) { return null; }
+    const items = (page && page.tracks && page.tracks.items) || [];
+    const hit = items.find(x => x && x.id);
+    return hit ? hit.id : null;
+  }
+
+  return { clientId, ownId, setClientId, redirectUri, ready, login, callback, loggedIn, logout, findTrack,
            me, user, playlists, tracks, nav, FIXED: !!CLIENT_ID };
 })();

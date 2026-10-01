@@ -356,6 +356,12 @@ zuerst:
    Titel daraus. Zwei Anfragen je Titel, nur für Titel, die sonst nirgends
    zu finden waren.
 
+In der Auflösung gibt es **Ganzes Lied anhören**: ein kleiner Player von
+Spotify oder Apple Music direkt auf der Seite. Bist du im Browser bei
+Spotify (Premium) oder Apple Music angemeldet, spielt er das ganze Lied,
+sonst 30 Sekunden. Spotify braucht dafür die Song-ID – die kommt aus dem
+Import oder, angemeldet, über eine Suche; Apple reicht die Songliste.
+
 Hinter jedem Panelnamen und an den wichtigen Schaltern steht ein kleines
 **i** – antippen erklärt, was die Einstellung genau tut und wie sie rechnet.
 

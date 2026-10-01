@@ -262,6 +262,10 @@ function makeWindow(store, patchDb, url) {
         return json({ next: null, total: 1, items: [{ track: { type: 'track', name: 'Hello', artists: [{ name: 'Adele' }], album: { name: '25' } } }] });
       }
       if (pfad === 'me') return json({ id: 'u1', display_name: 'Ich' });
+      /* Suche fuer den eingebetteten Player: „Unbekannt" kennt Spotify nicht. */
+      if (pfad.startsWith('search?')) {
+        return json({ tracks: { items: /Unbekannt/.test(decodeURIComponent(pfad)) ? [] : [{ id: 'spx1', name: 'Treffer' }] } });
+      }
       if (pfad.startsWith('playlists/pl1/items')) {
         const off = +(/offset=(\d+)/.exec(pfad) || [0, 0])[1];
         /* Zwei Seiten, wie Spotify sie liefert - mit `next`. Seit Maerz 2026
@@ -945,6 +949,7 @@ const dummy = n => ({ t: 'Song ' + n, a: 'Kuenstler ' + n, al: 'Album', y: 2020,
   await waitFor(() => G('plBusy') === false, 20000);
   const via = k => G(`(() => { const t = plJob.tracks.find(x => x.title.startsWith(${JSON.stringify(k)}));
     const f = t && plJob.found.get(t.key); return f ? f.via + ':' + f.song.t : 'fehlt'; })()`);
+  assert(G("PL.songs.find(s => s.t === 'Testlied').sp") === '1', 'Export: die Spotify-ID aus der Track URI haengt am Song');
   assert(via('Testlied') === 'isrc:Testlied',
     'Export: mit ISRC kommt der Titel ueber den Nachschlag, nicht ueber die Suche (' + via('Testlied') + ')');
   assert(via('Dieses Lied') === 'isrc:Dieses Lied (Original Mix)',
@@ -1259,6 +1264,19 @@ const dummy = n => ({ t: 'Song ' + n, a: 'Kuenstler ' + n, al: 'Album', y: 2020,
   const alle = $('#revealLinks').querySelector('.all');
   assert(alle && alle.href === 'https://song.link/i/1440857781',
     'Aufloesung: mit Track-ID kommt der Sammellink dazu');
+  /* Das ganze Lied: ohne Spotify-Anmeldung spielt Apples Player, erst auf Tippen. */
+  assert(!$('#revealFull').hidden && $('#revealPlayer').hidden && !$('#revealPlayer').querySelector('iframe'),
+    'Player: der Knopf steht da, geladen wird erst auf Tippen');
+  $('#revealFull').click(); await tick(30);
+  {
+    const f = $('#revealPlayer iframe');
+    assert(f && f.src === 'https://embed.music.apple.com/de/song/1440857781' && $('#revealFull').hidden
+      && !$('#revealPlayer').querySelector('.pl-link'),
+      'Player: ohne Spotify kommt Apples Player, kein Wechsel angeboten (' + (f && f.src) + ')');
+  }
+  G('delete round[0].song.k; showReveal(round[0], false)');
+  assert($('#revealFull').hidden, 'Player: ohne Track-ID und ohne Spotify gibt es keinen Knopf');
+  G('round[0].song.k = 1440857781');
   G('closeReveal()'); await tick(20);
   [...$('#svcSeg').querySelectorAll('button')].find(b => b.textContent === 'Apple Music').click();
   G('newRound()'); await tick(30);
@@ -2414,6 +2432,33 @@ const dummy = n => ({ t: 'Song ' + n, a: 'Kuenstler ' + n, al: 'Album', y: 2020,
     'Spotify: mehrere Kuenstler wie bei Exportify');
   assert(S("[...plJob.found.values()].filter(f => f.via === 'local').length") === 3,
     'Spotify: alle drei stehen in songs.json und kosten keine Anfrage, auch „Earth, Wind & Fire"');
+  assert(S("plJob.found.get(plJob.tracks.find(t => t.title === 'September').key).song.sp") === '5bcTCxgc7xVfSaMV3RuVke',
+    'Spotify: die Track-ID haengt am gefundenen Song');
+
+  /* Angemeldet: der Player sucht die Spotify-ID, merkt sie sich, Apple bleibt als zweiter Weg. */
+  S("settings.service = 'spotify'; round[0].song.k = 1440857781; showReveal(round[0], false)");
+  spotifyCalls = [];
+  s$('#revealFull').click();
+  await waitFor(() => s$('#revealPlayer iframe'), 3000);
+  {
+    const f = s$('#revealPlayer iframe');
+    assert(f && f.src === 'https://open.spotify.com/embed/track/spx1?theme=0' && spotifyCalls[0] === 'search',
+      'Player: angemeldet fragt die Seite Spotify nach der ID und bettet den Player ein (' + (f && f.src) + ')');
+    assert(JSON.parse(w.localStorage.getItem('songrate:spids'))[S('songKey(round[0].song)')] === 'spx1',
+      'Player: die ID bleibt gemerkt');
+    const wechsel = s$('#revealPlayer .pl-link');
+    assert(wechsel && /Apple Music/.test(wechsel.textContent), 'Player: Apple Music als zweiter Weg');
+    wechsel.click(); await tick(30);
+    assert(/embed\.music\.apple\.com/.test(s$('#revealPlayer iframe').src), 'Player: der Wechsel laedt Apples Player');
+  }
+  S('closeReveal()');
+  assert(!s$('#revealPlayer').querySelector('iframe') && s$('#revealPlayer').hidden, 'Player: Weiter raeumt das iframe weg');
+  S("round[0].song.t = 'Unbekannt'; showReveal(round[0], false)");
+  s$('#revealFull').click();
+  await waitFor(() => s$('#revealPlayer iframe'), 3000);
+  assert(/embed\.music\.apple\.com/.test(s$('#revealPlayer iframe').src),
+    'Player: kennt Spotify den Song nicht, spielt Apple');
+  S("closeReveal(); settings.service = 'apple'");
 
   /* Ein abgelaufenes Token wird still erneuert. */
   const st = JSON.parse(w.localStorage.getItem('songrate:spotify'));

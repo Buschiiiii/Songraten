@@ -1589,10 +1589,93 @@ function showReveal(r, won) {
     badge.textContent = 'Nicht erkannt';
   }
   renderServiceLinks(s);
+  renderFullPlayer(s);
   const last = round.every(x => x.status !== 'playing');
   $('#revealNext').textContent = last ? 'Ergebnis' : 'Weiter';
   $('#reveal').hidden = false;
   playFull(r);
+}
+
+/* ---------------------------------------- Das ganze Lied, eingebettet */
+
+/* Ein Player von Spotify oder Apple Music als iframe - die Dienste bieten
+   ihre Embeds genau dafuer an, ohne App und ohne Schluessel. Angemeldet im
+   Browser (Spotify Premium, Apple Music) spielt er das ganze Lied, sonst
+   30 Sekunden. Spotify braucht seine Track-ID: aus dem Import (Exportify,
+   Anmeldung) oder, angemeldet, ueber eine Suche; Apple reicht die Track-ID
+   aus der Songliste. Geladen wird erst auf Tippen - ein iframe je
+   Aufloesung waere sonst eine Anfrage an Spotify pro Song. */
+const SPID_KEY = 'songrate:spids';
+function spIds() { try { return JSON.parse(localStorage.getItem(SPID_KEY) || '{}') || {}; } catch (e) { return {}; } }
+function spRemember(key, id) {
+  const m = spIds();
+  m[key] = id;
+  const keys = Object.keys(m);
+  if (keys.length > 300) keys.slice(0, keys.length - 300).forEach(k => delete m[k]);
+  try { localStorage.setItem(SPID_KEY, JSON.stringify(m)); } catch (e) {}
+}
+const spIdOf = s => s.sp || spIds()[songKey(s)] || '';
+
+function playerSources(s) {
+  const out = [];
+  if (spIdOf(s) || Spotify.loggedIn()) out.push('spotify');
+  if (s.k) out.push('apple');
+  /* Der Lieblingsdienst zuerst, wenn er dabei ist. */
+  if (settings.service === 'apple' && out.includes('apple')) return ['apple', ...out.filter(x => x !== 'apple')];
+  return out;
+}
+
+function renderFullPlayer(s) {
+  const btn = $('#revealFull'), box = $('#revealPlayer');
+  box.innerHTML = '';
+  box.hidden = true;
+  const quellen = playerSources(s);
+  btn.hidden = !quellen.length;
+  if (!quellen.length) return;
+  btn.textContent = 'Ganzes Lied anhören';
+  btn.onclick = () => openFullPlayer(s, quellen);
+}
+
+async function openFullPlayer(s, quellen) {
+  const btn = $('#revealFull'), box = $('#revealPlayer');
+  Audio2.stop();
+  btn.hidden = true;
+  box.hidden = false;
+  box.innerHTML = '';
+  let src = '', hoehe = 152, wer = quellen[0];
+  if (wer === 'spotify') {
+    let id = spIdOf(s);
+    if (!id && Spotify.loggedIn()) {
+      box.appendChild(el('p', 'note', 'Spotify wird gefragt …'));
+      id = await Spotify.findTrack(s.t, s.a);
+      if (revealed && revealed.song !== s) return;
+      if (id) spRemember(songKey(s), id);
+    }
+    if (id) src = 'https://open.spotify.com/embed/track/' + encodeURIComponent(id) + '?theme=0';
+    else if (quellen.includes('apple')) wer = 'apple';
+  }
+  if (wer === 'apple' && !src) {
+    src = 'https://embed.music.apple.com/de/song/' + encodeURIComponent(s.k);
+    hoehe = 175;
+  }
+  box.innerHTML = '';
+  if (!src) {
+    box.appendChild(el('p', 'note', 'Spotify kennt den Song nicht unter diesem Namen – die Links oben führen zur Suche.'));
+    return;
+  }
+  const f = document.createElement('iframe');
+  f.src = src;
+  f.height = String(hoehe);
+  f.setAttribute('allow', 'autoplay; encrypted-media; clipboard-write; fullscreen; picture-in-picture');
+  f.setAttribute('loading', 'lazy');
+  f.title = wer === 'spotify' ? 'Spotify-Player' : 'Apple-Music-Player';
+  box.appendChild(f);
+  const andere = quellen.find(x => x !== wer);
+  if (andere) {
+    const b = el('button', 'pl-link', andere === 'spotify' ? 'lieber bei Spotify' : 'lieber bei Apple Music');
+    b.onclick = () => openFullPlayer(s, [andere, wer]);
+    box.appendChild(b);
+  }
 }
 
 /* Die Dienste unter der Aufloesung. Der Lieblingsdienst steht vorn und wird
@@ -1662,6 +1745,9 @@ function playFull(r) {
 function closeReveal() {
   Audio2.stop();
   freeLocalUrls();
+  /* Das iframe raus - sonst spielt der Player hinter der naechsten Runde weiter. */
+  $('#revealPlayer').innerHTML = '';
+  $('#revealPlayer').hidden = true;
   $('#reveal').hidden = true;
   const next = round.findIndex(r => r.status === 'playing');
   if (next >= 0) switchTo(next);

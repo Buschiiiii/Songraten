@@ -64,6 +64,10 @@ const Playlist = (() => {
   const ARTIST_KEYS = ['artist name(s)', 'artist name', 'artist names', 'artist', 'artists', 'artist(s)', 'kunstler', 'künstler', 'interpret', 'album artist', 'albumartist'];
   const ALBUM_KEYS = ['album name', 'album', 'collection', 'release'];
   const ISRC_KEYS = ['isrc'];
+  /* Spotifys Track-ID (Exportify: „Track URI"): fuer den eingebetteten
+     Player in der Aufloesung. */
+  const SP_KEYS = ['track uri', 'spotify uri', 'spotify track id', 'spotify id', 'spotify url', 'uri', 'url'];
+  const spOf = x => { const m = /(?:spotify:track:|open\.spotify\.com\/(?:intl-[a-z]+\/)?track\/)([A-Za-z0-9]{1,40})/.exec(String(x || '')); return m ? m[1] : ''; };
 
   /* Zeilenweiser CSV-Leser, der Anfuehrungszeichen und Zeilenumbrueche in
      Feldern aushaelt - Songtitel mit Komma sind haeufig genug. */
@@ -171,12 +175,13 @@ const Playlist = (() => {
         const head = rows[0];
         const ti = findCol(head, TITLE_KEYS), ai = findCol(head, ARTIST_KEYS);
         if (ti >= 0 || ai >= 0) {
-          const li = findCol(head, ALBUM_KEYS), ii = findCol(head, ISRC_KEYS);
+          const li = findCol(head, ALBUM_KEYS), ii = findCol(head, ISRC_KEYS), si = findCol(head, SP_KEYS);
           const tracks = rows.slice(1).map(r => ({
             title: ti >= 0 ? (r[ti] || '') : '',
             artist: ai >= 0 ? (r[ai] || '') : '',
             album: li >= 0 ? (r[li] || '') : '',
             isrc: ii >= 0 ? (isrcOf(r[ii]) || undefined) : undefined,
+            sp: si >= 0 ? (spOf(r[si]) || undefined) : undefined,
           })).filter(x => x.title || x.artist);
           if (tracks.length) return { tracks: cap(tracks) };
         }
@@ -534,6 +539,7 @@ const Playlist = (() => {
       const x = { title: t.title || '', artist: t.artist || '', album: t.album || '', loose: !!t.loose };
       if (t.lead) x.lead = t.lead;
       if (t.isrc) x.isrc = isrcOf(t.isrc) || undefined;
+      if (t.sp) x.sp = String(t.sp);
       x.key = keyOf(x);
       if (!x.key || seen.has(x.key)) return;
       seen.add(x.key);
@@ -553,7 +559,7 @@ const Playlist = (() => {
     take(j, t);
     if (song) {
       j.missed.delete(t.key);
-      j.found.set(t.key, { song: { ...song, q: t.key }, via });
+      j.found.set(t.key, { song: { ...song, q: t.key, sp: song.sp || t.sp || undefined }, via });
     } else {
       j.found.delete(t.key);
       j.missed.set(t.key, t);
@@ -897,7 +903,7 @@ const Playlist = (() => {
         localStorage.setItem(QUEUE_KEY, JSON.stringify({
           name: j.name, own: !!j.own,
           tracks: j.tracks.map(t => ({ title: t.title, artist: t.artist, album: t.album,
-                                       loose: t.loose || undefined, lead: t.lead, isrc: t.isrc })),
+                                       loose: t.loose || undefined, lead: t.lead, isrc: t.isrc, sp: t.sp })),
           missed: [...j.missed.keys()],
           /* Warum etwas fehlt, soll das Neuladen ueberleben. */
           whys: Object.fromEntries([...j.missed.values()].filter(t => t.why).map(t => [t.key, t.why])),

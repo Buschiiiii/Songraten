@@ -853,6 +853,36 @@ Developer-Token, also einen Server. Wer direkt abspielen will, nimmt die
 eigene Musik oder den eigenen Mediathek-Server — dort läuft der Ton wirklich
 aus der Seite heraus.
 
+## Das ganze Lied: eingebetteter Player in der Auflösung
+
+Gewünscht („mit einem kleinen Player das ganze Lied hören"). Spotify und
+Apple Music bieten dafür **Embeds** an, ein iframe ohne App, Schlüssel
+oder Fremdskript – damit verträgt es sich mit der harten Randbedingung,
+anders als das Web Playback SDK. Angemeldet im selben Browser (Spotify
+Premium bzw. Apple Music) spielt das Embed das ganze Lied, sonst 30 s.
+
+- `#revealFull` („Ganzes Lied anhören") erscheint, wenn es eine Quelle
+  gibt (`playerSources()`): Spotify bei bekannter Spotify-ID oder
+  Anmeldung, Apple bei Track-ID `k`. Der Lieblingsdienst steht vorn,
+  der andere kommt als „lieber bei …" unter den Player. **Geladen wird
+  erst auf Tippen** – ein iframe je Auflösung wäre eine Anfrage an Spotify
+  pro Song, und Autoplay gäbe es sowieso nicht.
+- **Spotify-ID** (`s.sp`): aus Exportify (`Track URI`, `SP_KEYS`/`spOf()`
+  in playlist.js, wandert über `job()`, `storeQueue()` und `mark()` an den
+  gefundenen Song) und aus der Anmeldung (`Spotify.tracks()` gibt `sp`
+  mit). Fehlt sie und man ist angemeldet, fragt `Spotify.findTrack()`
+  einmal die Suche (`search?type=track`, Titel ohne Klammerzusatz, erster
+  Künstler) – gemerkt in `songrate:spids` (300 Songs). Ob die Suche im
+  Entwicklungsmodus erlaubt ist, ist **ungeprüft**; bei 403 kommt null und
+  Apple spielt.
+- Adressen: `open.spotify.com/embed/track/<id>?theme=0` (152 px) und
+  `embed.music.apple.com/de/song/<k>` (175 px) – die Apple-Form ist aus
+  der Song-URL abgeleitet und **ungeprüft** (kein Netz hier); geht sie
+  nicht, zeigt das iframe Apples Fehlerseite. CSP: `frame-src` nur diese
+  beiden Hosts (in Chromium geprüft: kein Verstoß). `closeReveal()` leert
+  `#revealPlayer`, sonst spielt der Player hinter der nächsten Runde
+  weiter; `openFullPlayer()` stoppt die eigene Wiedergabe.
+
 ## Fehler erklären: das ?-Knöpfchen
 
 „Die Suche kam nicht durch" hat dem Besitzer nichts gesagt – zu Recht. Jede

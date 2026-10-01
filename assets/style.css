@@ -555,6 +555,11 @@ details.panel > summary h2 .why.info{vertical-align:-1px}
 #spLists .arhit.dim:hover{opacity:1}
 
 /* ---------- Nachhoeren bei ---------- */
+/* Der eingebettete Player in der Aufloesung: Spotify oder Apple Music. */
+.player-box{margin:4px 0 16px}
+.player-box iframe{display:block;width:100%;border:0;border-radius:12px;background:var(--panel-2)}
+.player-box .note{margin:6px 0 0;text-align:center}
+#revealFull{display:block;margin:-6px auto 14px}
 .svc-head{font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--grey);margin:-4px 0 8px}
 .svc-row{display:flex;flex-wrap:wrap;gap:6px;justify-content:center;margin:0 0 16px}
 .svc-row.pick{justify-content:flex-start;margin:10px 0 0}

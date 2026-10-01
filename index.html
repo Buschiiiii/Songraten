@@ -6,7 +6,7 @@
 <!-- Skripte nur von hier; Daten (Apple, song.link, Spotify, eigener Server)
      nur ueber https. Faellt jemandem eine Luecke in die Seite, kann er
      wenigstens kein fremdes Skript nachladen. -->
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' https: data: blob:; connect-src 'self' https:; media-src 'self' https: blob:; object-src 'none'; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' https: data: blob:; connect-src 'self' https:; media-src 'self' https: blob:; frame-src https://open.spotify.com https://embed.music.apple.com; object-src 'none'; base-uri 'none'; form-action 'none'">
 <title>Songraten</title>
 <meta name="description" content="Erkenne den Song in 0,01 Sekunden.">
 <link rel="stylesheet" href="assets/style.css">
@@ -359,6 +359,8 @@
     <div id="revealBadge" class="badge"></div>
     <p class="svc-head">Nachhören bei</p>
     <div id="revealLinks" class="svc-row"></div>
+    <button id="revealFull" class="pl-link" hidden>Ganzes Lied anhören</button>
+    <div id="revealPlayer" class="player-box" hidden></div>
     <button id="revealNext" class="btn-action">Weiter</button>
   </div>
 </div>
