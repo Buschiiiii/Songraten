@@ -6,8 +6,12 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from dedupe import merge_duplicates
 from fame import add_fame
 
+# Die Baender bestimmen nur, wie viele Songs je Streambereich gesammelt
+# werden - die Stufen im Spiel rechnet das Frontend selbst nach Prozent
+# (settings.tiers). `deep` ist der Vorrat unter 130 Mio., aus dem ein
+# strenger eingestelltes Impossible schoepft.
 TIERS = [('easy', 1.5e9, 1e13), ('medium', 8e8, 1.5e9), ('hard', 4.5e8, 8e8),
-         ('expert', 2.8e8, 4.5e8), ('impossible', 1.3e8, 2.8e8)]
+         ('expert', 2.8e8, 4.5e8), ('impossible', 1.3e8, 2.8e8), ('deep', 5e7, 1.3e8)]
 PER_TIER = 400
 CAP = 8
 # Jahrescharts: eigener Topf fuer den Jahrzehntmodus, damit alte Jahrzehnte

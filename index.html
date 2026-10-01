@@ -46,6 +46,47 @@
         <summary><h2>Stufen</h2><span class="psum"></span></summary>
         <div class="chips" id="stageChips"></div>
         <p class="note">Abgeschaltete Stufen werden übersprungen – kosten dich aber auch einen Versuch.</p>
+
+        <details class="fgroup" id="ladderBox">
+          <summary>Längen anpassen</summary>
+          <div class="seg seg-row" id="ladderPreset">
+            <button data-v="standard">Standard</button>
+            <button data-v="sanft">Sanft</button>
+            <button data-v="blitz">Blitz</button>
+            <button data-v="lang">Lang</button>
+          </div>
+          <div id="ladderEdit" class="ladder"></div>
+          <div class="ladder-foot">
+            <button id="ladderAdd" class="pl-link">+ Stufe</button>
+            <button id="ladderGo" class="btn-ghost">Übernehmen</button>
+          </div>
+          <p id="ladderNote" class="note">Zwei bis acht Stufen von 0,01 bis 20 Sekunden.
+            Punkte hängen an der gehörten Zeit, nicht an der Nummer der Stufe:
+            1000 bei 0,01 s, 500 bei 2 s, 100 bei 20 s.</p>
+        </details>
+      </details>
+
+      <details class="panel" data-k="tiers" id="tierPanel">
+        <summary><h2>Schwierigkeit</h2><span class="psum"></span></summary>
+        <div class="seg seg-row" id="tierPreset">
+          <button data-v="leicht">Leicht</button>
+          <button data-v="normal">Normal</button>
+          <button data-v="schwer">Schwer</button>
+        </div>
+        <div id="tierBar" class="tier-bar"></div>
+        <div id="tierRows" class="tier-rows"></div>
+        <p id="tierNote" class="note"></p>
+        <label class="switch" for="tierOwn">
+          <input type="checkbox" id="tierOwn">
+          <span class="track"></span>
+          <span class="switch-txt" id="tierOwnTxt">Eigene Grenzen für Charts</span>
+        </label>
+        <p class="note">Jede Stufe reicht bis zu dem Anteil der bekanntesten Songs,
+          der daneben steht – Easy sind die obersten, Impossible geht am tiefsten.
+          Was unter der letzten Grenze liegt, kommt mit Stufen nicht dran.
+          Eigene Grenzen gelten nur für diesen Bereich, sonst überall.</p>
+        <p class="fhead">Nur Hits</p>
+        <div class="tier-hit">die obersten <input id="hitShare" type="number" min="1" max="100" step="1"> %</div>
       </details>
 
       <details class="panel stats" data-k="stats">
@@ -114,11 +155,11 @@
       <label class="switch hit-switch" for="hitMode">
         <input type="checkbox" id="hitMode">
         <span class="track"></span>
-        <span class="switch-txt"><b>Heimspiel</b> – nur die großen Hits</span>
+        <span class="switch-txt"><b>Nur Hits</b> – nur die großen</span>
       </label>
-      <p class="note">Für Erfolgserlebnisse, in jedem Modus: nur das bekannteste
-        Fünftel, fünf Songs ohne Stufen. Gilt ab der nächsten Runde –
-        „Alle neu würfeln“ startet sie sofort.</p>
+      <p class="note">Für Erfolgserlebnisse, in jedem Modus: nur die bekanntesten
+        Songs (wie viele, steht unter <i>Schwierigkeit</i>), fünf ohne Stufen.
+        Gilt ab der nächsten Runde – „Alle neu würfeln“ startet sie sofort.</p>
     </div>
 
     <details class="panel" data-k="playlist" id="plPanel">

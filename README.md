@@ -19,19 +19,20 @@ Playlists direkt von Spotify holen willst, und auch das ohne Server.
 | Eigene Musik | Dateien vom eigenen Gerät oder die Mediathek vom eigenen Server |
 
 Dazu Filter für Genre, Künstler, Jahrzehnt und Instrumentals, die sich
-kombinieren lassen – und **Heimspiel**, das jeden Modus auf die großen Hits
-beschränkt.
+kombinieren lassen, **Nur Hits** für Erfolgserlebnisse und eine einstellbare
+**Schwierigkeit**.
 
 ---
 
-## Heimspiel – nur die großen Hits
+## Nur Hits
 
-Für Erfolgserlebnisse: rechts unter **Modus** den Schalter *Heimspiel*
+Für Erfolgserlebnisse: rechts unter **Modus** den Schalter *Nur Hits*
 anmachen. Dann kommen in **jedem** Modus nur noch die bekanntesten Songs dran
-– das oberste Fünftel nach Streams, fünf gleichwertige Plätze „Hit 1" bis
-„Hit 5", keine Stufen.
+– voreingestellt die obersten 20 % nach Streams, fünf gleichwertige Plätze
+„Hit 1" bis „Hit 5", keine Stufen. Wie viel Prozent, stellst du unter
+**Schwierigkeit** ein.
 
-| Modus | Was im Heimspiel übrig bleibt |
+| Modus | Was bei „Nur Hits" übrig bleibt |
 |---|---|
 | Charts | die meistgestreamten 20 % (rund 600 Songs ab 1,3 Mrd. Streams) |
 | Jahrzehnte, Genres | die bekanntesten 20 % des Jahrzehnts bzw. Genres |
@@ -39,9 +40,36 @@ anmachen. Dann kommen in **jedem** Modus nur noch die bekanntesten Songs dran
 | Eigene Playlist, eigene Musik | was die Songliste als Hit kennt, zuerst |
 
 Es gilt ab der nächsten Runde – *Alle neu würfeln* startet sie sofort. In der
-Statistik bekommt das Heimspiel eine eigene Zeile.
+Statistik bekommt „Nur Hits" eine eigene Zeile.
 
----
+## Schwierigkeit: wie tief die Stufen reichen
+
+Links unter **Schwierigkeit** legst du fest, welcher Anteil der bekanntesten
+Songs auf welche Stufe kommt. Fünf Zahlen in Prozent, kumulativ: *Easy = Top
+15 %, Medium bis 35 %, Hard bis 55 %, Expert bis 75 %, Impossible bis 100 %*
+ist **Normal** und entspricht den alten festen Grenzen der Charts (Easy ab
+1,5 Mrd. Streams, Impossible ab 130 Mio.). Neben jedem Feld steht, wie viele
+Songs das gerade sind und ab wie vielen Streams.
+
+- **Leicht** nimmt nur die obere Hälfte des Pools, Easy sind die obersten 5 %.
+- **Schwer** schiebt alle Stufen nach unten: Easy reicht bis 25 %.
+- Oder du tippst eigene Zahlen – zum Beispiel *Easy = Top 1 %, Impossible bis
+  20 %*. Was unter der letzten Grenze liegt, kommt mit Stufen nicht dran.
+
+Die Einstellung gilt überall. Mit **Eigene Grenzen für …** bekommt der Bereich,
+in dem du gerade spielst – die Charts, die 2010er, Hip-Hop – seine eigenen
+Zahlen; alles andere bleibt bei der globalen Einstellung. So kannst du die
+1950er anders schneiden als die 2010er.
+
+Die Reihenfolge ist in jedem Modus dieselbe: **nach Streams.** Ein Song mit
+mehr Streams steht nie in einer schwereren Stufe als einer mit weniger – auch
+in Genres, wo das früher nicht so war. Songs aus den Jahrescharts, die keine
+Streamzahl haben, werden aus ihrem Chartplatz geschätzt und dazwischen
+einsortiert; ein ≈ in der Anzeige sagt es.
+
+Damit es für „tiefer" Nachschub gibt, holt die Pipeline künftig Songs ab 50
+Mio. Streams statt 130 Mio. Das greift nach dem nächsten *Charts neu bauen*
+(Actions).
 
 ## Nachsehen, was drin ist
 
@@ -103,8 +131,9 @@ Fertig. Jede spätere Änderung im Repo ist nach etwa einer Minute live.
 Rechts unter **Modus** auf *Jahrzehnte* oder *Genres*. Oben erscheinen dann
 Pfeile, mit denen du durchspringst – gespielt wird nur aus dem Gewählten, und
 die fünf Stufen werden **innerhalb** der Auswahl vergeben: Easy sind die
-bekanntesten 20 % der 80er, nicht die meistgestreamten Songs überhaupt. Mit
-Shift und den Pfeiltasten geht das auch über die Tastatur.
+bekanntesten 15 % der 80er, nicht die meistgestreamten Songs überhaupt (die
+Prozente stehen unter *Schwierigkeit*). Mit Shift und den Pfeiltasten geht das
+auch über die Tastatur.
 
 Sind zu wenige Songs da, um fünf Stufen zu füllen, wird ohne Stufen gespielt:
 fünf zufällige Songs aus der Auswahl. Die Leiste schreibt es dazu.
@@ -415,16 +444,25 @@ und 1–5.
 
 ### Stufen einstellen
 
-Rechts unter *Stufen* schaltest du einzelne Längen ab. Ist 0,01s aus, startet jeder
+Links unter *Stufen* schaltest du einzelne Längen ab. Ist 0,01s aus, startet jeder
 Song bei 0,1s. Umschalten mitten im Spiel wirft die Runde nicht weg — du bleibst
-beim selben Song und an derselben Stelle, nur das Raster ändert sich. Die Anzahl der Versuche entspricht der Anzahl aktiver Stufen — eine
-Stufe abzuschalten kostet also auch einen Versuch.
+beim selben Song und an derselben Stelle, nur das Raster ändert sich. Die
+Anzahl der Versuche entspricht der Anzahl aktiver Stufen — eine Stufe
+abzuschalten kostet also auch einen Versuch.
+
+**Längen anpassen** darunter tauscht die ganze Leiter: *Standard* (0,01 bis
+15 s), *Sanft* (0,5 – 1 – 2 – 5 – 10 – 20 s), *Blitz* (0,01 bis 3 s), *Lang*
+(1 bis 20 s) – oder eigene Zahlen, zwei bis acht Stufen zwischen 0,01 und 20
+Sekunden, *+ Stufe* und *Übernehmen*. Auch das wirft die laufende Runde nicht
+weg.
 
 ### Punkte
 
-Es zählt, nach wie vielen Sekunden du den Song erkannt hast, multipliziert mit der
-Stufe: Impossible bringt gut das Doppelte von Easy. Statistik und Einstellungen
-liegen lokal im Browser.
+Es zählt, nach wie vielen Sekunden du den Song erkannt hast – unabhängig
+davon, wie die Leiter aussieht: 1000 Punkte bei 0,01 s, 850 bei 0,1 s, 700
+bei 0,5 s, 500 bei 2 s, 300 bei 8 s, 150 bei 15 s, 100 bei 20 s, dazwischen
+wird interpoliert. Multipliziert mit der Stufe: Impossible bringt gut das
+Doppelte von Easy. Statistik und Einstellungen liegen lokal im Browser.
 
 ---
 
@@ -435,15 +473,16 @@ Streamzahl, Stufe sowie Links auf Apples 30-Sekunden-Preview und das Cover.
 Es liegen keine Audiodateien im Repo — die Ausschnitte kommen beim Spielen direkt
 vom Apple-Preview-Server.
 
-Die Stufen richten sich nach den Spotify-Streams des Songs:
+Die Stufen richten sich nach den Spotify-Streams des Songs – in Prozent des
+Pools, einstellbar unter *Schwierigkeit*. Bei **Normal** heißt das in den Charts:
 
-| Stufe | Streams | Beispiel |
-|---|---|---|
-| Easy | ab 1,5 Mrd. | Sia – Unstoppable |
-| Medium | 800 Mio. – 1,5 Mrd. | Sia – Elastic Heart |
-| Hard | 450 – 800 Mio. | Linkin Park – One More Light |
-| Expert | 280 – 450 Mio. | Sia – Breathe Me |
-| Impossible | 130 – 280 Mio. | Britney Spears – Stronger |
+| Stufe | Anteil | Streams | Beispiel |
+|---|---|---|---|
+| Easy | Top 15 % | ab 1,5 Mrd. | Sia – Unstoppable |
+| Medium | bis 35 % | 750 Mio. – 1,5 Mrd. | Sia – Elastic Heart |
+| Hard | bis 55 % | 440 – 750 Mio. | Linkin Park – One More Light |
+| Expert | bis 75 % | 280 – 440 Mio. | Sia – Breathe Me |
+| Impossible | bis 100 % | 130 – 280 Mio. | Britney Spears – Stronger |
 
 ## Songliste erneuern
 

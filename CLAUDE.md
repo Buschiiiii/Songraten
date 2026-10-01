@@ -93,19 +93,74 @@ eigenen Playlists heraus. Nichts davon braucht ein Backend.
 Grenzwerte der Stufen, Songs pro Stufe und die Künstleranzahl stehen oben in
 `match_local.py`.
 
-## Stufen (Spotify-Streams)
+## Stufen: Prozent des Pools nach Bekanntheit
 
-| Stufe | Streams | Anker |
-|---|---|---|
-| easy | ab 1,5 Mrd. | Sia – Unstoppable (2,03 Mrd.) |
-| medium | 800 Mio. – 1,5 Mrd. | |
-| hard | 450 – 800 Mio. | |
-| expert | 280 – 450 Mio. | |
-| impossible | 130 – 280 Mio. | Britney Spears – Stronger (214 Mio.) |
+Früher feste Streamgrenzen (Easy ab 1,5 Mrd., Impossible 130–280 Mio.), die
+die Pipeline als `d` in die Datei schrieb. Jetzt rechnet das Frontend die
+Stufen selbst: der Pool wird nach Bekanntheit (`pop`) sortiert und nach
+kumulativen Prozenten geschnitten (`applyTiers()`, `settings.tiers`). Fünf
+Zahlen, streng steigend, 1–100 (`cleanCuts()`); was hinter der letzten liegt,
+spielt mit Stufen nicht mit (`tierInfo.played`).
 
-Unter 130 Mio. wird es unfair statt schwer. Der Pool je Stufe wird mit festem
-Seed gemischt, nicht nach Streams sortiert — sonst füllt sich jede Stufe nur
-vom oberen Rand ihres Bereichs.
+| Vorlage | Easy | Medium | Hard | Expert | Impossible |
+|---|---|---|---|---|---|
+| leicht | 5 | 12 | 22 | 35 | 50 |
+| **normal** | 15 | 35 | 55 | 75 | 100 |
+| schwer | 25 | 45 | 65 | 85 | 100 |
+
+**Normal entspricht genau den alten Grenzen**: 15/35/55/75 % der 2971
+gestreamten Songs sind 1,5 Mrd. / 750 / 440 / 280 Mio. — gleiche Stufen wie
+vorher, nur anders ausgedrückt. Panel *Schwierigkeit* (links, `#tierPanel`):
+Vorlagen, Balken, je Stufe ein Prozentfeld mit Songzahl und Streamgrenze an
+der Unterkante, dazu der Anteil für *Nur Hits* (`settings.hitShare`).
+
+**Bereiche** (`tierScope()`): `charts`, `dec-2010`, `gen-pop`. Der Schalter
+*Eigene Grenzen für …* kopiert die geltenden Zahlen nach
+`settings.tiers.scopes[key]`; von da an schreiben Vorlagen und Felder dorthin
+(`writeCuts()`), sonst nach `settings.tiers.global`. Schalter aus löscht den
+Eintrag. Gewünscht war Spielraum („2010er anders als 1950er"), deshalb je
+Bereich und nicht je Modus.
+
+`d` bleibt in der Datei als Marker „hat Streams" (`chartFiltered`,
+`keep_extras`, Guards) und steuert in `match_local.py` nur noch, wie viele
+Songs je Streambereich gesammelt werden. Neu dort: Band `deep` (50–130 Mio.,
+`fetch_kworb.MIN_STREAMS` = 5e7) als Vorrat für ein tiefer gestelltes
+Impossible. **Greift erst nach *Charts neu bauen*.** Der Guard verlangt für
+`deep` erst dann 150 Songs, wenn es sie vorher schon gab.
+
+### Bekanntheit (`pop`)
+
+`addPop()` in `boot()`: Streams, wo es welche gibt. Für Songs aus den
+Jahrescharts (keine Streams) eine **Schätzung**, damit sie in Jahrzehnt- und
+Genrepools zwischen den gestreamten liegen statt pauschal unten: Median der
+gestreamten Songs desselben Jahrzehnts (ab 12 Songs, sonst das nächste
+Jahrzehnt) mal `10^((f−75)/50)` — Platz 1 (f = 100) das Dreifache, Platz 25
+der Median, Platz 100 ein Dreißigstel. `s.est = true`, im Panel steht dann ≈.
+Songs aus Playlist, Künstlerkatalog und eigener Musik bekommen `pop` über
+`dbFind()` (`popOf()`), Unbekanntes bleibt hinten in bisheriger Reihenfolge
+(`ranked()`).
+
+**Der gemeldete Fehler:** im Genremodus hatte Medium mehr Streams als Easy.
+Ursache war `f` aus `fame.py` — für gestreamte Songs der Rang **innerhalb des
+Jahrzehnts**. Über Jahrzehnte hinweg (Genres!) stand damit der größte Song der
+90er über einem viel öfter gestreamten der 2010er. Jetzt gilt in jedem Pool:
+mehr Streams = bekannter, nie umgekehrt (`monotone()` in `test_ui.js` prüft
+das in Charts, Jahrzehnten und Genres). `fame.py` läuft weiter, `f` wird nur
+noch für die Schätzung gebraucht.
+
+## Stufenlängen (`settings.ladder`)
+
+`STAGES` ist ein `let`, beim Laden aus `settings.ladder` gesetzt (null =
+`DEFAULT_LADDER`). `setLadder()` tauscht die Leiter, ohne die Runde zu
+verlieren — `remapStages()` wie beim Abschalten einzelner Stufen; eigene
+Dateien werden neu dekodiert, wenn die Leiter länger wird als der bisherige
+Schnitt. Grenzen: `MIN_STAGE` 0,01, `MAX_STAGE` 20 (mehr passt nicht in eine
+30-s-Preview mit Zufallsstart), 2–8 Stufen. Vorlagen in `LADDERS`, Editor im
+Panel *Stufen → Längen anpassen* (`ladderDraft`, erst *Übernehmen* schreibt).
+
+**Punkte hängen an der Zeit, nicht an der Stufennummer** (`pointsFor()`): die
+alte Tabelle `POINTS` als Stützpunkte, dazu 20 s = 100, dazwischen linear im
+Logarithmus der Sekunden. Für die Standardleiter kommt exakt das Alte heraus.
 
 ## Jahrzehnte- und Genremodus
 
@@ -122,18 +177,10 @@ aus zwölf Songs sind keine Stufen, sondern eine Verlosung — dann wird gespiel
 wie in der Playlist: fünf zufällige Songs, Faktor 1,0, Plätze statt Stufen
 (`usesTiers()`, `FLAT_SLOTS`). Die Leiste schreibt „ohne Stufen" dazu.
 
-**Die Stufen sind hier relativ.** Die Chartsstufen hängen an absoluten
-Streamzahlen — für ein einzelnes Jahrzehnt taugt das nicht, Spotify zählt erst
-seit 2008 mit. `relativeTiers()` sortiert deshalb den Pool des Jahrzehnts nach
-Bekanntheit und schneidet ihn in fünf gleich große Teile: das oberste Fünftel
-ist Easy.
-
-Sortiert wird nach `f`, dem von der Pipeline gerechneten Bekanntheitswert
-(0–100, siehe `tools/fame.py`): Streams zählen als Rang **innerhalb** des
-Jahrzehnts, ein Jahreschartplatz dagegen absolut (Platz 1 = 100, Platz 100 =
-0). Das ist wichtig — relativ gerechnet macht ein Jahrzehnt mit nur drei
-Chartsongs aus „Africa" den unbekanntesten Song der 80er. Fehlt `f` (ältere
-`songs.json`), entscheiden die Streams.
+**Die Stufen sind hier relativ** — aber nach derselben Regel wie in den
+Charts: `applyTiers(pickFiltered)` sortiert den Pool nach `pop` und schneidet
+nach den Prozenten des Bereichs (siehe *Stufen*). Easy sind die obersten 15 %
+der 80er, nicht die meistgestreamten Songs überhaupt.
 
 Songs mit leerem `d` haben keine Stufe und damit keine Streamzahl — sie kommen
 aus den Jahrescharts und spielen in den Charts **nicht** mit, im Jahrzehnte-
@@ -539,26 +586,23 @@ statt aus `chartFiltered`. Die Songs aus den Jahrescharts haben keine
 Streamzahl und damit keine Stufe — einsortieren kann man sie nicht, mitspielen
 lassen sehr wohl. Aus 1913 werden so über 4000.
 
-## Heimspiel – nur die großen Hits
+## Nur Hits
 
-Gewünscht als Modus „für Erfolgserlebnisse". Umgesetzt als Schalter im Panel
-*Modus* (`settings.hits`), der sich mit **jedem** Modus kombiniert: gezogen
-wird aus `hitPool(basePool())` – `activePool()` ist dafür in `basePool()` und
-die Hülle geteilt. Keine Stufen (`usesTiers()` ist dann `false`), die Plätze
-heißen „Hit 1"–„Hit 5" (`HIT_SLOTS`, `hit: true`), in der Statistik ein
-eigener Schlüssel `hits`.
+Gewünscht als Modus „für Erfolgserlebnisse", hieß kurz „Heimspiel" (der Name
+gefiel nicht). Schalter im Panel *Modus* (`settings.hits`), der sich mit
+**jedem** Modus kombiniert: gezogen wird aus `hitPool(basePool())` –
+`activePool()` ist dafür in `basePool()` und die Hülle geteilt. Keine Stufen
+(`usesTiers()` ist dann `false`), die Plätze heißen „Hit 1"–„Hit 5"
+(`HIT_SLOTS`, `hit: true`), in der Statistik ein eigener Schlüssel `hits`.
 
-Bekanntheit (`fameOf()`): Streams, wo es welche gibt (`1000 + s/1e7`, damit
-sie immer vor einem Jahreschartplatz liegen), sonst `f`. **In den Charts
-zählen nur Streams** – ein Jahressieger von 1962 ist dort kein Heimspiel.
-Songs aus Playlist, Künstlerkatalog und eigener Musik bekommen ihren Wert über
-`dbFind()`; was dort fehlt, ist vermutlich kein großer Hit und kommt hinten an,
-im Künstlermodus in Apples Reihenfolge. Genommen wird das oberste Fünftel der
-Songs mit bekanntem Wert (`HIT_SHARE`), mindestens `HIT_MIN` (10).
+Genommen werden die obersten `settings.hitShare` Prozent (Feld im Panel
+*Schwierigkeit*, voreingestellt 20) der Songs mit bekanntem `pop`, mindestens
+`HIT_MIN` (10). In den Charts zählen nur gestreamte Songs (`chartFiltered`) —
+ein Jahressieger von 1962 ist dort kein Hit.
 
 Wie die Spielweise gilt es **ab der nächsten Runde** (Fallstrick 2), die
 Notiz darunter verweist auf *Alle neu würfeln*. Ohne Stufen werden zuletzt
-gespielte Songs jetzt nach hinten gemischt, sonst fiele im kleinen Pool die
+gespielte Songs nach hinten gemischt, sonst fiele im kleinen Pool die
 Wiederholung auf.
 
 ## Spotify-Anmeldung
@@ -667,8 +711,8 @@ aus der Seite heraus.
   deshalb auch einen Versuch, das ist Absicht.
 - Rückmeldung: grün richtig, gelb Künstler stimmt, grau daneben.
 - Derselbe Künstler darf mehrfach in einer Runde vorkommen.
-- Punkte nach gehörten Sekunden mal Stufenfaktor, damit unterschiedliche
-  Stufenleitern vergleichbar bleiben.
+- Punkte nach gehörten Sekunden (`pointsFor()`, nicht nach Stufennummer) mal
+  Stufenfaktor, damit unterschiedliche Stufenleitern vergleichbar bleiben.
 - **Hardmode** (`settings.hard`, aus): ein verpasster Song beendet die ganze
   Runde — die übrigen Plätze fallen mit, gezählt wird in der Statistik nur der
   Song, den man wirklich gespielt hat. Außerdem geht es strikt der Reihe nach:
@@ -700,8 +744,8 @@ Frontend hält ein fehlendes Feld zusätzlich aus.
 ## Aufbau der Seite
 
 Links Kopfzeile (Marke, Stufenliste, Neuwürfeln, Rundenpunkte) und darunter
-*Stufen* und *Statistik*; in der Mitte das Spielfeld; rechts *Modus* (mit dem
-Heimspiel-Schalter), *Eigene Playlist* (mit *Von Spotify*), *Künstler*, *Eigene Musik*, *Nachhören bei*, *Spielweise* und ganz
+*Stufen*, *Schwierigkeit* und *Statistik*; in der Mitte das Spielfeld; rechts *Modus* (mit dem
+Schalter *Nur Hits*), *Eigene Playlist* (mit *Von Spotify*), *Künstler*, *Eigene Musik*, *Nachhören bei*, *Spielweise* und ganz
 unten die *Songauswahl*. *Songs ansehen* öffnet von zwei Stellen aus
 (`.js-browse`) die Songliste.
 
@@ -735,7 +779,7 @@ Playlist"). Das steht jetzt in der Zeile (`filterScope()`) — eine lange
    `minmax(auto,1fr)`: die Spalte nimmt die Breite vom längsten Inhalt ohne
    Umbruch. Zweimal passiert – in `.reveal` drückte „Moves Like Jagger -
    Studio Recording From …" die Titelliste über den Rand, und in `main` auf
-   dem Handy machte die Panelzeile „Charts · Heimspiel · 595 Songs · 1 Regel"
+   dem Handy machte die Panelzeile „Charts · Nur Hits · 595 Songs · 1 Regel"
    die ganze Seite 17 px zu breit. `width:100%` hilft dann nicht, es sind
    100 % einer zu breiten Spalte.
 1. **`[hidden]{display:none !important}` in `style.css` muss bleiben.**

@@ -31,7 +31,10 @@ BASE = 'https://kworb.net/spotify/'
 CACHE = '.cache'
 UA = {'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)'}
 PAUSE = 0.5
-MIN_STREAMS = 1.3e8      # darunter beginnt keine Stufe
+# Darunter wird nichts mehr gesammelt. Lag bei 130 Mio.; seit die Stufen im
+# Spiel frei verschiebbar sind, braucht „Impossible" Nachschub von weiter
+# unten - bei 50 Mio. ist ein Song noch bekannt genug, um geraten zu werden.
+MIN_STREAMS = 5e7
 DEFAULT_ARTISTS = 700
 
 

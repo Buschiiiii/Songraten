@@ -105,13 +105,15 @@ jobs:
           assert len(songs) >= 1900, f'nur {len(songs)} Songs'
           assert all(s.get('p') and s.get('t') for s in songs), 'Songs ohne Titel oder Preview'
           assert all(s.get('ar') is not None for s in songs), 'Songs ohne Kuenstler-IDs'
-          for tier in d['tiers']:
-              n = sum(1 for s in songs if s.get('d') == tier)
-              assert n >= 150, f'Stufe {tier} hat nur {n} Songs'
-
           alt = subprocess.run(['git', 'show', 'HEAD:data/songs.json'],
                                capture_output=True, text=True).stdout
           frueher = json.loads(alt)['songs'] if alt else []
+          # Ein neues Band (`deep`) ist beim ersten Lauf noch duenn - verlangt
+          # wird nur, was es vorher schon gab.
+          for tier in d['tiers']:
+              n = sum(1 for s in songs if s.get('d') == tier)
+              war = sum(1 for s in frueher if s.get('d') == tier)
+              assert n >= min(150, war * 0.99), f'Stufe {tier} hat nur {n} Songs (vorher {war})'
           vorher_stufe = sum(1 for s in frueher if s.get('d'))
           # Ein gedrosselter Lauf holt weniger Kataloge und verliert dadurch
           # Chartsongs - dann lieber nichts committen. Ein Prozent Schwankung

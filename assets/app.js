@@ -1,6 +1,17 @@
 /* Songraten – Spiellogik */
 
-const STAGES = [0.01, 0.1, 0.5, 2, 8, 15];
+/* Die Leiter der Ausschnittlaengen. Frei waehlbar (settings.ladder), das
+   hier ist nur die Voreinstellung; STAGES wird beim Laden daraus gesetzt. */
+const DEFAULT_LADDER = [0.01, 0.1, 0.5, 2, 8, 15];
+const LADDERS = {
+  standard: DEFAULT_LADDER,
+  sanft:    [0.5, 1, 2, 5, 10, 20],
+  blitz:    [0.01, 0.05, 0.1, 0.3, 1, 3],
+  lang:     [1, 3, 6, 10, 15, 20],
+};
+const MIN_STAGE = 0.01, MAX_STAGE = 20;   /* mehr passt nicht in eine 30-s-Preview mit Zufallsstart */
+const MIN_STAGES = 2, MAX_STAGES = 8;
+let STAGES = DEFAULT_LADDER.slice();
 const TIERS = [
   { id: 'easy',       label: 'Easy',       mult: 1.0 },
   { id: 'medium',     label: 'Medium',     mult: 1.2 },
@@ -8,13 +19,41 @@ const TIERS = [
   { id: 'expert',     label: 'Expert',     mult: 1.8 },
   { id: 'impossible', label: 'Impossible', mult: 2.2 },
 ];
-const POINTS = { 0.01: 1000, 0.1: 850, 0.5: 700, 2: 500, 8: 300, 15: 150 };
+/* Punkte haengen an der gehoerten Zeit, nicht an der Nummer der Stufe -
+   sonst braechte 0,5 s in einer Leiter ab 0,5 s dasselbe wie 0,01 s in der
+   Standardleiter. Zwischen den Stuetzpunkten wird logarithmisch
+   interpoliert, denn so sind auch die Stufen verteilt. */
+const POINT_STOPS = [[0.01, 1000], [0.1, 850], [0.5, 700], [2, 500], [8, 300], [15, 150], [20, 100]];
+function pointsFor(secs) {
+  const st = POINT_STOPS;
+  if (secs <= st[0][0]) return st[0][1];
+  if (secs >= st[st.length - 1][0]) return st[st.length - 1][1];
+  for (let i = 1; i < st.length; i++) {
+    if (secs <= st[i][0]) {
+      const [t0, p0] = st[i - 1], [t1, p1] = st[i];
+      const f = (Math.log(secs) - Math.log(t0)) / (Math.log(t1) - Math.log(t0));
+      return Math.round(p0 + (p1 - p0) * f);
+    }
+  }
+  return st[st.length - 1][1];
+}
+const fmtS = secs => String(secs).replace('.', ',') + 's';
+
+/* Prozentstufen: Easy sind die oberen 15 % des Pools nach Bekanntheit,
+   Medium bis 35 % und so weiter. Eine Zahl je Stufe, kumulativ; was hinter
+   der letzten liegt, wird mit Stufen gar nicht gespielt. „Normal" entspricht
+   den alten festen Streamgrenzen der Charts. */
+const TIER_PRESETS = {
+  leicht: [5, 12, 22, 35, 50],
+  normal: [15, 35, 55, 75, 100],
+  schwer: [25, 45, 65, 85, 100],
+};
 const RECENT_MAX = 60;
 /* Fuenf gleichwertige Plaetze statt der Schwierigkeitsstufen - fuer die
    Playlist und fuer Jahrzehnte oder Genres, in denen zu wenige Songs fuer eine
    sinnvolle Stufenleiter stecken. */
 const FLAT_SLOTS = [1, 2, 3, 4, 5].map(n => ({ id: 'pl' + n, label: 'Song ' + n, short: String(n), mult: 1.0 }));
-/* Im Heimspiel heissen die Plaetze auch so - man soll sehen, worauf man sich
+/* Bei „Nur Hits" heissen die Plaetze auch so - man soll sehen, worauf man sich
    eingelassen hat. */
 const HIT_SLOTS = FLAT_SLOTS.map(t => ({ ...t, label: 'Hit ' + t.short, hit: true }));
 const TIER_MIN = 5;       /* so viele Songs braucht jede Stufe mindestens */
@@ -66,8 +105,16 @@ let settings = load('settings', {
   arFilters: Filters.DEFAULT.map(r => ({ ...r })),
   loFilters: Filters.DEFAULT.map(r => ({ ...r })),
   hard: false,
-  hits: false,            /* Heimspiel: nur die grossen Hits, in jedem Modus */
+  hits: false,            /* Nur Hits: nur die grossen Hits, in jedem Modus */
+  hitShare: 20,           /* ... und zwar die obersten n Prozent */
+  ladder: null,           /* eigene Stufenlaengen, null = Standard */
+  tiers: { global: TIER_PRESETS.normal.slice(), scopes: {} },
 });
+settings.tiers = settings.tiers && Array.isArray(settings.tiers.global)
+  ? { global: settings.tiers.global, scopes: settings.tiers.scopes || {} }
+  : { global: TIER_PRESETS.normal.slice(), scopes: {} };
+if (Array.isArray(settings.ladder) && settings.ladder.length >= MIN_STAGES) STAGES = settings.ladder.slice();
+if (!Array.isArray(settings.stages) || settings.stages.length !== STAGES.length) settings.stages = STAGES.map(() => true);
 /* Zusammengefasste Genres: alte Regeln auf den neuen Namen ziehen. */
 settings.filters = Filters.migrate(settings.filters);
 settings.plFilters = Filters.migrate(settings.plFilters);
@@ -140,7 +187,7 @@ function unblockAll() {
 
 /* Steht ein Song aus einer Playlist, einem Kuenstlerkatalog oder der eigenen
    Musik auch in songs.json? Dann kennt man seine Streams - das braucht das
-   Heimspiel -, und ein Import muss ihn nicht erst bei Apple suchen.
+   „Nur Hits" -, und ein Import muss ihn nicht erst bei Apple suchen.
    Verglichen wird der Grundtitel ohne Fassungszusatz („- 2005 Remaster",
    „(feat. X)") und der Kuenstler ueber die Namen einzeln. */
 let dbIndex = null;
@@ -166,41 +213,132 @@ function dbFind(title, artist) {
   return best;
 }
 
-/* ---- Heimspiel ---- */
+/* ---- Bekanntheit ---- */
 
-/* Fuer Erfolgserlebnisse: in jedem Modus nur das oberste Fuenftel nach
-   Bekanntheit. Bekanntheit heisst Streams, wo es welche gibt - das sind die
-   Songs, die man heute kennt -, sonst der Jahreschartplatz (`f`). Songs aus
-   Playlist, Kuenstlerkatalog oder eigener Musik bekommen sie ueber songs.json;
-   was dort fehlt, ist vermutlich nicht der grosse Hit und kommt hinten an -
-   im Kuenstlermodus in Apples Reihenfolge, die grob nach Beliebtheit geht. */
-const HIT_SHARE = 0.2;
-const HIT_MIN = 10;       /* darunter waere jede Runde dieselbe */
-const fameMemo = new Map();
-let hitMemo = { src: null, mode: '', out: [] };
+/* Eine Zahl je Song, auf der alles sortiert: Streams, wo es welche gibt.
+   Songs aus den Jahrescharts haben keine - fuer sie wird geschaetzt, damit
+   sie in Jahrzehnt- und Genrepools zwischen den gestreamten einsortiert
+   werden koennen, statt pauschal unten zu liegen: Bezug ist der Median der
+   gestreamten Songs desselben Jahrzehnts, und der Jahreschartplatz (`f`,
+   Platz 1 = 100) verschiebt ihn - Platz 1 auf das Dreifache, Platz 25
+   auf den Median, Platz 100 auf ein Dreissigstel. Grob, aber geordnet.
 
-function fameOf(s) {
-  let m = s;
-  if (s.d === 'playlist' || s.d === 'local') {
-    const k = songKey(s);
-    if (!fameMemo.has(k)) fameMemo.set(k, dbFind(s.t, s.a));
-    m = fameMemo.get(k);
-    if (!m) return null;
-  }
-  if (m.s > 0) return 1000 + m.s / 1e7;
-  /* In den Charts zaehlen nur Streams - ein Jahressieger von 1962 ist dort
-     kein Heimspiel. */
-  return mode === 'charts' || m.f == null ? null : m.f;
+   Frueher sortierte der Genremodus nach `f`, dem Rang *innerhalb* des
+   Jahrzehnts. Ueber Jahrzehnte hinweg war das falsch: der groesste Song der
+   90er stand damit ueber einem viel oefter gestreamten Song der 2010er, und
+   Medium hatte mehr Streams als Easy. Jetzt ist jeder gestreamte Song
+   genau so bekannt wie seine Streams. */
+function addPop() {
+  const byDec = new Map();
+  DB.songs.forEach(s => {
+    if (!(s.s > 0)) return;
+    const d = Math.floor((s.y || 0) / 10) * 10;
+    if (!byDec.has(d)) byDec.set(d, []);
+    byDec.get(d).push(s.s);
+  });
+  const median = arr => { const a = arr.slice().sort((x, y) => x - y); return a[Math.floor(a.length / 2)]; };
+  const refs = new Map();
+  byDec.forEach((arr, d) => { if (arr.length >= 12) refs.set(d, median(arr)); });
+  const alle = [...byDec.values()].flat();
+  const fallback = alle.length ? median(alle) : 3e8;
+  const refOf = d => {
+    if (refs.has(d)) return refs.get(d);
+    /* Zu wenige gestreamte Songs im Jahrzehnt: das naechste nehmen. */
+    let best = null;
+    refs.forEach((v, k) => { if (best == null || Math.abs(k - d) < Math.abs(best - d)) best = k; });
+    return best == null ? fallback : refs.get(best);
+  };
+  DB.songs.forEach(s => {
+    if (s.s > 0) { s.pop = s.s; s.est = false; return; }
+    const f = s.f != null ? s.f : 50;
+    s.pop = refOf(Math.floor((s.y || 0) / 10) * 10) * Math.pow(10, (f - 75) / 50);
+    s.est = true;
+  });
 }
 
-function hitPool(list) {
-  if (hitMemo.src === list && hitMemo.mode === mode) return hitMemo.out;
+/* Songs aus Playlist, Kuenstlerkatalog oder eigener Musik bekommen ihre
+   Bekanntheit ueber songs.json; was dort fehlt, ist vermutlich kein grosser
+   Hit und bleibt ohne Wert. */
+const popMemo = new Map();
+function popOf(s) {
+  if (s.pop != null) return s.pop;
+  if (s.d !== 'playlist' && s.d !== 'local') return null;
+  const k = songKey(s);
+  if (!popMemo.has(k)) { const m = dbFind(s.t, s.a); popMemo.set(k, m ? m.pop : null); }
+  return popMemo.get(k);
+}
+
+/* Nach Bekanntheit sortiert, Unbekanntes hinten in bisheriger Reihenfolge
+   (im Kuenstlermodus ist das Apples Reihenfolge, die grob nach Beliebtheit
+   geht). */
+function ranked(list) {
   const known = [], rest = [];
-  list.forEach(s => { const v = fameOf(s); if (v == null) rest.push(s); else known.push([v, s]); });
+  list.forEach(s => { const v = popOf(s); if (v == null) rest.push(s); else known.push([v, s]); });
   known.sort((a, b) => b[0] - a[0]);
-  const ranked = known.map(x => x[1]).concat(rest);
-  const n = Math.min(ranked.length, Math.max(HIT_MIN, Math.ceil(known.length * HIT_SHARE)));
-  hitMemo = { src: list, mode, out: ranked.slice(0, n) };
+  return { all: known.map(x => x[1]).concat(rest), known: known.length };
+}
+
+/* ---- Stufen nach Prozent ---- */
+
+/* Fuer welchen Bereich gerade Grenzen gelten: die Charts, ein Jahrzehnt,
+   ein Genre. Jeder kann eigene haben (settings.tiers.scopes), sonst gilt
+   die globale Einstellung - so laesst sich 2010 anders schneiden als 1950. */
+function tierScope() {
+  if (mode === 'charts') return 'charts';
+  if (mode === 'decades' || mode === 'genres') {
+    const now = currentPick();
+    return now ? mode.slice(0, 3) + '-' + now.value : null;
+  }
+  return null;
+}
+const tierCuts = () => {
+  const k = tierScope();
+  return (k && settings.tiers.scopes[k]) || settings.tiers.global;
+};
+
+/* Kumulative Prozent in gueltige Form: 1 bis 100, streng steigend. */
+function cleanCuts(arr) {
+  const out = [];
+  for (let i = 0; i < TIERS.length; i++) {
+    let v = Math.round(+arr[i]);
+    if (!Number.isFinite(v)) v = (out[i - 1] || 0) + 1;
+    v = Math.max((out[i - 1] || 0) + 1, Math.min(100 - (TIERS.length - 1 - i), v));
+    out.push(v);
+  }
+  return out;
+}
+
+let tierMap = new WeakMap();      /* Song -> Stufe, fuer die Songliste */
+let tierInfo = { total: 0, played: 0, est: false };
+
+function applyTiers(list) {
+  const cuts = tierCuts();
+  const { all, known } = ranked(list);
+  tierMap = new WeakMap();
+  TIERS.forEach(t => byTier[t.id] = []);
+  let from = 0;
+  TIERS.forEach((t, i) => {
+    const to = Math.max(from, Math.round(all.length * cuts[i] / 100));
+    byTier[t.id] = all.slice(from, to);
+    byTier[t.id].forEach(s => tierMap.set(s, t.id));
+    from = to;
+  });
+  tierInfo = { total: all.length, played: from, known, est: all.some(s => s.est) };
+}
+const tierOf = s => tierMap.get(s) || '';
+
+/* ---- Nur Hits ---- */
+
+/* Fuer Erfolgserlebnisse: in jedem Modus nur die obersten n Prozent nach
+   Bekanntheit (settings.hitShare), fuenf gleichwertige Plaetze. */
+const HIT_MIN = 10;       /* darunter waere jede Runde dieselbe */
+let hitMemo = { src: null, share: 0, out: [] };
+
+function hitPool(list) {
+  if (hitMemo.src === list && hitMemo.share === settings.hitShare) return hitMemo.out;
+  const { all, known } = ranked(list);
+  const n = Math.min(all.length, Math.max(HIT_MIN, Math.ceil(known * settings.hitShare / 100)));
+  hitMemo = { src: list, share: settings.hitShare, out: all.slice(0, n) };
   return hitMemo.out;
 }
 
@@ -269,6 +407,7 @@ async function boot() {
     s.ar = s.ar || [];        /* aeltere Datenlaeufe kannten das Feld nicht */
     s.na = s.ar.map(a => norm(DB.artists[a])).join(' ');
   });
+  addPop();
   const gespeichert = Playlist.restore();
   PL = buildPlaylist(gespeichert);
   const liste = Playlist.restoreQueue();
@@ -290,23 +429,9 @@ async function boot() {
 function buildChrome() {
   renderSlots();
 
-  const chips = $('#stageChips');
-  STAGES.forEach((s, i) => {
-    const c = el('button', 'chip', String(s).replace('.', ',') + 's');
-    c.onclick = () => {
-      const on = settings.stages.filter(Boolean).length;
-      if (settings.stages[i] && on <= 2) return;
-      const before = round.map(r => enabledStages()[r.stage]);
-      settings.stages[i] = !settings.stages[i];
-      save('settings', settings);
-      renderChips();
-      remapStages(before);
-      render();
-      focusSearch();
-    };
-    chips.appendChild(c);
-  });
-  renderChips();
+  rebuildChips();
+  buildLadderUI();
+  buildTierUI();
 
   $('#startMode').querySelectorAll('button').forEach(b => {
     b.onclick = () => {
@@ -339,7 +464,7 @@ function buildChrome() {
     b.classList.toggle('on', b.dataset.v === (settings.draw || 'tiers'));
   });
 
-  /* Heimspiel: wie die Spielweise ab der naechsten Runde - „Alle neu
+  /* Nur Hits: wie die Spielweise ab der naechsten Runde - „Alle neu
      wuerfeln" startet sie sofort. */
   const hits = $('#hitMode');
   hits.checked = !!settings.hits;
@@ -512,6 +637,234 @@ function renderChips() {
   renderPanelSums();
 }
 
+/* Ein Chip je Stufe der aktuellen Leiter. Neu gebaut, wenn sich die Leiter
+   aendert. */
+function rebuildChips() {
+  const chips = $('#stageChips');
+  chips.innerHTML = '';
+  STAGES.forEach((s, i) => {
+    const c = el('button', 'chip', fmtS(s));
+    c.onclick = () => {
+      const on = settings.stages.filter(Boolean).length;
+      if (settings.stages[i] && on <= 2) return;
+      const before = round.map(r => enabledStages()[r.stage]);
+      settings.stages[i] = !settings.stages[i];
+      save('settings', settings);
+      renderChips();
+      remapStages(before);
+      render();
+      focusSearch();
+    };
+    chips.appendChild(c);
+  });
+  renderChips();
+}
+
+/* ------------------------------------------------- Stufenlaengen */
+
+/* Die Leiter wechseln, ohne die Runde wegzuwerfen: wie beim Umschalten
+   einzelner Stufen rutscht jeder Song auf die naechste Laenge, die
+   mindestens so lang ist wie die bisherige. Eigene Dateien sind nur bis zur
+   bisher laengsten Stufe geschnitten - wird die Leiter laenger, muessen sie
+   noch einmal durch den Decoder. */
+function setLadder(list) {
+  const clean = [...new Set(list.map(x => Math.round(+x * 100) / 100)
+    .filter(x => Number.isFinite(x) && x >= MIN_STAGE && x <= MAX_STAGE))].sort((a, b) => a - b);
+  if (clean.length < MIN_STAGES) return false;
+  const neu = clean.slice(0, MAX_STAGES);
+  const before = round.map(r => enabledStages()[r.stage]);
+  const laengerAls = STAGES[STAGES.length - 1];
+  STAGES = neu;
+  settings.ladder = neu.slice();
+  settings.stages = neu.map(() => true);
+  save('settings', settings);
+  rebuildChips();
+  remapStages(before);
+  if (neu[neu.length - 1] > laengerAls && round.some(r => r.song && (r.song.file || r.song.full))) {
+    const meins = ++roundToken;
+    (async () => {
+      for (let i = 0; i < round.length; i++) {
+        if (meins !== roundToken) return;
+        if (round[i].song && (round[i].song.file || round[i].song.full)) { round[i].buffer = null; await preload(i); }
+      }
+    })();
+  }
+  render();
+  renderPanelSums();
+  return true;
+}
+
+let ladderDraft = [];
+
+function buildLadderUI() {
+  if (!$('#ladderEdit')) return;
+  $('#ladderPreset').querySelectorAll('button').forEach(b => {
+    b.onclick = () => { setLadder(LADDERS[b.dataset.v]); renderLadder(); focusSearch(); };
+  });
+  $('#ladderAdd').onclick = () => {
+    if (ladderDraft.length >= MAX_STAGES) return;
+    const last = ladderDraft[ladderDraft.length - 1] || 1;
+    ladderDraft.push(Math.min(MAX_STAGE, Math.round(last * 2 * 100) / 100));
+    renderLadderRows();
+  };
+  $('#ladderGo').onclick = () => {
+    const ok = setLadder(ladderDraft);
+    $('#ladderNote').textContent = ok ? `Übernommen: ${STAGES.map(fmtS).join(' · ')}`
+      : `Mindestens ${MIN_STAGES} verschiedene Längen zwischen ${fmtS(MIN_STAGE)} und ${fmtS(MAX_STAGE)}.`;
+    renderLadder();
+    focusSearch();
+  };
+  renderLadder();
+}
+
+function renderLadder() {
+  if (!$('#ladderEdit')) return;
+  const name = Object.keys(LADDERS).find(k => LADDERS[k].join() === STAGES.join()) || '';
+  $('#ladderPreset').querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.v === name));
+  ladderDraft = STAGES.slice();
+  renderLadderRows();
+}
+
+function renderLadderRows() {
+  const box = $('#ladderEdit');
+  box.innerHTML = '';
+  ladderDraft.forEach((v, i) => {
+    const row = el('div', 'lrow');
+    row.appendChild(el('span', 'lnum', String(i + 1)));
+    const inp = el('input');
+    inp.type = 'number';
+    inp.min = MIN_STAGE; inp.max = MAX_STAGE; inp.step = 'any';
+    inp.value = v;
+    inp.oninput = () => { ladderDraft[i] = +inp.value; };
+    inp.onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); $('#ladderGo').click(); } };
+    row.appendChild(inp);
+    row.appendChild(el('span', 'lunit', 's'));
+    const x = el('button', 'lx', '×');
+    x.title = 'Stufe entfernen';
+    x.disabled = ladderDraft.length <= MIN_STAGES;
+    x.onclick = () => { ladderDraft.splice(i, 1); renderLadderRows(); };
+    row.appendChild(x);
+    box.appendChild(row);
+  });
+  $('#ladderAdd').disabled = ladderDraft.length >= MAX_STAGES;
+}
+
+/* ------------------------------------------------- Schwierigkeit */
+
+/* Fuenf Grenzen in Prozent, eine Vorlage dazu, und auf Wunsch eigene
+   Grenzen fuer den Bereich, in dem man gerade spielt. */
+function buildTierUI() {
+  if (!$('#tierRows')) return;
+  $('#tierPreset').querySelectorAll('button').forEach(b => {
+    b.onclick = () => { writeCuts(TIER_PRESETS[b.dataset.v].slice()); focusSearch(); };
+  });
+  $('#tierOwn').onchange = () => {
+    const k = tierScope();
+    if (!k) return;
+    if ($('#tierOwn').checked) settings.tiers.scopes[k] = tierCuts().slice();
+    else delete settings.tiers.scopes[k];
+    save('settings', settings);
+    applyFilters();
+  };
+  const hs = $('#hitShare');
+  hs.onchange = () => {
+    settings.hitShare = Math.max(1, Math.min(100, Math.round(+hs.value) || 20));
+    hs.value = settings.hitShare;
+    save('settings', settings);
+    applyFilters();
+    renderPanelSums();
+  };
+  renderTierPanel();
+}
+
+/* Schreibt in den Bereich, der gerade gilt - eigene Grenzen, wenn welche
+   angelegt sind, sonst die globalen. */
+function writeCuts(arr) {
+  const cuts = cleanCuts(arr);
+  const k = tierScope();
+  if (k && settings.tiers.scopes[k]) settings.tiers.scopes[k] = cuts;
+  else settings.tiers.global = cuts;
+  save('settings', settings);
+  applyFilters();
+}
+
+const fmtStreams = n => (n >= 1e9 ? (n / 1e9).toFixed(1).replace('.', ',') + ' Mrd.'
+  : Math.round(n / 1e6) + ' Mio.');
+const presetName = cuts => Object.keys(TIER_PRESETS).find(k => TIER_PRESETS[k].join() === cuts.join()) || '';
+const PRESET_LABEL = { leicht: 'Leicht', normal: 'Normal', schwer: 'Schwer', '': 'Eigene' };
+
+function renderTierPanel() {
+  if (!$('#tierRows')) return;
+  const cuts = tierCuts();
+  const k = tierScope();
+  const name = presetName(cuts);
+  $('#tierPreset').querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.v === name));
+
+  const own = $('#tierOwn');
+  own.closest('.switch').hidden = !k;
+  own.checked = !!(k && settings.tiers.scopes[k]);
+  $('#tierOwnTxt').textContent = 'Eigene Grenzen für ' + filterScopeName();
+
+  const bar = $('#tierBar');
+  bar.innerHTML = '';
+  let from = 0;
+  TIERS.forEach((t, i) => {
+    const seg = el('i');
+    seg.style.width = (cuts[i] - from) + '%';
+    seg.style.background = `var(--t-${t.id})`;
+    bar.appendChild(seg);
+    from = cuts[i];
+  });
+
+  const rows = $('#tierRows');
+  rows.innerHTML = '';
+  const hasTiers = usesTiers();
+  TIERS.forEach((t, i) => {
+    const row = el('div', 'trow');
+    row.style.setProperty('--tc', `var(--t-${t.id})`);
+    row.appendChild(el('span', 'tdot'));
+    row.appendChild(el('span', 'tname', t.label));
+    row.appendChild(el('span', 'tlab', i ? 'bis' : 'Top'));
+    const inp = el('input');
+    inp.type = 'number'; inp.min = 1; inp.max = 100; inp.step = 1;
+    inp.value = cuts[i];
+    inp.onchange = () => { const neu = cuts.slice(); neu[i] = +inp.value; writeCuts(neu); };
+    inp.onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); inp.blur(); } };
+    row.appendChild(inp);
+    row.appendChild(el('span', 'tlab', '%'));
+    const list = byTier[t.id] || [];
+    let info = '';
+    if (hasTiers && list.length) {
+      const last = popOf(list[list.length - 1]);
+      info = `${list.length} Songs · ab ${tierInfo.est ? '≈ ' : ''}${fmtStreams(last)}`;
+    } else if (hasTiers) info = 'leer';
+    row.appendChild(el('span', 'tinfo', info));
+    rows.appendChild(row);
+  });
+
+  const note = $('#tierNote');
+  if (!hasTiers) {
+    note.textContent = mode === 'playlist' || mode === 'local' || mode === 'artist'
+      ? 'Hier gibt es keine Stufen – fünf zufällige Songs. Die Grenzen gelten in Charts, Jahrzehnten und Genres.'
+      : settings.hits ? 'Mit „Nur Hits“ gibt es keine Stufen.' : settings.draw === 'random'
+        ? 'Spielweise steht auf „Fünf zufällige“ – ohne Stufen.' : 'Zu wenige Songs für Stufen.';
+  } else {
+    const rest = tierInfo.total - tierInfo.played;
+    note.textContent = `${filterScopeName()}: ${tierInfo.total} Songs nach Bekanntheit`
+      + (rest ? `, ${rest} unter der letzten Grenze bleiben draußen` : '')
+      + (tierInfo.est ? ' · Streams ohne Zahl sind geschätzt' : '') + '. Gilt ab der nächsten Runde.';
+  }
+  $('#hitShare').value = settings.hitShare;
+}
+
+/* Der Bereich ohne den Zusatz „Nur Hits" - fuer die Schalterbeschriftung. */
+function filterScopeName() {
+  if (mode === 'charts') return 'Charts';
+  if (mode === 'decades' || mode === 'genres') { const now = currentPick(); return now ? now.text : '–'; }
+  return filterScope();
+}
+
+
 /* ----------------------------------------------------------------- Runde */
 
 /* Ist eine Stufe durch die Filter leer, wird aus dem restlichen Pool
@@ -539,8 +892,8 @@ function newRound() {
   Audio2.stop();
   clearTimeout(sweepTimer);
   cancelAnimationFrame(sweepRaf);
-  /* Ohne Stufen: gemischt, zuletzt Gespieltes nach hinten - gerade im
-     Heimspiel ist der Pool klein genug, dass es sonst auffaellt. */
+  /* Ohne Stufen: gemischt, zuletzt Gespieltes nach hinten - gerade bei
+     „Nur Hits" ist der Pool klein genug, dass es sonst auffaellt. */
   let picked = null;
   if (!usesTiers()) {
     const zuletzt = new Set(recent), frisch = [], alt = [];
@@ -874,7 +1227,7 @@ function submit() {
 
 function win(r) {
   const secs = enabledStages()[r.stage];
-  r.points = Math.round((POINTS[secs] || 150) * r.tier.mult);
+  r.points = Math.round(pointsFor(secs) * r.tier.mult);
   r.status = 'won';
   finish(r, true);
 }
@@ -1214,7 +1567,7 @@ function browRow(s) {
   const key = s.key || songKey(s);
   const row = el('div', 'brow' + (weg ? ' gone' : ''));
   row.dataset.key = key;
-  if (!weg && s.d && TIERS.some(t => t.id === s.d)) row.style.borderLeftColor = `var(--t-${s.d})`;
+  if (!weg && tierOf(s)) row.style.borderLeftColor = `var(--t-${tierOf(s)})`;
 
   const txt = el('div', 'bt');
   txt.appendChild(el('b', null, s.t || '–'));
@@ -1586,7 +1939,12 @@ function panelSum(k) {
   const nichts = 'nichts geladen';
   if (k === 'stages') {
     const an = settings.stages.filter(Boolean).length;
-    return [`${an} von ${STAGES.length}`, an < 2];
+    return [`${an} von ${STAGES.length} · ${fmtS(STAGES[0])}–${fmtS(STAGES[STAGES.length - 1])}`, an < 2];
+  }
+  if (k === 'tiers') {
+    const sc = tierScope();
+    return [PRESET_LABEL[presetName(tierCuts())] + (sc && settings.tiers.scopes[sc] ? ' · hier eigene' : '')
+      + ` · Hits ${settings.hitShare} %`, false];
   }
   if (k === 'stats') {
     return [stats.played ? `${stats.solved}/${stats.played} · ${Math.round(stats.solved / stats.played * 100)} %`
@@ -1610,7 +1968,7 @@ function panelSum(k) {
   }
   if (k === 'service') return [Links.name(settings.service), false];
   if (k === 'play') {
-    return [`${settings.hits ? 'Heimspiel' : settings.draw === 'random' ? '5 zufällige' : 'gestuft'}`
+    return [`${settings.hits ? 'Nur Hits' : settings.draw === 'random' ? '5 zufällige' : 'gestuft'}`
       + `${settings.hard ? ' · Hardmode' : ''} · `
       + `${settings.start === 'random' ? 'zufällige Stelle' : 'Anfang'} · `
       + `${Math.round(settings.volume * 100)} %`, false];
@@ -1629,7 +1987,7 @@ function panelSum(k) {
 
 /* Worauf sich die Songauswahl gerade bezieht. */
 function filterScope() {
-  const dazu = settings.hits ? ' · Heimspiel' : '';
+  const dazu = settings.hits ? ' · Nur Hits' : '';
   if (mode === 'playlist') return 'Playlist' + dazu;
   if (mode === 'local') return (LO ? LO.name : 'Eigene Musik') + dazu;
   if (PICKED.includes(mode)) { const now = currentPick(); return (now ? now.text : '–') + dazu; }
@@ -1713,7 +2071,7 @@ function render() {
 function statGroups() {
   const groups = [
     ['Charts', k => TIERS.some(t => t.id === k) || /^pl\d$/.test(k)],
-    ['Heimspiel', k => k === 'hits'],
+    ['Nur Hits', k => k === 'hits'],
     ['Jahrzehnte', k => k.startsWith('dec-')],
     ['Genres', k => k.startsWith('gen-')],
     ['Künstler', k => k.startsWith('art-')],
@@ -1754,8 +2112,8 @@ const PICKED = ['decades', 'genres', 'artist'];   /* Modi mit Auswahlleiste oben
 const basePool = () => (mode === 'playlist' ? plFiltered
   : mode === 'local' ? loFiltered
   : PICKED.includes(mode) ? pickFiltered
-  : usesTiers() ? chartFiltered : filtered);
-/* Was gezogen werden kann - im Heimspiel nur die grossen Hits davon. */
+  : usesTiers() || settings.hits ? chartFiltered : filtered);
+/* Was gezogen werden kann - bei „Nur Hits" nur die grossen Hits davon. */
 const activePool = () => (settings.hits ? hitPool(basePool()) : basePool());
 
 /* Ein Jahrzehnt oder Genre braucht genug Songs, sonst ist die Runde nach zwei
@@ -1868,36 +2226,16 @@ function applyFilters() {
   } else if (PICKED.includes(mode)) {
     const now = currentPick();
     pickFiltered = now ? filtered.filter(s => inPick(s, now.value)) : [];
-    relativeTiers(pickFiltered);
+    applyTiers(pickFiltered);
   } else {
     pickFiltered = [];
-    TIERS.forEach(t => byTier[t.id] = chartFiltered.filter(s => s.d === t.id));
+    applyTiers(chartFiltered);
   }
 
   rebuildFilterLists();
   renderPicker();
   renderFilters();
-}
-
-/* Die Stufen der Charts haengen an absoluten Streamzahlen. Fuer ein einzelnes
-   Jahrzehnt taugt das nicht: Spotify gibt es erst seit 2008, ein Welthit von
-   1985 hat dort weniger Streams als ein mittelmaessiger Song von 2021. Also
-   wird innerhalb des Jahrzehnts sortiert und in fuenf gleich grosse Teile
-   geschnitten - das oberste Fuenftel ist Easy. */
-function relativeTiers(list) {
-  /* `f` ist die von der Pipeline gerechnete Bekanntheit im Jahrzehnt (Streams
-     und Jahreschartplatz gemischt). Aeltere songs.json kennt sie nicht, dann
-     entscheiden die Streams. */
-  const useFame = list.some(s => s.f != null);
-  const val = s => (useFame ? (s.f != null ? s.f : 50) : (s.s || 0));
-  const sorted = list.slice().sort((a, b) => val(b) - val(a));
-  TIERS.forEach(t => byTier[t.id] = []);
-  if (!sorted.length) return;
-  const per = sorted.length / TIERS.length;
-  sorted.forEach((song, i) => {
-    const idx = Math.min(TIERS.length - 1, Math.floor(i / per));
-    byTier[TIERS[idx].id].push(song);
-  });
+  renderTierPanel();
 }
 
 /* Die Auswahllisten kommen aus dem Pool, der gerade gilt - in der Playlist
@@ -2069,11 +2407,12 @@ function renderFilters() {
     else if (n < Filters.MIN_POOL) msg = `Nur ${n} Songs übrig – das wird schnell vorhersehbar.`;
     else if (empty.length && usesTiers()) msg = `${n} Songs · leer: ${empty.join(', ')} – dort kommt Ersatz aus dem Rest.`;
     else { msg = `${n} Songs im Pool`; warn = false; }
+    if (usesTiers() && tierInfo.played < tierInfo.total && n) msg += ` · ${tierInfo.played} davon in den Stufen`;
   }
-  /* Im Heimspiel zaehlt, was davon gross genug ist. */
+  /* Bei „Nur Hits" zaehlt, was davon gross genug ist. */
   if (settings.hits && n) {
     const h = activePool().length;
-    msg += ` · im Heimspiel die ${h} bekanntesten`;
+    msg += ` · davon die ${h} bekanntesten`;
     warn = h < PL_MIN;
   }
   c.textContent = msg;

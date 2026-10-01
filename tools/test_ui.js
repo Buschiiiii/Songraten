@@ -21,6 +21,19 @@ const waitFor = async (fn, ms = 8000) => {
 };
 
 let failed = 0;
+/* Kein Song darf in einer schwereren Stufe stehen als ein weniger bekannter.
+   Verglichen wird die Bekanntheit (pop): Streams, oder bei Songs aus den
+   Jahrescharts die Schaetzung. */
+const monotone = ev => ev(`(() => {
+  let prevMin = Infinity;
+  for (const t of TIERS) {
+    const vals = byTier[t.id].map(popOf);
+    if (!vals.length) continue;
+    if (Math.max(...vals) > prevMin) return false;
+    prevMin = Math.min(...vals);
+  }
+  return true;
+})()`);
 const assert = (ok, msg) => { if (ok) console.log('ok  ' + msg); else { failed++; console.error('FEHLGESCHLAGEN: ' + msg); } };
 
 /* Antworten der iTunes-Suche nachbilden, damit der Test offline laeuft. */
@@ -422,7 +435,7 @@ const dummy = n => ({ t: 'Song ' + n, a: 'Kuenstler ' + n, al: 'Album', y: 2020,
   assert(sumOf('service') === 'Apple Music', 'Panels: die Zeile nennt den Dienst');
   assert(/^Charts · \d+ Songs/.test(sumOf('filter')),
     'Panels: und worauf die Songauswahl wirkt (' + sumOf('filter') + ')');
-  assert(sumOf('stages') === '6 von 6', 'Panels: und wie viele Stufen an sind');
+  assert(sumOf('stages') === '6 von 6 · 0,01s–15s', 'Panels: und wie viele Stufen an sind (' + sumOf('stages') + ')');
   assert(sumOf('playlist') === 'nichts geladen' && sumOf('local') === 'nichts geladen',
     'Panels: leere Quellen sagen das');
   assert(/gestuft · Anfang · \d+ %/.test(sumOf('play')), 'Panels: Spielweise auf einen Blick (' + sumOf('play') + ')');
@@ -434,7 +447,7 @@ const dummy = n => ({ t: 'Song ' + n, a: 'Kuenstler ' + n, al: 'Album', y: 2020,
 
   /* Die Zeile zieht mit, wenn sich etwas aendert */
   G("settings.stages[0] = false; renderChips()");
-  assert(sumOf('stages') === '5 von 6', 'Panels: die Zeile zieht sofort mit');
+  assert(sumOf('stages').startsWith('5 von 6'), 'Panels: die Zeile zieht sofort mit');
   G("settings.stages[0] = true; renderChips()");
 
   const wPanel = makeWindow({ 'songrate:settings': JSON.stringify({ open: { filter: true } }) });
@@ -566,37 +579,140 @@ const dummy = n => ({ t: 'Song ' + n, a: 'Kuenstler ' + n, al: 'Album', y: 2020,
   G('newRound()'); await tick(30);
   assert(G('usesTiers()') && G('round')[0].tier.id === 'easy', 'Ziehung: und wieder zurueck');
 
-  /* ------------------------------------------------------- Heimspiel */
+  /* ----------------------------------------------- Stufenlaengen */
+  assert(G('pointsFor(0.01)') === 1000 && G('pointsFor(2)') === 500 && G('pointsFor(15)') === 150 && G('pointsFor(20)') === 100,
+    'Punkte: die Stuetzpunkte stimmen');
+  assert(G('pointsFor(1)') > G('pointsFor(2)') && G('pointsFor(1)') < G('pointsFor(0.5)') && G('pointsFor(5)') < 500 && G('pointsFor(5)') > 300,
+    'Punkte: dazwischen wird interpoliert (' + G('pointsFor(1)') + ' bei 1 s, ' + G('pointsFor(5)') + ' bei 5 s)');
+  {
+    const r0 = G('round')[0];
+    G('round[0].stage = 1');                           /* 0,1 s gehoert */
+    const tierMult = r0.tier.mult;
+    $('#ladderPreset [data-v="sanft"]').click(); await tick(20);
+    assert(G('STAGES').join() === '0.5,1,2,5,10,20' && G('settings.ladder').join() === '0.5,1,2,5,10,20',
+      'Laengen: die Vorlage „Sanft" gilt (' + G('STAGES').join() + ')');
+    assert($('#stageChips').children.length === 6 && $('#stageChips').children[0].textContent === '0,5s'
+      && G('settings.stages').every(Boolean), 'Laengen: die Chips zeigen die neue Leiter');
+    assert(G('round')[0].stage === 0 && G('round')[0].status === 'playing',
+      'Laengen: die Runde bleibt - 0,1 s gehoert rutscht auf die naechste Laenge, 0,5 s');
+    assert(sumOf('stages') === '6 von 6 · 0,5s–20s', 'Laengen: die Panelzeile nennt die Spanne (' + sumOf('stages') + ')');
+    G('choose(round[0].song); submit()'); await tick(10);
+    assert(G('round')[0].points === Math.round(G('pointsFor(0.5)') * tierMult),
+      'Laengen: Punkte nach gehoerter Zeit, nicht nach Stufennummer (' + G('round')[0].points + ')');
+    G('closeReveal()'); await tick(10);
+
+    /* Eigene Leiter: tippen, eine Stufe dazu, uebernehmen. */
+    const inputs = () => [...$('#ladderEdit').querySelectorAll('input')];
+    assert(inputs().length === 6 && inputs()[0].value === '0.5', 'Laengen: der Editor zeigt die aktuelle Leiter');
+    $('#ladderAdd').click();
+    assert(inputs().length === 7, 'Laengen: + Stufe haengt eine an');
+    inputs()[6].value = '40'; inputs()[6].dispatchEvent(new w.Event('input'));   /* zu lang, faellt raus */
+    inputs()[0].value = '0.25'; inputs()[0].dispatchEvent(new w.Event('input'));
+    inputs()[1].value = '0.25'; inputs()[1].dispatchEvent(new w.Event('input'));  /* doppelt, faellt zusammen */
+    $('#ladderGo').click(); await tick(10);
+    assert(G('STAGES').join() === '0.25,2,5,10,20', 'Laengen: eigene Leiter sortiert, ohne Doppel, ohne 40 s (' + G('STAGES').join() + ')');
+    assert(/Übernommen/.test($('#ladderNote').textContent), 'Laengen: die Notiz bestaetigt es');
+    inputs().forEach(i => { i.value = '1'; i.dispatchEvent(new w.Event('input')); });
+    $('#ladderGo').click(); await tick(10);
+    assert(G('STAGES').join() === '0.25,2,5,10,20' && /Mindestens/.test($('#ladderNote').textContent),
+      'Laengen: nur eine Laenge wird abgelehnt');
+    $('#ladderPreset [data-v="standard"]').click(); await tick(20);
+    assert(G('STAGES').join() === '0.01,0.1,0.5,2,8,15' && G('settings.stages').length === 6, 'Laengen: und zurueck auf Standard');
+    assert(JSON.parse(w.localStorage.getItem('songrate:settings')).ladder.join() === '0.01,0.1,0.5,2,8,15',
+      'Laengen: die Leiter wird gespeichert');
+  }
+
+  /* ----------------------------------------------- Schwierigkeit */
+  {
+    const t$ = sel => $('#tierPanel ' + sel);
+    const inputs = () => [...t$('#tierRows').querySelectorAll('input')];
+    assert(t$('#tierPreset [data-v="normal"]').classList.contains('on') && G('tierCuts()').join() === '15,35,55,75,100',
+      'Schwierigkeit: voreingestellt ist Normal');
+    assert(sumOf('tiers') === 'Normal · Hits 20 %', 'Schwierigkeit: die Panelzeile (' + sumOf('tiers') + ')');
+    const nCharts = G('chartFiltered.length');
+    assert(inputs().length === 5 && inputs()[0].value === '15'
+      && new RegExp('^' + Math.round(nCharts * 0.15) + ' Songs · ab \\d').test(t$('.trow .tinfo').textContent),
+      'Schwierigkeit: je Stufe Prozent, Songzahl und Streamgrenze (' + t$('.trow .tinfo').textContent + ')');
+    assert(t$('#tierBar').children.length === 5 && t$('#tierBar').children[0].style.width === '15%',
+      'Schwierigkeit: der Balken zeigt die Baender');
+
+    t$('#tierPreset [data-v="leicht"]').click(); await tick(10);
+    assert(G('tierCuts()').join() === '5,12,22,35,50' && G('byTier.easy.length') === Math.round(nCharts * 0.05),
+      'Schwierigkeit: Leicht nimmt nur die obersten 5 % als Easy');
+    assert(G('tierInfo.played') === Math.round(nCharts * 0.5) && /davon in den Stufen/.test($('#filterCount').textContent),
+      'Schwierigkeit: die untere Haelfte bleibt draussen, die Songauswahl sagt es');
+    assert(monotone(G), 'Schwierigkeit: Reihenfolge bleibt nach Streams');
+    assert(G('round')[0].tier.id === 'easy' && G('round').length === 5, 'Schwierigkeit: die laufende Runde bleibt');
+
+    /* Eine Grenze von Hand: Easy = Top 1 %. */
+    inputs()[0].value = '1'; inputs()[0].dispatchEvent(new w.Event('change')); await tick(10);
+    assert(G('tierCuts()').join() === '1,12,22,35,50' && sumOf('tiers').startsWith('Eigene'),
+      'Schwierigkeit: eine eigene Grenze macht daraus „Eigene" (' + G('tierCuts()').join() + ')');
+    assert(G('byTier.easy.length') === Math.round(nCharts * 0.01) && G('byTier.easy.every(s => s.s >= 2.5e9)'),
+      'Schwierigkeit: Easy = Top 1 % sind die ganz grossen (' + G('byTier.easy.length') + ' Songs)');
+    inputs()[2].value = '5'; inputs()[2].dispatchEvent(new w.Event('change')); await tick(10);
+    assert(G('tierCuts()').join() === '1,12,13,35,50', 'Schwierigkeit: eine Grenze unter der vorigen wird hochgezogen');
+
+    /* Eigene Grenzen nur fuer ein Jahrzehnt. */
+    G("setMode('decades')"); await tick(30);
+    const decNow = G('(currentPick()||{}).value');
+    assert(!t$('#tierOwn').closest('.switch').hidden && /Eigene Grenzen für \d+er/.test(t$('#tierOwnTxt').textContent),
+      'Schwierigkeit: der Schalter nennt das Jahrzehnt (' + t$('#tierOwnTxt').textContent + ')');
+    t$('#tierOwn').checked = true; t$('#tierOwn').dispatchEvent(new w.Event('change')); await tick(10);
+    assert(G('settings.tiers.scopes')['dec-' + decNow] && sumOf('tiers').includes('hier eigene'),
+      'Schwierigkeit: eigene Grenzen fuer das Jahrzehnt angelegt');
+    t$('#tierPreset [data-v="schwer"]').click(); await tick(10);
+    assert(G('tierCuts()').join() === '25,45,65,85,100' && G('settings.tiers.global').join() === '1,12,13,35,50',
+      'Schwierigkeit: die Vorlage trifft nur das Jahrzehnt, global bleibt');
+    $('#pickNext').click(); await tick(40);
+    assert(G('tierCuts()').join() === '1,12,13,35,50', 'Schwierigkeit: das naechste Jahrzehnt nimmt wieder die globalen');
+    $('#pickPrev').click(); await tick(40);
+    t$('#tierOwn').checked = false; t$('#tierOwn').dispatchEvent(new w.Event('change')); await tick(10);
+    assert(!G('settings.tiers.scopes')['dec-' + decNow] && G('tierCuts()').join() === '1,12,13,35,50',
+      'Schwierigkeit: Schalter aus nimmt die eigenen Grenzen weg');
+    G("setMode('playlist')");
+    assert(t$('#tierOwn').closest('.switch').hidden || G('mode') !== 'playlist', 'Schwierigkeit: ohne Playlist kein Wechsel');
+    G("setMode('charts')"); await tick(30);
+    t$('#tierPreset [data-v="normal"]').click(); await tick(10);
+    assert(G('tierCuts()').join() === '15,35,55,75,100', 'Schwierigkeit: zurueck auf Normal');
+
+    /* Nur Hits: Anteil einstellbar. */
+    t$('#hitShare').value = '5'; t$('#hitShare').dispatchEvent(new w.Event('change')); await tick(10);
+    assert(G('settings.hitShare') === 5 && sumOf('tiers') === 'Normal · Hits 5 %', 'Schwierigkeit: der Hit-Anteil laesst sich setzen');
+  }
+
+  /* ------------------------------------------------------- Nur Hits */
   const hitSwitch = on => { $('#hitMode').checked = on; $('#hitMode').dispatchEvent(new w.Event('change')); };
+  G('settings.hitShare = 20');
   hitSwitch(true);
-  assert(G('settings.hits') && !G('usesTiers()'), 'Heimspiel: ohne Stufen');
+  assert(G('settings.hits') && !G('usesTiers()'), 'Nur Hits: ohne Stufen');
   const gestreamt = G('filtered.filter(s => s.s > 0).length');
   assert(G('activePool().length') === Math.ceil(gestreamt * 0.2),
-    `Heimspiel: in den Charts das oberste Fuenftel (${G('activePool().length')} von ${gestreamt})`);
+    `Nur Hits: in den Charts das oberste Fuenftel (${G('activePool().length')} von ${gestreamt})`);
   const kleinsterHit = G('Math.min(...activePool().map(s => s.s))');
   assert(G(`filtered.filter(s => s.s > ${kleinsterHit}).every(s => activePool().includes(s))`)
-    && G('activePool().every(s => s.s > 0)'), 'Heimspiel: und zwar die mit den meisten Streams');
-  assert(G('round')[0].tier.id === 'easy', 'Heimspiel: die laufende Runde bleibt, wie sie ist');
+    && G('activePool().every(s => s.s > 0)'), 'Nur Hits: und zwar die mit den meisten Streams');
+  assert(G('round')[0].tier.id === 'easy', 'Nur Hits: die laufende Runde bleibt, wie sie ist');
   $('#rerollAll').click(); await tick(30);
   assert(G('round').every(r => r.tier.hit) && G('round')[0].tier.label === 'Hit 1'
-    && $('#tierList').textContent.includes('Hit 5'), 'Heimspiel: die Plaetze heissen Hit 1 bis 5');
-  assert(G('round.every(r => activePool().includes(r.song))'), 'Heimspiel: gezogen wird nur aus den Hits');
-  assert(/Heimspiel/.test(G("panelSum('play')[0]")) && /Heimspiel/.test(G("panelSum('filter')[0]")),
-    'Heimspiel: die Panelzeilen sagen es');
-  assert(/im Heimspiel die \d+ bekanntesten/.test($('#filterCount').textContent),
-    'Heimspiel: die Songauswahl nennt die Zahl (' + $('#filterCount').textContent + ')');
+    && $('#tierList').textContent.includes('Hit 5'), 'Nur Hits: die Plaetze heissen Hit 1 bis 5');
+  assert(G('round.every(r => activePool().includes(r.song))'), 'Nur Hits: gezogen wird nur aus den Hits');
+  assert(/Nur Hits/.test(G("panelSum('play')[0]")) && /Nur Hits/.test(G("panelSum('filter')[0]")),
+    'Nur Hits: die Panelzeilen sagen es');
+  assert(/davon die \d+ bekanntesten/.test($('#filterCount').textContent),
+    'Nur Hits: die Songauswahl nennt die Zahl (' + $('#filterCount').textContent + ')');
   G("setMode('decades')"); await tick(30);
   assert(G('activePool().length') === Math.max(10, Math.ceil(G('pickFiltered.length') * 0.2)),
-    'Heimspiel: im Jahrzehnt das oberste Fuenftel');
-  assert(/Hits aus \d+/.test($('#pickCount').textContent), 'Heimspiel: die Leiste oben sagt es (' + $('#pickCount').textContent + ')');
+    'Nur Hits: im Jahrzehnt das oberste Fuenftel');
+  assert(/Hits aus \d+/.test($('#pickCount').textContent), 'Nur Hits: die Leiste oben sagt es (' + $('#pickCount').textContent + ')');
   const hitsVor = (G('stats.byTier.hits') || { p: 0 }).p;
   G('choose(round[active].song); submit()'); await tick(10); G('closeReveal()'); await tick(10);
-  assert(G('stats.byTier.hits').p === hitsVor + 1 && $('#stats').textContent.includes('Heimspiel'),
-    'Heimspiel: eigene Zeile in der Statistik');
+  assert(G('stats.byTier.hits').p === hitsVor + 1 && $('#stats').textContent.includes('Nur Hits'),
+    'Nur Hits: eigene Zeile in der Statistik');
   G("setMode('charts')"); await tick(30);
   hitSwitch(false);
   G('newRound()'); await tick(30);
-  assert(G('usesTiers()') && G('round')[0].tier.id === 'easy', 'Heimspiel: und wieder aus');
+  assert(G('usesTiers()') && G('round')[0].tier.id === 'easy', 'Nur Hits: und wieder aus');
 
   /* ---------------------------------------------------- Playlist-Modus */
   const csv = 'Track Name,Artist Name(s)\nUnstoppable,Sia\nBlinding Lights,The Weeknd\nLevitating,Dua Lipa\n'
@@ -637,10 +753,10 @@ const dummy = n => ({ t: 'Song ' + n, a: 'Kuenstler ' + n, al: 'Album', y: 2020,
   assert(itunesCalls === calls, 'Playlist: zweiter Import kostet keine Anfrage ('
     + (itunesCalls - calls) + ')');
 
-  /* Heimspiel in der Playlist: was songs.json kennt, nach Streams vorn. */
+  /* Nur Hits in der Playlist: was songs.json kennt, nach Streams vorn. */
   G('settings.hits = true');
   assert(G('activePool()[0].t') === 'Blinding Lights' && G('activePool().length') === 6,
-    'Heimspiel: in der Playlist kommen die bekanntesten nach vorn');
+    'Nur Hits: in der Playlist kommen die bekanntesten nach vorn');
   G('settings.hits = false');
 
   /* ------------------------------- Ein Spotify-Export, wie er wirklich ist */
@@ -742,17 +858,14 @@ const dummy = n => ({ t: 'Song ' + n, a: 'Kuenstler ' + n, al: 'Album', y: 2020,
     'Jahrzehnte: der Pool enthaelt nur Songs des Jahrzehnts');
   assert($('#pickLabel').textContent === dec() + 'er', 'Jahrzehnte: die Leiste nennt das Jahrzehnt');
 
-  /* Die Stufen werden innerhalb des Jahrzehnts verteilt, nicht nach den
-     absoluten Streamgrenzen der Charts. */
+  /* Die Stufen werden innerhalb des Jahrzehnts verteilt, nach den
+     Prozentgrenzen der Schwierigkeit (Normal: 15/35/55/75/100). */
   const sizes = G('TIERS.map(t => byTier[t.id].length)');
-  assert(sizes.reduce((a, b) => a + b, 0) === G('pickFiltered').length,
-    'Jahrzehnte: jeder Song landet in genau einer Stufe');
-  assert(Math.max(...sizes) - Math.min(...sizes) <= 1, 'Jahrzehnte: die Stufen sind gleich gross (' + sizes.join('/') + ')');
-  /* Sortiert wird nach der Bekanntheit f, wo sie da ist - sonst nach Streams. */
-  const fame = "s => (byTier.easy.some(x => x.f != null) ? (s.f != null ? s.f : 50) : (s.s || 0))";
-  const easyMin = G(`Math.min(...byTier.easy.map(${fame}))`);
-  const impMax = G(`Math.max(...byTier.impossible.map(${fame}))`);
-  assert(easyMin >= impMax, `Jahrzehnte: Easy sind die bekanntesten Songs des Jahrzehnts (${easyMin} >= ${impMax})`);
+  const nDec = G('pickFiltered').length;
+  assert(sizes.reduce((a, b) => a + b, 0) === nDec, 'Jahrzehnte: jeder Song landet in genau einer Stufe');
+  assert(Math.abs(sizes[0] - nDec * 0.15) <= 1 && Math.abs(sizes[1] - nDec * 0.2) <= 1,
+    'Jahrzehnte: Easy ist das oberste Siebtel, Medium das naechste Fuenftel (' + sizes.join('/') + ' von ' + nDec + ')');
+  assert(monotone(G), 'Jahrzehnte: keine Stufe ist bekannter als die davor');
 
   G('newRound()'); await tick(40);
   const decPool = new Set(G('pickFiltered').map(s => s.i));
@@ -934,7 +1047,8 @@ const dummy = n => ({ t: 'Song ' + n, a: 'Kuenstler ' + n, al: 'Album', y: 2020,
   /* Zurueck in den Chartsmodus gelten wieder die festen Stufen */
   $('#modeSeg [data-v="charts"]').click(); await tick(40);
   assert(G('mode') === 'charts' && $('#pickBar').hidden, 'Jahrzehnte: zurueck zu den Charts');
-  assert(G("byTier.easy.every(s => s.d === 'easy')"), 'Jahrzehnte: die Charts haben wieder ihre festen Stufen');
+  assert(G("byTier.easy.every(s => s.s > 0)") && monotone(G) && G("byTier.easy.length") === Math.round(G('chartFiltered.length') * 0.15),
+    'Jahrzehnte: die Charts haben wieder ihre Stufen - nach Streams, Easy das oberste 15 %');
 
   /* --------------------------- Jahrzehnte mit Songs aus den Jahrescharts */
   /* So sieht songs.json aus, wenn tools/fetch_yearcharts.py gelaufen ist:
@@ -953,8 +1067,14 @@ const dummy = n => ({ t: 'Song ' + n, a: 'Kuenstler ' + n, al: 'Album', y: 2020,
 
   assert(H("chartFiltered.every(s => s.d)") && H('filtered.length') > H('chartFiltered.length'),
     'Jahrescharts: Songs ohne Stufe bleiben aus dem Chartsmodus draussen');
-  assert(H("TIERS.every(t => byTier[t.id].every(s => s.d === t.id))"),
-    'Jahrescharts: die Chartstufen bleiben unveraendert');
+  assert(H("TIERS.every(t => byTier[t.id].every(s => s.s > 0))") && monotone(H),
+    'Jahrescharts: die Chartstufen bleiben rein nach Streams');
+  /* Die Schaetzung: Platz 1 eines Jahres liegt ueber Platz 40, und beide
+     irgendwo zwischen den gestreamten Songs des Jahrzehnts. */
+  const est = i => H(`DB.songs.find(s => s.t === 'Achtziger ${i}').pop`);
+  const ref80 = H("(() => { const a = DB.songs.filter(s => s.s > 0 && s.y >= 1980 && s.y < 1990).map(s => s.s).sort((x, y) => x - y); return a[Math.floor(a.length / 2)]; })()");
+  assert(est(1) > est(20) && est(20) > est(40) && est(1) > ref80 && est(40) < ref80,
+    `Jahrescharts: Bekanntheit wird aus dem Platz geschaetzt (${Math.round(est(1) / 1e6)} > ${Math.round(est(20) / 1e6)} > ${Math.round(est(40) / 1e6)} Mio., Median ${Math.round(ref80 / 1e6)})`);
   assert(H("sugAll.length === 0"), 'Jahrescharts: kein Nebeneffekt auf die Vorschlaege');
   H("suggest('achtziger')");
   assert(H('sugAll').length > 0, 'Jahrescharts: die neuen Songs sind trotzdem ratbar');
@@ -1052,11 +1172,11 @@ const dummy = n => ({ t: 'Song ' + n, a: 'Kuenstler ' + n, al: 'Album', y: 2020,
   assert(!k$('#pickBar').hidden && /Testband/.test(k$('#pickLabel').textContent),
     'Kuenstler: die Leiste oben nennt den Namen');
 
-  /* Heimspiel: songs.json kennt die Testband nicht, also Apples Reihenfolge. */
+  /* Nur Hits: songs.json kennt die Testband nicht, also Apples Reihenfolge. */
   K('settings.hits = true');
   assert(K('activePool().length') === Math.min(10, K('pickFiltered.length'))
     && K('activePool()[0].t') === K('pickFiltered[0].t'),
-    'Heimspiel: beim Kuenstler ohne Streamzahlen in Apples Reihenfolge');
+    'Nur Hits: beim Kuenstler ohne Streamzahlen in Apples Reihenfolge');
   K('settings.hits = false');
 
   /* Vorschlaege kommen aus dem Katalog */
@@ -1106,6 +1226,13 @@ const dummy = n => ({ t: 'Song ' + n, a: 'Kuenstler ' + n, al: 'Album', y: 2020,
     'Genres: der Pool enthaelt nur ein Genre (' + gnow() + ')');
   assert(G("listFor('genres').every(o => o.value !== 'hip hop')"),
     'Genres: die zusammengefassten Genres stehen einmal in der Liste');
+  /* Der gemeldete Fehler: Medium hatte mehr Streams als Easy, weil nach dem
+     Rang im Jahrzehnt sortiert wurde. Jetzt zaehlen die Streams selbst. */
+  assert(monotone(G), 'Genres: keine Stufe ist bekannter als die davor');
+  const easyMinS = G('Math.min(...byTier.easy.filter(s => s.s > 0).map(s => s.s))');
+  const medMaxS = G('Math.max(...byTier.medium.filter(s => s.s > 0).map(s => s.s), 0)');
+  assert(G('byTier.easy.some(s => s.s > 0)') && easyMinS >= medMaxS,
+    `Genres: jeder Easy-Song hat mehr Streams als jeder Medium-Song (${Math.round(easyMinS / 1e6)} >= ${Math.round(medMaxS / 1e6)} Mio.)`);
   assert(G("listFor('genres').every(o => filtered.filter(s => norm(Filters.genreOf(s)) === o.value).length >= GEN_MIN)"),
     'Genres: zu kleine Genres stehen nicht zur Wahl');
 
