@@ -561,7 +561,65 @@ async function boot() {
 
 /* ------------------------------------------------------------- Oberflaeche */
 
+/* ------------------------------------------------ Was macht das genau? */
+
+/* Hinter jedem Panelnamen und einigen Schaltern ein i: Tippen klappt die
+   Erklaerung auf, was die Einstellung tut und wie sie rechnet. Die Texte
+   stehen hier, nicht in der Seite - so bleibt das Panel selbst leer von
+   grauem Kleingedrucktem. */
+const INFO = {
+  mode: 'Charts & Stufen: der Pool sind die rund 3000 Songs mit Streamzahlen, nach Bekanntheit in Easy bis Impossible geteilt (Grenzen unter Schwierigkeit).\n'
+    + 'Jahrzehnte und Genres: oben in der Mitte wählst du mit den Pfeilen aus; die Stufen gelten dann innerhalb der Auswahl – Easy sind die bekanntesten 80er, nicht die bekanntesten Songs überhaupt. Unter 50 Songs fallen die Stufen weg, dann sind es fünf zufällige.\n'
+    + 'Künstler, Eigene Playlist, Eigene Musik: fünf zufällige Songs ohne Stufen aus dem, was du geladen hast. Was noch nichts geladen hat, ist ausgegraut – die Quelle steht in den Panels darunter.',
+  hits: 'Für Erfolgserlebnisse, in jedem Modus: fünf Songs nur aus den bekanntesten des aktuellen Pools, ohne Stufen, Plätze „Hit 1“ bis „Hit 5“. Wie viele das sind, stellst du unter Schwierigkeit → Nur Hits ein (voreingestellt die obersten 20 %, mindestens 10 Songs). Bekanntheit heißt Streamzahl; Songs aus den Jahrescharts ohne Streams werden eingeschätzt. Gilt ab der nächsten Runde – „Alle neu würfeln“ startet sie sofort. Die Statistik zählt Hit-Runden getrennt.',
+  stages: 'Jeder Platz spielt den Ausschnitt so lang, wie die aktive Stufe sagt – erst 0,01 s, nach jedem falschen Tipp oder Überspringen die nächste Stufe. Abgeschaltete Stufen werden übersprungen, kosten aber trotzdem einen Versuch, weil die Zahl der Versuche an den Stufen hängt.\n'
+    + 'Punkte hängen an der gehörten Zeit, nicht an der Nummer der Stufe: 1000 bei 0,01 s, 500 bei 2 s, 100 bei 20 s, dazwischen gleichmäßig im Logarithmus – mal dem Faktor der Schwierigkeit (Easy 1,0 … Impossible höher). Unter „Längen anpassen“ geht jede Leiter mit 2 bis 8 Stufen zwischen 0,01 und 20 s; eine laufende Runde bleibt dabei erhalten.',
+  tiers: 'Der Pool wird nach Bekanntheit (Streamzahl) sortiert, und jede Stufe reicht bis zu dem Anteil, der daneben steht: Easy sind die obersten 15 %, Medium bis 35 % usw. Unter jedem Feld steht, wie viele Songs das sind und ab welcher Streamzahl. Was unter der letzten Grenze liegt, kommt mit Stufen nicht dran – mit „Fünf zufällige“ oder „Nur Hits“ schon.\n'
+    + 'Leicht / Normal / Schwer sind Vorlagen; Normal entspricht den alten festen Grenzen (Easy ab 1,5 Mrd. Streams). „Eigene Grenzen für …“ gilt nur für den Bereich, in dem du gerade bist (Charts, ein Jahrzehnt, ein Genre), sonst überall. Nur Hits: der Anteil für den Hits-Schalter unter Modus.',
+  stats: 'Gezählt wird je Runde: Songs erraten (grün) gegen gespielte, die Quote daraus, die Serie richtiger Songs in Folge und das beste Rundenergebnis. Je Modus getrennt – Charts, Jahrzehnt, Genre, Playlist, Hits –, sobald mehr als einer bespielt ist, stehen die Zeilen untereinander. Alles liegt nur in diesem Browser.',
+  playlist: 'Lade eine Playlist als Datei (CSV, TSV, TXT, M3U, JSON – Exportify, TuneMyMusic, Soundiiz, die Musik-App, Google Takeout) oder füge eine Liste „Titel – Künstler“ ein. Jeder Titel wird einem Song mit Hörprobe bei Apple zugeordnet, schnellster Weg zuerst: schon bekannt oder in der Songliste, dann über die ISRC-Kennung aus der Datei, dann über den Katalog des Künstlers, dann die Suche, zuletzt über das Album.\n'
+    + 'Spielen kannst du ab fünf gefundenen Songs, der Rest kommt nebenher. „Titelliste ansehen“ zeigt, was gefunden wurde und was fehlt – mit dem Grund, und mit der Lupe ordnest du selbst zu. Von Spotify: anmelden, Playlist antippen; Spotify liefert nur die Titel, gespielt wird über Apples Hörproben. Einzeln hinzufügen sucht Songs oder ganze Alben bei Apple.',
+  artist: 'Name eingeben, Enter, Künstler antippen – die Songs kommen direkt aus Apples Katalog, Gastauftritte eingeschlossen. Aussortiert werden Remixe, Live-, Karaoke- und Sped-Up-Fassungen; von Fassungen, die am Anfang gleich klingen, bleibt die älteste. Gespielt werden fünf zufällige ohne Stufen – sonst wäre der größte Hit sofort das Easy. Die letzten zwölf Künstler bleiben gespeichert, die Pfeile oben springen durch sie.',
+  local: 'Spielt aus deinen eigenen Musikdateien. Nichts wird hochgeladen – der Browser liest nur Titel, Künstler und Cover aus den Tags (MP3, M4A, FLAC, Ogg, Opus, WAV), notfalls aus dem Dateinamen. In Chrome bleibt der Ordner über das Neuladen hinaus freigegeben, in Safari und Firefox wählst du ihn jedes Mal neu. Gespielt wird ab dem ersten hörbaren Ton, wie im Original.\n'
+    + 'Vom eigenen Server: Subsonic (Navidrome, Airsonic), Jellyfin oder Plex – der Server muss über https erreichbar sein und fremde Herkunft erlauben (CORS). Zugangsdaten bleiben in diesem Browser.',
+  service: 'Der gewählte Dienst steht bei der Auflösung vorn und hängt an der Ergebnisliste; die übrigen kommen dort auf Klick dazu. Jeder Link ist eine Suche beim Dienst – in deinem Browser bist du dort angemeldet, also einmal klicken und Play. „Alle Dienste“ geht über song.link und landet auf dem Song selbst. Bandcamp, Discogs und der Qobuz-Shop sind Läden, keine Player, deshalb abgeblendet.',
+  play: 'Fünf Songs je Runde: gestuft nach Seltenheit (Easy bis Impossible) oder fünf gleichwertige aus dem ganzen Pool – zufällig spielen dann auch die Songs aus den Jahrescharts mit, die keine Streamzahl haben. Vorschläge: alle bekannten Songs oder nur die Auswahl. Hardmode: der Reihe nach, ein verpasster Song beendet die Runde. Songstart: Anfang der Hörprobe oder eine zufällige Stelle darin. Alles gilt ab der nächsten Runde.',
+  draw: 'Gestuft: je ein Song pro Stufe, Easy bis Impossible, nach Bekanntheit gezogen. Zufällig: fünf gleichwertige Plätze aus dem ganzen Pool, Faktor 1,0 – und zuletzt Gespieltes kommt nach hinten. Gilt ab der nächsten Runde.',
+  suggest: 'Alle bekannten Songs: auch der Song von 1955, der aufs Stichwort passt, steht in der Liste – sie verrät nicht, was gerade im Pool ist. Nur aus der Auswahl: kürzer, aber bei kleinen Pools fast die Lösung. Geraten wird über Titel und Künstler, nicht über die Quelle.',
+  hard: 'Ein verpasster Song beendet die ganze Runde – die übrigen Plätze fallen mit, gezählt wird nur, was du wirklich gespielt hast. Und es geht strikt der Reihe nach: ein Platz weiter vorn ist gesperrt, solange davor noch einer offen ist.',
+  start: 'Apples Hörproben sind 30 Sekunden, meist aus der Songmitte – „ab Songanfang“ wie im Original geht damit nicht. Anfang des Ausschnitts: jeder Platz beginnt am Anfang der Hörprobe. Zufällige Stelle: irgendwo darin, so dass die längste Stufe noch hineinpasst. Eigene Musik spielt immer ab dem ersten hörbaren Ton.',
+  filter: 'Regeln für den Pool: „nur“ schränkt ein (mehrere Genres: oder; Genre und Jahrzehnt: und), „ohne“ wirft raus, „dazu“ holt dazu und schlägt beides – „nur 2010er, ohne Rap, dazu Billie Eilish“ ergibt die 2010er ohne Rap plus alle Billie-Eilish-Songs. Jeder Modus hat seine eigenen Regeln. Instrumentals werden an Titel, Album und Genre erkannt.\n'
+    + 'Unter 30 Songs warnt die Zeile. Filter wirken ab der nächsten Runde – die laufende bleibt. „Songs ansehen“ zeigt genau den Pool, aus dem gezogen wird; dort lässt sich jeder Song reinhören, nachhören und entfernen (gilt dann in jedem Modus).',
+};
+
+function buildInfo() {
+  document.querySelectorAll('[data-info]').forEach(host => {
+    const text = INFO[host.dataset.info];
+    if (!text) return;
+    const b = el('button', 'why info', 'i');
+    b.type = 'button';
+    b.title = 'Was macht das genau?';
+    b.setAttribute('aria-label', 'Was macht das genau?');
+    const summary = host.closest('summary');
+    /* Der Kasten kommt hinter das Element - bei einer Zwischenueberschrift
+       hinter die Schalter, die zu ihr gehoeren, im Panelkopf hinter den Kopf. */
+    const wo = () => summary || (host.classList.contains('fhead') && host.nextElementSibling) || host;
+    b.onclick = ev => {
+      ev.preventDefault();
+      ev.stopPropagation();
+      const details = summary && summary.parentElement;
+      if (details && !details.open) details.open = true;
+      const anker = wo();
+      const offen = anker.nextElementSibling;
+      if (offen && offen.classList.contains('infobox')) offen.remove();
+      else anker.insertAdjacentElement('afterend', el('div', 'whybox infobox', text));
+    };
+    (summary ? summary.querySelector('h2') || summary : host).appendChild(b);
+  });
+}
+
 function buildChrome() {
+  buildInfo();
   renderSlots();
 
   rebuildChips();
@@ -713,7 +771,7 @@ function buildChrome() {
        ist kein Klick daneben - sonst schliesst „weitere" die Liste. */
     if (!e.target.isConnected) return;
     if (!e.target.closest('.guess-row')) hideSuggest();
-    if (!e.target.closest('.whybox, .why')) document.querySelectorAll('.whybox').forEach(x => x.remove());
+    if (!e.target.closest('.whybox, .why')) document.querySelectorAll('.whybox:not(.infobox)').forEach(x => x.remove());
   });
 
   buildPlaylistUI();
@@ -1335,12 +1393,14 @@ function growSuggest() {
    den Pfeiltasten irgendwann unter dem sichtbaren Rand. */
 function moveSuggest(dir) {
   if (!sugItems.length) return;
-  /* Nach unten wird nachgeladen, nach oben nur innerhalb des Geladenen
-     umgebrochen - sonst zeichnet ein Tastendruck die ganze Trefferliste. */
-  if (dir > 0 && sugIdx >= sugItems.length - 1) growSuggest();
-  sugIdx = dir > 0
-    ? (sugIdx + 1 >= sugItems.length ? 0 : sugIdx + 1)
-    : (sugIdx <= 0 ? sugItems.length - 1 : sugIdx - 1);
+  /* Aus dem Stand nimmt jede Pfeiltaste den obersten Vorschlag - der ist
+     der beste, und ↑ ans Ende zu springen hat niemand erwartet. Oben
+     angekommen bleibt ↑ oben; nach unten wird nachgeladen. */
+  if (sugIdx < 0) sugIdx = 0;
+  else if (dir > 0) {
+    if (sugIdx >= sugItems.length - 1) growSuggest();
+    sugIdx = sugIdx + 1 >= sugItems.length ? 0 : sugIdx + 1;
+  } else sugIdx = Math.max(0, sugIdx - 1);
   renderSuggest();
 }
 

@@ -544,6 +544,9 @@ body.dragging::after{
   border:1px solid var(--line);border-radius:50%;background:var(--panel-2);color:var(--grey);
   font:600 11px/1 inherit;font-family:inherit;cursor:pointer;vertical-align:-3px}
 .why:hover{color:var(--text);border-color:var(--text)}
+.why.info{font-style:italic;font-family:Georgia,serif;font-weight:700;margin-left:7px;vertical-align:1px}
+details.panel > summary h2 .why.info{vertical-align:-1px}
+.infobox{border-color:var(--green-dim);color:var(--muted);margin-top:8px}
 .whybox{display:block;margin:7px 0 2px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;
   background:var(--panel-2);color:var(--text);font-size:11.5px;line-height:1.45;
   white-space:pre-wrap;overflow-wrap:anywhere;text-align:left;cursor:default}

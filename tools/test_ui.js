@@ -1592,7 +1592,30 @@ const dummy = n => ({ t: 'Song ' + n, a: 'Kuenstler ' + n, al: 'Album', y: 2020,
   G('hideSuggest()');
   G("suggest('billie')");
   key('ArrowUp');
-  assert(G('sugIdx') === G('sugItems').length - 1, 'Vorschlaege: nach oben aus dem Stand ans Ende');
+  assert(G('sugIdx') === 0 && rows()[0].classList.contains('active'), 'Vorschlaege: ↑ aus dem Stand nimmt den obersten');
+  key('ArrowUp');
+  assert(G('sugIdx') === 0, 'Vorschlaege: ↑ oben bleibt oben');
+  key('ArrowDown'); key('ArrowDown');
+  assert(G('sugIdx') === 2, 'Vorschlaege: ↓ geht weiter nach unten');
+
+  /* Die i-Knoepfe: einer je Panel und an den wichtigen Schaltern. */
+  {
+    const infos = [...w.document.querySelectorAll('.why.info')];
+    assert(infos.length >= 14 && infos.every(b => b.closest('[data-info]')), 'Info: an jedem Panel und Schalter ein i (' + infos.length + ')');
+    const sm = w.document.querySelector('details[data-k="tiers"]');
+    sm.open = false;
+    sm.querySelector('.why.info').click();
+    assert(sm.open && sm.querySelector('summary + .infobox') && /15 %/.test(sm.querySelector('.infobox').textContent),
+      'Info: Tippen oeffnet das Panel und klappt die Erklaerung unter dem Kopf auf');
+    sm.querySelector('.why.info').click();
+    assert(!sm.querySelector('.infobox'), 'Info: nochmal Tippen klappt sie zu');
+    const fh = w.document.querySelector('.fhead[data-info="draw"]');
+    fh.querySelector('.why.info').click();
+    assert(fh.nextElementSibling.nextElementSibling.classList.contains('infobox'), 'Info: bei einer Zwischenueberschrift steht der Kasten hinter den Schaltern');
+    fh.querySelector('.why.info').click();
+    sm.open = false;
+    G('hideSuggest()');
+  }
 
   /* Ganz nach unten scrollen laedt ebenfalls nach */
   G("suggest('the')");

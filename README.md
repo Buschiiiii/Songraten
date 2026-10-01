@@ -356,6 +356,9 @@ zuerst:
    Titel daraus. Zwei Anfragen je Titel, nur für Titel, die sonst nirgends
    zu finden waren.
 
+Hinter jedem Panelnamen und an den wichtigen Schaltern steht ein kleines
+**i** – antippen erklärt, was die Einstellung genau tut und wie sie rechnet.
+
 Ganz unten auf der Seite steht klein die Fassung (`v2026-10-01.14`, also
 Datum und Nummer des Patches an dem Tag) und von wann die Songliste ist –
 so siehst du nach einer Änderung, ob dein Browser sie schon hat; wenn

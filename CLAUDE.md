@@ -881,6 +881,21 @@ der Browser hat die Anfrage also abgebrochen, bevor eine Antwort da war –
 kein Netz, ein Content-Blocker, VPN, abgerissene Verbindung. Ein HTTP-Status
 wäre separat genannt.
 
+## Das i-Knöpfchen: was macht das genau?
+
+Hinter jedem Panelnamen (`summary[data-info]`) und an den wichtigen
+Schaltern (`data-info` an `.fhead` und Switch-Labels: `hits`, `draw`,
+`suggest`, `hard`, `start`, dazu `mode` an der Modus-Überschrift) steht
+ein *i* (`.why.info`). Tippen öffnet das Panel, falls zu, und klappt einen
+Kasten (`.whybox.infobox`) auf – hinter dem Kopf, bei einer
+Zwischenüberschrift hinter den zugehörigen Schaltern (`buildInfo()`,
+`wo()`). Die Texte liegen in `INFO` in app.js, nicht in der Seite: das
+graue Kleingedruckte unter den Schaltern ist dorthin gewandert, die Panels
+sind seitdem leer davon. Gewünscht vom Besitzer („Infos, was das wie genau
+macht"); dynamische Notizen (`#tierNote`, `#ladderNote`, Statuszeilen)
+bleiben, wo sie sind. Info-Kästen schließen nur über ihr *i*, nicht beim
+Klick daneben – anders als die ?-Kästen.
+
 ## Vorschläge beim Raten (`settings.suggest`)
 
 `'all'` (Voreinstellung): `suggestSource()` vereinigt alles, was die Seite
@@ -1074,7 +1089,9 @@ daraus wurde:
    sind bei „billie" zwar 30 Treffer da, aber nur die ersten acht erreichbar.
    Nachgeladen wird beim Scrollen ans Ende, beim Klick auf „n weitere" und
    wenn man mit ↓ unten anstößt; die Auswahl scrollt über `scrollIntoView`
-   mit. Zwei Stolpersteine: `renderSuggest()` darf die Liste **nicht** neu
+   mit. **↑ aus dem Stand nimmt den obersten Vorschlag**, nicht den
+   letzten (so war es, und der Besitzer landete „unten oder so"); oben
+   angekommen bleibt ↑ oben (`moveSuggest()`). Zwei Stolpersteine: `renderSuggest()` darf die Liste **nicht** neu
    aufbauen (sonst springt die Scrollposition bei jedem Tastendruck), und der
    globale Klick-Handler muss `isConnected` prüfen — der „weitere"-Knopf
    verschwand sonst beim Klick aus dem DOM und galt als Klick daneben, was
