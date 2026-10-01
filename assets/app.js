@@ -1670,6 +1670,13 @@ async function openFullPlayer(s, quellen) {
   f.setAttribute('loading', 'lazy');
   f.title = wer === 'spotify' ? 'Spotify-Player' : 'Apple-Music-Player';
   box.appendChild(f);
+  /* Ob der Player das ganze Lied spielt, entscheidet nicht diese Seite,
+     sondern ob der Rahmen die Anmeldung beim Dienst sieht - Safari blockt
+     fremde Cookies in Rahmen, dann bleibt es bei 30 s. Die Seite kann das
+     nicht erkennen; der Player zeigt es an der Laenge. */
+  box.appendChild(el('p', 'note', wer === 'spotify'
+    ? 'Zeigt der Player 0:30, sieht er deine Spotify-Anmeldung nicht – Safari lässt fremde Cookies in Rahmen nicht durch. Dann hilft Chrome, oder das Spotify-Logo im Player öffnet den Song in der App.'
+    : 'Zeigt der Player nur eine Vorschau, sieht er deine Apple-Music-Anmeldung nicht – dann hilft das Logo im Player, es öffnet den Song in der Musik-App.'));
   const andere = quellen.find(x => x !== wer);
   if (andere) {
     const b = el('button', 'pl-link', andere === 'spotify' ? 'lieber bei Spotify' : 'lieber bei Apple Music');
