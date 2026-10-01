@@ -63,9 +63,9 @@ so lange erneut versucht, bis der Context wirklich läuft.
 Zur Laufzeit fragt die Seite nur an fünf Stellen nach, alle vom Nutzer
 angestoßen und alle ohne Schlüssel: der **Playlist-Modus** löst Titel über die
 iTunes-Suche auf, der **Künstlermodus** holt den Katalog bei Apple, der
-**Mediathek-Server** ist der eigene, **song.link** liefert auf Wunsch die
-genauen Links in der Auflösung, und **Spotify** gibt nach Anmeldung die
-eigenen Playlists heraus. Nichts davon braucht ein Backend.
+**Mediathek-Server** ist der eigene, und **Spotify** gibt nach Anmeldung
+die eigenen Playlists heraus. song.link wird nur verlinkt (seine API ist
+seit 2025 dicht). Nichts davon braucht ein Backend.
 
 0. `tools/fetch_kworb.py <anzahl>` holt die Streamzahlen: Künstlerübersicht
    und die Songseiten der größten Künstler, daraus `artists_top.json` und
@@ -382,22 +382,6 @@ Vorziehen nicht. Aufgelöst wird in vier Stufen:
    **nicht**. Der Lookup-Weg kostet nichts, solange der Suchkatalog reicht,
    und schadet nie. Gespeichert wie der Suchkatalog (`catd:`-Schlüssel in
    IndexedDB).
-2c. **Umweg über song.link** (`viaSonglink()`, `Links.appleIdFor()`), als
-   Letztes, erst wenn auch die Suche nichts fand: Exportify schreibt die
-   Spotify-ID als `Track URI` (`SP_KEYS`, `spOf()`; Links und nackte IDs in
-   Spotify-Spalten gehen auch, JSON über `uri`/`external_urls`), die
-   Anmeldung liefert sie als `sp`. `api.song.link/…/links?platform=spotify&
-   type=song&id=<sp>` nennt in `entitiesByUniqueId` Apples Track-ID
-   (`apiProvider: 'itunes'`), zur Not steckt sie im Apple-Link (`?i=`);
-   `lookup?id=<id>` (DE, dann US) holt die Preview. Dieselbe Bremse wie bei
-   der Auflösung (`platz()`, acht je Minute), nur wartet der Import, statt
-   aufzugeben; Treffer liegen unter `spotify:<id>` in `songrate:links`,
-   Fehlschläge nicht – ein ↻ in der Titelliste fragt wirklich noch einmal
-   (`retry()` löscht `spTried`). In der Titelliste steht „über song.link".
-   **Ungeprüft gegen echte Antworten** (kein Netz hier): ob song.link die
-   beiden kennt und ob `lookup?id=` explizite Titel herausgibt, zeigt der
-   erste ↻ auf „Feels" – fällt beides aus, bleibt der Titel wie bisher
-   unter *Fehlt*, mehr passiert nicht.
 3. **Einzelsuche in Stufen** (`searchOne()` → `queries()`). Apples Suche
    findet nur, was **jedes** Wort trägt – „Sweet Dreams (Are Made of This) -
    2005 Remaster Eurythmics;Annie Lennox;Dave Stewart" liefert nichts. Genau
@@ -406,6 +390,20 @@ Vorziehen nicht. Aufgelöst wird in vier Stufen:
    wie zuerst im US-Store. „JAŸ-Z", „Beyoncé" und typografische Apostrophe
    glättet `glatt()`. Erst wenn keine Stufe sicher trifft, entscheidet die alte
    Punktwertung (≥ 2,5) über alles Gesammelte.
+4. **Umweg über das Album** (`viaAlbum()`, als Letztes, nur wenn auch die
+   Suche nichts fand und ein Albumname da ist): `entity=album` mit Album +
+   erstem Künstler (DE, dann US), `albumFits()` verlangt gleichen Grundtitel
+   des Albums und passenden Künstler (oder „Various"), dann
+   `lookup?id=<collectionId>&entity=song` und `pick()` über den Titel. Zwei
+   Anfragen je Titel; `retry()` löscht `albumTried`, ein ↻ versucht es
+   wieder. Titelliste: „über das Album". **Ob der Album-Lookup explizite
+   Titel wirklich listet, ist ungeprüft** (kein Netz hier) – der erste ↻ auf
+   „Feels" zeigt es; fällt es aus, bleibt der Titel wie bisher unter *Fehlt*.
+
+   **Was nicht geht:** song.link als Umweg (Spotify-ID → Apple-ID). Odeslis
+   API antwortet seit Herbst 2025 mit 401 `PUBLIC_API_ACCESS_DEPRECATED`
+   (Besitzer, 1. Oktober); ohne Schlüssel ist sie dicht, und ein Schlüssel
+   ist hier verboten. Der Weg war kurz eingebaut und ist wieder draußen.
 
 Der erste Künstler (`leadOf()`): steht ein Semikolon drin (Exportify,
 Spotify), trennt nur das – „Earth, Wind & Fire" bleibt ganz. Spotify liefert
@@ -723,30 +721,19 @@ Playlist wie Künstlerkatalog übernehmen sie von Apple. Fehlt sie (ältere
 `songs.json`, lokale Dateien), bleibt es bei der Suche — deshalb stehen die
 Einzellinks weiterhin daneben und nicht nur der Sammellink.
 
-### Genau diese Aufnahme statt einer Trefferliste
+### Genau diese Aufnahme – gab es, geht nicht mehr
 
-Ein Suchlink landet auf einer Ergebnisliste; man will aber auf den Song. Bei
-eingeschaltetem `settings.exact` (Voreinstellung) fragt `Links.exact()` einmal
-je Song die Odesli-API (`api.song.link/v1-alpha.1/links?platform=itunes&
-type=song&id=<k>`) und ersetzt die Suchadressen durch die echten. Ein grüner
-Punkt am Chip zeigt, dass der Link genau trifft.
-
-Wichtig dabei:
-
-- **Angemeldet ist man sowieso.** Der Link geht in den eigenen Browser, dort
-  läuft die Sitzung bei Spotify, Tidal oder Qobuz weiter. Die Seite selbst
-  kann sich nirgends anmelden und muss es auch nicht — sie spart nur den
-  Umweg über die Trefferliste.
-- Gerendert wird **sofort mit der Suche**; die genauen Adressen kommen
-  nachträglich und tauschen nur das `href`. Wer schneller klickt, landet
-  trotzdem richtig.
-- Treffer liegen in `songrate:links` (300 Songs), ein zweiter Blick kostet
-  keine Anfrage. Ohne Schlüssel lässt Odesli rund zehn Anfragen je Minute
-  durch, deshalb die Bremse bei acht — und bei Fehler, 429 oder fehlendem `k`
-  bleibt einfach die Suche stehen.
-- **Qobuz und Bandcamp kennt Odesli nicht.** Dort bleibt es bei der Suche im
-  jeweiligen Player, und das ist verschmerzbar: eingeloggt ist man, es kostet
-  einen Klick mehr.
+`Links.exact()` fragte je Song einmal die Odesli-API
+(`api.song.link/v1-alpha.1/links?platform=itunes&type=song&id=<k>`) und
+tauschte die Suchadressen gegen die genauen; ein grüner Punkt am Chip
+zeigte das. **Seit Herbst 2025 antwortet die API mit 401
+`PUBLIC_API_ACCESS_DEPRECATED`** (Besitzer, 1. Oktober, Screenshot) – jede
+Anfrage lief ins Leere, die Seite fiel still auf die Suche zurück. Deshalb
+raus: `exact()`, der Schalter *Genau diese Aufnahme* (`settings.exact`),
+die Bremse. Geblieben ist `Links.known()`: was früher beantwortet wurde,
+liegt in `songrate:links` und wird weiter genutzt, mit `safe()` (nur
+https) beim Lesen. Der Sammellink `song.link/i/<k>` ist eine Webseite und
+geht weiter. Ein Odesli-Schlüssel wäre der Ausweg – und ist hier verboten.
 
 Der Lieblingsdienst (`settings.service`) steht in der Auflösung — und zwar
 **nur er**, dazu der Sammellink; die übrigen kommen über „+ n weitere"
@@ -855,8 +842,8 @@ Playlist"). Das steht jetzt in der Zeile (`filterScope()`) — eine lange
 
 ## Sicherheit
 
-Die Seite verarbeitet Fremdes an fünf Stellen: Antworten von Apple, song.link
-und Spotify, Dateien und Playlists des Nutzers, und was andere Tabs in den
+Die Seite verarbeitet Fremdes an fünf Stellen: Antworten von Apple und
+Spotify, alte song.link-Antworten im Cache, Dateien und Playlists des Nutzers, und was andere Tabs in den
 localStorage geschrieben haben. Prüfung vom 1. Oktober, Befunde und was
 daraus wurde:
 
@@ -866,9 +853,9 @@ daraus wurde:
   hier, Stile nur von hier, Daten nur über https, kein `object`, kein
   `base`. Inline-Styles gibt es nicht (nur CSSOM, das ist erlaubt). Geprüft
   in Chromium: keine Verstöße.
-- **`href` nur https.** Odesli-Antworten landen als Link im Dokument;
-  `Links.safe()` lässt nur `https://` durch – beim Holen **und** beim Lesen
-  aus dem Cache, denn `songrate:links` kann jeder Tab beschreiben. Ein
+- **`href` nur https.** Gemerkte song.link-Antworten landen als Link im
+  Dokument; `Links.safe()` lässt nur `https://` durch – beim Lesen aus dem
+  Cache, denn `songrate:links` kann jeder Tab beschreiben. Ein
   `javascript:`-Link von dort wäre sonst ein Klick zur Codeausführung.
 - **Das Spotify-Token geht nur an `api.spotify.com`.** `page.next` kommt aus
   der Antwort und wird als Adresse weiterverwendet – `api()` weigert sich,
@@ -884,10 +871,9 @@ daraus wurde:
   Längenfelder aus der Datei – eine negative WAV-INFO-Länge (`0x80000000`)
   hat die Schleife vorher **30 Sekunden** festgehalten, jetzt bricht sie ab.
   Alle anderen Parser haben Längenprüfungen und Schleifenwächter (`guard`).
-- **Was an Dritte geht:** Titel und Künstler der eigenen Playlist an Apples
-  Suche, Apples Track-IDs an song.link – und beim Import die Spotify-IDs
-  der Titel, die sonst nirgends zu finden waren, ebenfalls an song.link.
-  Nichts an sonst wen. Das steht so auch in der README.
+- **Was an Dritte geht:** Titel, Künstler und Albumnamen der eigenen
+  Playlist an Apples Suche, nichts an sonst wen (song.link wird nur noch
+  verlinkt). Das steht so auch in der README.
 
 ### Was die Prüfung sonst gefunden hat
 

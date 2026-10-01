@@ -98,7 +98,6 @@ let settings = load('settings', {
   artist: null,           /* zuletzt gespielter Kuenstler (Apple-ID) */
   service: Links.DEFAULT, /* Lieblingsdienst zum Nachhoeren */
   svcAll: false,          /* alle Dienste in der Aufloesung zeigen */
-  exact: true,            /* genaue Links statt Suchseiten (ueber song.link) */
   open: {},               /* welche Panels aufgeklappt sind */
   draw: 'tiers',          /* 'tiers' = nach Seltenheit, 'random' = fuenf zufaellige */
   blocked: [],            /* von Hand entfernte Songs, gilt in jedem Modus */
@@ -1417,14 +1416,6 @@ function renderServiceLinks(song) {
      es ihn gibt. Der Rest kommt auf Klick und bleibt dann offen. */
   const zeigen = settings.svcAll ? liste : liste.filter(l => l.all || l.id === settings.service);
   zeigen.forEach(l => box.appendChild(chip(l)));
-  /* Die genauen Adressen kommen von song.link und brauchen einen Moment.
-     Bis dahin steht die Suche da - wer sofort klickt, landet also trotzdem
-     richtig, nur eine Trefferliste weiter vorn. */
-  if (settings.exact && song && song.k && !Links.known(song)) {
-    Links.exact(song).then(hit => {
-      if (hit && revealed && revealed.song === song) renderServiceLinks(song);
-    });
-  }
   if (!settings.svcAll && zeigen.length < liste.length) {
     const mehr = el('button', 'svc more', `+ ${liste.length - zeigen.length} weitere`);
     mehr.onclick = () => {
@@ -1445,15 +1436,6 @@ function renderServiceLinks(song) {
 }
 
 function buildServiceUI() {
-  const genau = $('#svcExact');
-  if (genau) {
-    genau.checked = settings.exact !== false;
-    genau.onchange = () => {
-      settings.exact = genau.checked;
-      save('settings', settings);
-      if (revealed) renderServiceLinks(revealed.song);
-    };
-  }
   const box = $('#svcSeg');
   box.innerHTML = '';
   Links.SERVICES.forEach(sv => {
@@ -1653,11 +1635,6 @@ function browRow(s) {
     const da = row.querySelector('.blinks');
     if (da) return da.remove();
     rowLinks(row, s);
-    /* Wie in der Aufloesung: erst die Suche, dann - falls song.link etwas
-       weiss - die genaue Adresse. */
-    if (settings.exact && s.k && !Links.known(s)) {
-      Links.exact(s).then(hit => { if (hit && row.querySelector('.blinks')) rowLinks(row, s); });
-    }
   };
   act.appendChild(link);
 
@@ -1738,7 +1715,7 @@ const LUPE = '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke
 const NACH_VORN = '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" '
   + 'stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 4h14M12 20V9M7 13l5-5 5 5"/></svg>';
 const IMP_VIA = { cache: 'schon bekannt', local: 'aus der Songliste', stored: '', isrc: 'über die ISRC',
-                  artist: 'über den Künstlerkatalog', search: 'über die Suche', songlink: 'über song.link',
+                  artist: 'über den Künstlerkatalog', search: 'über die Suche', album: 'über das Album',
                   manual: 'von Hand' };
 
 function buildImportUI() {

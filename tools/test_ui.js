@@ -250,42 +250,10 @@ function makeWindow(store, patchDb, url) {
       return { ok: false, status: 404, json: async () => ({}) };
     }
 
-    /* ---- song.link: die genauen Adressen je Dienst ---- */
+    /* ---- song.link: die API ist seit Herbst 2025 dicht ---- */
     if (url.includes('api.song.link')) {
       odesliCalls.push(url);
-      /* Der Umweg: eine Spotify-ID, dazu nennt song.link Apples Track-ID.
-         `expl1` ist der explizite Titel, den Apples Suche verschweigt;
-         fuer `7` kennt song.link nichts bei Apple. */
-      if (url.includes('platform=spotify')) {
-        const sp = (/id=([^&]+)/.exec(url) || [0, ''])[1];
-        if (sp === 'expl1') return { ok: true, status: 200, json: async () => ({
-          pageUrl: 'https://song.link/s/expl1',
-          entitiesByUniqueId: {
-            'SPOTIFY_SONG::expl1': { id: 'expl1', type: 'song', apiProvider: 'spotify' },
-            'ITUNES_SONG::9001': { id: '9001', type: 'song', apiProvider: 'itunes' },
-          },
-          linksByPlatform: { appleMusic: { url: 'https://music.apple.com/de/album/vol-1/9000?i=9001' } },
-        }) };
-        return { ok: true, status: 200, json: async () => ({ pageUrl: 'https://song.link/s/' + sp,
-          entitiesByUniqueId: { ['SPOTIFY_SONG::' + sp]: { id: sp, type: 'song', apiProvider: 'spotify' } },
-          linksByPlatform: { spotify: { url: 'https://open.spotify.com/track/' + sp } } }) };
-      }
-      if (/id=666/.test(url)) return { ok: false, status: 429, json: async () => ({}) };
-      /* Eine boeswillige Antwort: javascript: statt https. */
-      if (/id=777/.test(url)) return { ok: true, status: 200, json: async () => ({
-        pageUrl: 'javascript:alert(1)',
-        linksByPlatform: { spotify: { url: 'javascript:alert(2)' }, tidal: { url: 'https://tidal.com/browse/track/777' } },
-      }) };
-      const id = (/id=(\d+)/.exec(url) || [0, '0'])[1];
-      return { ok: true, status: 200, json: async () => ({
-        pageUrl: 'https://song.link/i/' + id,
-        linksByPlatform: {
-          appleMusic: { url: 'https://music.apple.com/de/album/x/1?i=' + id },
-          spotify: { url: 'https://open.spotify.com/track/abc' + id },
-          tidal: { url: 'https://tidal.com/browse/track/' + id },
-          deezer: { url: 'https://www.deezer.com/track/' + id },
-        },
-      }) };
+      return { ok: false, status: 401, json: async () => ({ statusCode: 401, code: 'PUBLIC_API_ACCESS_DEPRECATED' }) };
     }
 
     /* ---- Mediathek-Server: Subsonic, Jellyfin, Plex ---- */
@@ -337,15 +305,25 @@ function makeWindow(store, patchDb, url) {
       return { ok: true, status: 200, arrayBuffer: async () => new ArrayBuffer(4096) };
     }
 
-    /* Alben suchen und ihre Titel holen - fuer "einzeln hinzufuegen". */
+    /* Alben suchen und ihre Titel holen - fuer "einzeln hinzufuegen" und den
+       Umweg ueber das Album. Der Begriff entscheidet, was zurueckkommt. */
     if (url.includes('itunes.apple.com/search') && url.includes('entity=album')) {
       itunesCalls++;
-      return { ok: true, status: 200, json: async () => ({ results: [
+      /* URLSearchParams schreibt Leerzeichen als Plus. */
+      const term = decodeURIComponent(url.split('term=')[1].split('&')[0]).replace(/\+/g, ' ');
+      searchTerms.push('album:' + term);
+      const alben = [
         { collectionId: 77, collectionName: 'Loud', artistName: 'Rihanna',
           releaseDate: '2010-11-12', primaryGenreName: 'Pop', trackCount: 3,
           artworkUrl100: 'https://art/loud/100x100bb.jpg' },
         { collectionId: 78, collectionName: 'Ohne Hoerproben', artistName: 'Niemand', trackCount: 2 },
-      ] }) };
+        /* Das Album mit dem expliziten Titel, den die Songsuche verschweigt. */
+        { collectionId: 90, collectionName: 'Vol.1', artistName: 'Mockband',
+          releaseDate: '2017-06-30', primaryGenreName: 'Pop', trackCount: 2,
+          artworkUrl100: 'https://art/vol1/100x100bb.jpg' },
+      ];
+      const treffer = /vol/i.test(term) ? alben.slice(2) : /nirgends|gibts/i.test(term) ? [] : alben.slice(0, 2);
+      return { ok: true, status: 200, json: async () => ({ results: treffer }) };
     }
     if (url.includes('itunes.apple.com/lookup') && url.includes('isrc=')) {
       itunesCalls++;
@@ -375,8 +353,12 @@ function makeWindow(store, patchDb, url) {
             releaseDate: '2012-01-01', primaryGenreName: 'Rock', trackId: 46, previewUrl: 'https://audio/st46', artworkUrl100: 'https://art/st/100x100bb.jpg' },
         ] }) };
       }
-      if (id === 9001 && !url.includes('entity=')) {
+      if (id === 90 && url.includes('entity=song')) {
         return { ok: true, status: 200, json: async () => ({ results: [
+          { wrapperType: 'collection', collectionId: 90 },
+          { wrapperType: 'track', trackName: 'Braves Lied', artistName: 'Mockband', collectionName: 'Vol.1',
+            releaseDate: '2017-06-30', primaryGenreName: 'Pop', trackId: 9000, trackExplicitness: 'notExplicit',
+            previewUrl: 'https://audio/brav', artworkUrl100: 'https://art/expl/100x100bb.jpg' },
           { wrapperType: 'track', trackName: 'Explizites Lied', artistName: 'Mockband', collectionName: 'Vol.1',
             releaseDate: '2017-06-30', primaryGenreName: 'Pop', trackId: 9001, trackExplicitness: 'explicit',
             previewUrl: 'https://audio/expl1', artworkUrl100: 'https://art/expl/100x100bb.jpg' },
@@ -846,10 +828,8 @@ const dummy = n => ({ t: 'Song ' + n, a: 'Kuenstler ' + n, al: 'Album', y: 2020,
   assert(G(`Playlist.parse(${JSON.stringify(exportify)}).tracks[0].isrc`) === 'DEMOC8300001'
     && G(`Playlist.parse(${JSON.stringify(exportify)}).tracks[1].isrc`) == null,
     'Export: die ISRC-Spalte wird gelesen, leere Zellen bleiben leer');
-  assert(G(`Playlist.parse(${JSON.stringify(exportify)}).tracks[0].sp`) === '1'
-    && G(`Playlist.parse(${JSON.stringify(exportify)}).tracks[9].sp`) === 'expl1',
-    'Export: die Spotify-ID kommt aus der Track URI, auch als Link');
   odesliCalls = [];
+  const albumCalls = () => searchTerms.filter(x => /^album:/.test(x)).length;
   await G(`loadPlaylistText(${JSON.stringify(exportify)}, 'Export')`);
   await waitFor(() => G('plBusy') === false, 20000);
   const via = k => G(`(() => { const t = plJob.tracks.find(x => x.title.startsWith(${JSON.stringify(k)}));
@@ -872,13 +852,13 @@ const dummy = n => ({ t: 'Song ' + n, a: 'Kuenstler ' + n, al: 'Album', y: 2020,
     && !searchTerms.some(x => /^(Eins|Zwei|Drei)\b/.test(x)), 'Export: dafuer genuegt eine Anfrage');
   assert(via('Unstoppable') === 'local:Unstoppable', 'Export: was in songs.json steht, kostet nichts');
   assert(G('plJob.missed.size') === 1 && via('Gibts') === 'fehlt', 'Export: der unbekannte Titel bleibt als fehlend stehen');
-  assert(via('Explizites') === 'songlink:Explizites Lied',
-    'Export: was Apples Suche verschweigt, kommt ueber song.link und die Spotify-ID (' + via('Explizites') + ')');
-  const spCalls = odesliCalls.filter(u => /platform=spotify/.test(u));
-  assert(spCalls.length === 2 && spCalls.every(u => /type=song&id=(expl1|7)&userCountry=DE/.test(u)),
-    'Export: song.link wird nur fuer die zwei gefragt, die sonst nirgends zu finden waren (' + spCalls.length + ')');
-  assert(JSON.parse(w.localStorage.getItem('songrate:links'))['spotify:expl1'].itunes === '9001',
-    'Export: die Antwort von song.link bleibt im Speicher');
+  assert(via('Explizites') === 'album:Explizites Lied',
+    'Export: was Apples Suche verschweigt, kommt ueber das Album (' + via('Explizites') + ')');
+  /* „Explizites Lied": Album in DE gefunden, eine Suche. „Gibts nicht":
+     nichts, DE und US, zwei Suchen. Sonst fragt niemand nach Alben. */
+  assert(albumCalls() === 3 && searchTerms.some(x => x === 'album:Vol.1 Mockband'),
+    'Export: das Album wird nur fuer die zwei gesucht, die sonst nirgends zu finden waren (' + albumCalls() + ')');
+  assert(!odesliCalls.length, 'Export: song.link wird nicht gefragt - die API ist dicht');
   assert(G("PL.songs.find(s => s.t === 'Explizites Lied').k") === 9001,
     'Export: der Umweg bringt Apples Track-ID mit');
 
@@ -1142,13 +1122,13 @@ const dummy = n => ({ t: 'Song ' + n, a: 'Kuenstler ' + n, al: 'Album', y: 2020,
   [...$('#svcSeg').querySelectorAll('button')].find(b => b.textContent === 'Apple Music').click();
   G('newRound()'); await tick(30);
 
-  /* --------------------------------------------- Genau diese Aufnahme */
-  /* Eigenes Fenster, und zwar mit Absicht: song.link laesst ohne Schluessel
-     nur acht Anfragen je Minute durch, und seit die Chartsongs Track-IDs
-     haben, verbraucht jede Aufloesung davor eine davon. Im Hauptfenster war
-     die Bremse an dieser Stelle laengst gezogen - der Test haette dem
-     Produkt einen Fehler angehaengt, den es nicht hat. */
-  const wEx = makeWindow({});
+  /* --------------------------------------------- Genaue Links aus dem Cache */
+  /* song.links API ist dicht (401). Was frueher beantwortet wurde, liegt noch
+     im Speicher und wird genutzt - gefragt wird nie mehr. Eigenes Fenster
+     mit vorbelegtem Cache. */
+  const wEx = makeWindow({ 'songrate:links': JSON.stringify({ 1440857781: {
+    spotify: 'https://open.spotify.com/track/abc1440857781', tidal: 'https://tidal.com/browse/track/1440857781',
+    songlink: 'https://song.link/i/1440857781' } }) });
   const X = n => wEx.__ev(n), x$ = q => wEx.document.querySelector(q);
   await waitFor(() => !wEx.document.querySelector('#app').hidden);
   const exLinks = () => [...x$('#revealLinks').querySelectorAll('a')];
@@ -1156,39 +1136,20 @@ const dummy = n => ({ t: 'Song ' + n, a: 'Kuenstler ' + n, al: 'Album', y: 2020,
 
   odesliCalls = [];
   X('settings.svcAll = true; round[0].song.k = 1440857781; showReveal(round[0], false)');
-  assert(/spotify\.com\/search/.test(bei('Spotify').href),
-    'Genau: vor der Antwort steht die Suche da');
-  await waitFor(() => /open\.spotify\.com\/track\//.test((bei('Spotify') || {}).href || ''), 4000);
-  assert(/open\.spotify\.com\/track\/abc1440857781/.test(bei('Spotify').href)
-    && bei('Spotify').classList.contains('exact'),
-    'Genau: Spotify zeigt danach auf den Song selbst');
-  assert(/tidal\.com\/browse\/track\//.test(bei('Tidal').href)
-    && /deezer\.com\/track\//.test(bei('Deezer').href),
-    'Genau: Tidal und Deezer ebenso');
-  assert(/play\.qobuz\.com\/search/.test(bei('Qobuz').href) && !bei('Qobuz').classList.contains('exact'),
-    'Genau: was song.link nicht kennt, bleibt eine Suche');
-  assert(odesliCalls.length === 1 && /platform=itunes&type=song&id=1440857781/.test(odesliCalls[0]),
-    'Genau: eine einzige Anfrage je Song');
-
-  X('closeReveal()'); await tick(20);
-  X('showReveal(round[0], false)'); await tick(60);
-  assert(odesliCalls.length === 1, 'Genau: beim zweiten Mal kommt alles aus dem Speicher');
-  assert(/open\.spotify\.com\/track\//.test(X("Links.one(round[0].song, 'spotify')")),
-    'Genau: auch die Ergebnisliste nimmt die genaue Adresse');
-
-  /* Abschaltbar, und ohne Antwort bleibt es bei der Suche */
-  x$('#svcExact').checked = false;
-  x$('#svcExact').dispatchEvent(new wEx.Event('change'));
-  assert(X('settings.exact') === false, 'Genau: laesst sich abschalten');
-  X('round[0].song.k = 666; showReveal(round[0], false)'); await tick(80);
-  assert(odesliCalls.length === 1, 'Genau: abgeschaltet fragt die Seite gar nicht erst');
-  x$('#svcExact').checked = true;
-  x$('#svcExact').dispatchEvent(new wEx.Event('change'));
-  await waitFor(() => odesliCalls.length === 2, 3000);
   await tick(60);
-  assert(odesliCalls.length === 2 && exLinks().some(a => /music\.apple\.com\/de\/search/.test(a.href))
+  assert(/open\.spotify\.com\/track\/abc1440857781/.test(bei('Spotify').href)
+    && bei('Spotify').classList.contains('exact') && /tidal\.com\/browse\/track\//.test(bei('Tidal').href),
+    'Genau: gemerkte Adressen zeigen weiter auf den Song selbst');
+  assert(/play\.qobuz\.com\/search/.test(bei('Qobuz').href) && !bei('Qobuz').classList.contains('exact'),
+    'Genau: ohne gemerkte Adresse bleibt die Suche');
+  assert(/open\.spotify\.com\/track\//.test(X("Links.one(round[0].song, 'spotify')")),
+    'Genau: auch die Ergebnisliste nimmt die gemerkte Adresse');
+  X('closeReveal()'); await tick(20);
+  X('round[0].song.k = 666; showReveal(round[0], false)'); await tick(80);
+  assert(!odesliCalls.length && exLinks().some(a => /music\.apple\.com\/de\/search/.test(a.href))
     && !x$('#revealLinks').querySelector('.exact'),
-    'Genau: sagt song.link nichts, bleibt die Suche stehen');
+    'Genau: song.link wird nicht mehr gefragt, es bleibt die Suche');
+  assert(!x$('#svcExact') && X('settings.exact') === undefined, 'Genau: der Schalter ist weg');
   X('closeReveal()'); await tick(20);
 
   /* Filter gelten hier genauso */
@@ -2098,10 +2059,7 @@ const dummy = n => ({ t: 'Song ' + n, a: 'Kuenstler ' + n, al: 'Album', y: 2020,
     await waitFor(() => !w.document.querySelector('#app').hidden);
     const R = x => w.__ev(x), r$ = q => w.document.querySelector(q);
 
-    /* Odesli: nur https kommt als Link ins Dokument. */
-    const treffer = await R("Links.exact({ k: 777 })");
-    assert(treffer && treffer.tidal === 'https://tidal.com/browse/track/777' && !treffer.spotify && !treffer.songlink,
-      'Links: javascript:-Adressen von song.link werden verworfen, https bleibt (' + JSON.stringify(treffer) + ')');
+    assert(R('typeof Links.exact') === 'undefined', 'Links: die Odesli-API wird nicht mehr angesprochen');
     const alt = R("Links.known({ k: 778 })");
     assert(alt && !alt.spotify && alt.deezer, 'Links: auch ein manipulierter Cache liefert nur https');
     assert(R("Links.forSong({ t: 'x', a: 'y', k: 778 }, 'spotify').every(l => /^https:\\/\\//.test(l.url))"),
@@ -2218,8 +2176,6 @@ const dummy = n => ({ t: 'Song ' + n, a: 'Kuenstler ' + n, al: 'Album', y: 2020,
   assert(S('plJob.tracks.length') === 3, 'Spotify: zwei Seiten geholt, die Episode faellt raus');
   assert(S("plJob.tracks.find(t => t.title === 'September').lead") === 'Earth, Wind & Fire',
     'Spotify: der erste Kuenstler bleibt ein Name, auch mit Komma');
-  assert(S("plJob.tracks.find(t => t.title === 'September').sp") === '5bcTCxgc7xVfSaMV3RuVke',
-    'Spotify: die Track-ID kommt mit, fuer den Umweg ueber song.link');
   assert(S("plJob.tracks.find(t => t.title.startsWith('Levitating')).artist") === 'Dua Lipa;DaBaby',
     'Spotify: mehrere Kuenstler wie bei Exportify');
   assert(S("[...plJob.found.values()].filter(f => f.via === 'local').length") === 3,

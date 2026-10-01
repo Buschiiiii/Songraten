@@ -58,13 +58,6 @@ const Playlist = (() => {
   const ARTIST_KEYS = ['artist name(s)', 'artist name', 'artist names', 'artist', 'artists', 'artist(s)', 'kunstler', 'künstler', 'interpret', 'album artist', 'albumartist'];
   const ALBUM_KEYS = ['album name', 'album', 'collection', 'release'];
   const ISRC_KEYS = ['isrc'];
-  /* Spotifys Track-ID: Exportify schreibt sie als „Track URI", andere als
-     Link. Sie ist der Schluessel fuer den Umweg ueber song.link (unten). */
-  const SP_KEYS = ['track uri', 'spotify uri', 'spotify track id', 'spotify id', 'spotify url', 'spotify link',
-                   'uri', 'url', 'link', 'track url', 'track link'];
-  const SP_ID = /(?:spotify:track:|open\.spotify\.com\/(?:intl-[a-z]+\/)?track\/)([A-Za-z0-9]{1,40})/;
-  const spOf = x => { const m = SP_ID.exec(String(x || '')); if (m) return m[1];
-                      const b = String(x || '').trim(); return /^[A-Za-z0-9]{22}$/.test(b) ? b : ''; };
 
   /* Zeilenweiser CSV-Leser, der Anfuehrungszeichen und Zeilenumbrueche in
      Feldern aushaelt - Songtitel mit Komma sind haeufig genug. */
@@ -139,10 +132,8 @@ const Playlist = (() => {
       else artist = t.artist || t.artistName || t.artists || t.creator || '';
       const album = (t.album && (t.album.name || t.album)) || t.albumName || t.collectionName || '';
       const isrc = isrcOf((t.external_ids && t.external_ids.isrc) || t.isrc);
-      const sp = spOf(t.uri) || spOf(t.external_urls && t.external_urls.spotify)
-        || (/^spotify:track:/.test(String(t.uri || '')) ? spOf(t.id) : '');
       return { title: String(title || '').trim(), artist: String(artist || '').trim(), album: String(album || '').trim(),
-               isrc: isrc || undefined, sp: sp || undefined };
+               isrc: isrc || undefined };
     }).filter(x => x.title || x.artist);
   }
 
@@ -174,16 +165,12 @@ const Playlist = (() => {
         const head = rows[0];
         const ti = findCol(head, TITLE_KEYS), ai = findCol(head, ARTIST_KEYS);
         if (ti >= 0 || ai >= 0) {
-          const li = findCol(head, ALBUM_KEYS), ii = findCol(head, ISRC_KEYS), si = findCol(head, SP_KEYS);
-          /* Eine nackte ID ohne „spotify:" gilt nur in einer Spalte, die
-             Spotify im Namen traegt - „Track ID" kann sonst alles sein. */
-          const spCol = si >= 0 && /spotify/.test(norm(head[si]));
+          const li = findCol(head, ALBUM_KEYS), ii = findCol(head, ISRC_KEYS);
           const tracks = rows.slice(1).map(r => ({
             title: ti >= 0 ? (r[ti] || '') : '',
             artist: ai >= 0 ? (r[ai] || '') : '',
             album: li >= 0 ? (r[li] || '') : '',
             isrc: ii >= 0 ? (isrcOf(r[ii]) || undefined) : undefined,
-            sp: si >= 0 ? ((spCol || SP_ID.test(r[si] || '')) && spOf(r[si])) || undefined : undefined,
           })).filter(x => x.title || x.artist);
           if (tracks.length) return { tracks: cap(tracks) };
         }
@@ -476,14 +463,13 @@ const Playlist = (() => {
       const x = { title: t.title || '', artist: t.artist || '', album: t.album || '', loose: !!t.loose };
       if (t.lead) x.lead = t.lead;
       if (t.isrc) x.isrc = isrcOf(t.isrc) || undefined;
-      if (t.sp) x.sp = (/^[A-Za-z0-9]{1,40}$/.test(String(t.sp)) ? String(t.sp) : spOf(t.sp)) || undefined;
       x.key = keyOf(x);
       if (!x.key || seen.has(x.key)) return;
       seen.add(x.key);
       list.push(x);
     });
     return { name, tracks: list, pending: list.slice(), found: new Map(), missed: new Map(),
-             tried: new Set(), deepTried: new Set(), isrcTried: new Set(), spTried: new Set(),
+             tried: new Set(), deepTried: new Set(), isrcTried: new Set(), albumTried: new Set(),
              current: null, extra: [] };
   }
 
@@ -594,19 +580,28 @@ const Playlist = (() => {
     return res.filter(r => r.wrapperType === 'track' && r.previewUrl);
   }
 
-  /* Stufe 5, der Umweg: Apples Suche verschweigt seit Herbst 2025 explizite
-     Titel, und der ISRC-Nachschlag tut es auch (geprueft am 1. Oktober mit
-     „Feels" und „L.A.LOVE": Suche nur notExplicit, Lookup leer). song.link
-     kennt die Aufnahme ueber ihre Spotify-ID und nennt Apples Track-ID;
-     `lookup?id=` holt dazu die Preview. Nur fuer Titel, die sonst nirgends
-     zu finden waren - song.link laesst zehn Anfragen je Minute durch. */
-  async function viaSonglink(t) {
-    if (!t.sp || typeof Links === 'undefined' || !Links.appleIdFor) return null;
-    const id = await Links.appleIdFor('spotify', t.sp);
-    if (!id) return null;
+  /* Stufe 4, der Umweg ueber das Album: Apples Suche verschweigt seit
+     Herbst 2025 explizite Titel, und der ISRC-Nachschlag tut es auch
+     (geprueft am 1. Oktober mit „Feels" und „L.A.LOVE": Suche nur
+     notExplicit, Lookup leer). Alben findet die Suche aber, und
+     `lookup?id=<collectionId>&entity=song` listet die Titel eines Albums -
+     ohne den Suchindex, der die Luecke hat. Also: Album suchen, Titel daraus
+     nehmen. Nur fuer Titel, die sonst nirgends zu finden waren, und nur mit
+     Albumnamen (Exportify und Spotify liefern ihn). Zwei Anfragen je Titel. */
+  function albumFits(c, t) {
+    if (!c.collectionId || base(c.collectionName) !== base(t.album)) return false;
+    const want = names(t.artist);
+    return !want.length || fits([c.artistName], want) || /various|verschiedene/i.test(c.artistName || '');
+  }
+  async function viaAlbum(t) {
+    if (!base(t.album)) return null;
     for (const country of ['DE', 'US']) {
-      const res = await get('lookup', { id, country });
-      const c = res.find(r => r.wrapperType === 'track' && r.previewUrl);
+      const alben = await get('search', { media: 'music', entity: 'album', limit: 10, country,
+                                          term: glatt(titleOf(t.album) + ' ' + leadName(t)) });
+      const album = alben.find(c => albumFits(c, t));
+      if (!album) continue;
+      const titel = await get('lookup', { id: album.collectionId, entity: 'song', limit: 200, country });
+      const c = pick(titel.filter(r => r.wrapperType === 'track'), t);
       if (c) return c;
     }
     return null;
@@ -701,10 +696,10 @@ const Playlist = (() => {
         let c = await searchOne(t), via = 'search';
         /* Wer waehrend der Suche selbst zugeordnet hat, behaelt seine Wahl. */
         if (!j.pending.includes(t)) continue;
-        if (!c && t.sp && !j.spTried.has(t.key)) {
-          j.spTried.add(t.key);
-          c = await viaSonglink(t);
-          via = 'songlink';
+        if (!c && t.album && !j.albumTried.has(t.key)) {
+          j.albumTried.add(t.key);
+          c = await viaAlbum(t);
+          via = 'album';
           if (!j.pending.includes(t)) continue;
         }
         if (c) { const song = toSong(c); cache[t.key] = song; hit(t, song, via); }
@@ -740,7 +735,7 @@ const Playlist = (() => {
     const list = [].concat(keys).map(k => j.missed.get(k)).filter(Boolean);
     /* Der Umweg darf noch einmal (die ISRC nicht: die liefert immer dasselbe,
        und wer den Treffer gerade als falsch markiert hat, will die Suche). */
-    list.forEach(t => { j.missed.delete(t.key); misses.delete(t.key); j.spTried.delete(t.key); });
+    list.forEach(t => { j.missed.delete(t.key); misses.delete(t.key); j.albumTried.delete(t.key); });
     j.pending = [...list, ...j.pending.filter(t => !list.includes(t))];
     return list.length;
   }
@@ -793,7 +788,7 @@ const Playlist = (() => {
         localStorage.setItem(QUEUE_KEY, JSON.stringify({
           name: j.name, own: !!j.own,
           tracks: j.tracks.map(t => ({ title: t.title, artist: t.artist, album: t.album,
-                                       loose: t.loose || undefined, lead: t.lead, isrc: t.isrc, sp: t.sp })),
+                                       loose: t.loose || undefined, lead: t.lead, isrc: t.isrc })),
           missed: [...j.missed.keys()],
         }));
       } else localStorage.removeItem(QUEUE_KEY);

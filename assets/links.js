@@ -15,8 +15,9 @@
    Angemeldet ist man dabei sowieso: der Link geht in den eigenen Browser,
    und dort laeuft die Sitzung bei Spotify, Tidal oder Qobuz weiter. Was der
    genaue Link spart, ist der Umweg ueber die Trefferliste - man landet auf
-   dem Song und drueckt Play. `exact()` holt die genauen Adressen einmal je
-   Song von Odesli und merkt sie sich; klappt das nicht, bleibt die Suche. */
+   dem Song und drueckt Play. Die genauen Adressen je Dienst kamen frueher von
+   Odeslis API; die ist seit Herbst 2025 ohne Schluessel dicht (siehe unten),
+   es bleibt der Sammellink. */
 
 const Links = (() => {
 
@@ -77,31 +78,16 @@ const Links = (() => {
 
   const name = id => (byId[id] || {}).name || '';
 
-  /* ------------------------------------------ Genaue Links (Odesli) */
+  /* ------------------------------------------ Genaue Links (Cache) */
 
-  /* Odesli kennt die meisten Dienste unter eigenen Namen; wo mehrere passen,
-     gewinnt der erste. Qobuz und Bandcamp fuehrt es nicht - dort bleibt es
-     bei der Suche, und das ist auch in Ordnung: eingeloggt ist man ja, es
-     kostet nur einen Klick mehr. */
-  const PLATFORM = {
-    apple: ['appleMusic', 'itunes'],
-    spotify: ['spotify'],
-    ytmusic: ['youtubeMusic'],
-    youtube: ['youtube'],
-    deezer: ['deezer'],
-    tidal: ['tidal'],
-    amazon: ['amazonMusic', 'amazonStore'],
-    soundcloud: ['soundcloud'],
-  };
-
-  const API = 'https://api.song.link/v1-alpha.1/links';
+  /* song.links API (api.song.link) hat die Seite frueher je Song einmal
+     gefragt und die Suchadressen durch die genauen ersetzt. Seit Herbst 2025
+     antwortet sie nur noch mit 401 „PUBLIC_API_ACCESS_DEPRECATED" - ohne
+     Schluessel geht da nichts mehr, und ein Schluessel ist hier verboten.
+     Was damals beantwortet wurde, liegt noch in `songrate:links` und wird
+     weiter genutzt; neu gefragt wird nicht. Der Sammellink song.link/i/<k>
+     ist eine Webseite, keine API, und geht weiter. */
   const CACHE_KEY = 'songrate:links';
-  const CACHE_MAX = 300;
-  /* Ohne Schluessel laesst Odesli rund zehn Anfragen je Minute durch. Mehr
-     braucht es nicht - eine Runde hat fuenf Aufloesungen -, aber gebremst
-     wird trotzdem, damit ein hektisches Neuwuerfeln nicht ins Limit rennt. */
-  const RATE = 8;
-  let stamps = [];
 
   let cache = null;
   function load() {
@@ -109,17 +95,13 @@ const Links = (() => {
     try { cache = JSON.parse(localStorage.getItem(CACHE_KEY) || '{}'); } catch (e) { cache = {}; }
     return cache;
   }
-  function store(k, val) {
-    const c = load();
-    c[k] = val;
-    const keys = Object.keys(c);
-    if (keys.length > CACHE_MAX) keys.slice(0, keys.length - CACHE_MAX).forEach(x => delete c[x]);
-    try { localStorage.setItem(CACHE_KEY, JSON.stringify(c)); } catch (e) {}
-  }
 
-  /* Was schon bekannt ist, ohne Anfrage. */
-  /* Auch der Cache wird geprueft - er stammt aus demselben localStorage,
-     in dem jeder Tab schreiben darf. */
+  /* Was von aussen kommt, landet als href im Dokument - also nur echte
+     https-Adressen, nie etwas wie javascript:. */
+  const safe = u => (typeof u === 'string' && /^https:\/\/[^\s]+$/i.test(u) ? u : '');
+
+  /* Was schon bekannt ist, ohne Anfrage. Auch der Cache wird geprueft - er
+     stammt aus demselben localStorage, in dem jeder Tab schreiben darf. */
   function known(song) {
     const hit = song && song.k ? load()[String(song.k)] : null;
     if (!hit) return null;
@@ -128,96 +110,5 @@ const Links = (() => {
     return out;
   }
 
-  /* Was von aussen kommt, landet als href im Dokument - also nur echte
-     https-Adressen, nie etwas wie javascript:. */
-  const safe = u => (typeof u === 'string' && /^https:\/\/[^\s]+$/i.test(u) ? u : '');
-
-  function pick(links, id) {
-    for (const key of (PLATFORM[id] || [])) {
-      const hit = links[key];
-      if (hit && safe(hit.url)) return hit.url;
-    }
-    return '';
-  }
-
-  /* Die Bremse: eine Anfrage je Platz. `warten` = false (Aufloesung): ist
-     kein Platz frei, gibt es keinen - die Suche steht ja schon. `warten` =
-     true (Import): bis der naechste Platz frei wird. */
-  const sleep = ms => new Promise(r => setTimeout(r, ms));
-  async function platz(warten) {
-    for (;;) {
-      const jetzt = Date.now();
-      stamps = stamps.filter(t => jetzt - t < 60000);
-      if (stamps.length < RATE) { stamps.push(jetzt); return true; }
-      if (!warten) return false;
-      await sleep(Math.max(250, stamps[0] + 60000 - jetzt));
-    }
-  }
-
-  async function odesli(params, warten) {
-    if (!await platz(warten)) return null;
-    const url = `${API}?${new URLSearchParams({ ...params, userCountry: 'DE' })}`;
-    const res = await fetch(url);
-    if (res.status === 429 && warten) {
-      /* Einmal abwarten und noch einmal; danach ist es eben nichts. */
-      await sleep(15000);
-      return odesli(params, false);
-    }
-    if (!res.ok) return null;
-    return res.json();
-  }
-
-  /* Der Umweg fuer den Import: Apples Suche verschweigt seit 2025 explizite
-     Titel, der ISRC-Nachschlag auch. song.link kennt die Aufnahme aber ueber
-     ihre Spotify-ID und nennt dazu Apples Track-ID - und ueber die kommt
-     man per `lookup?id=` wieder an die Preview. Liefert die ID als String
-     oder null; was einmal beantwortet wurde, bleibt im Speicher. */
-  async function appleIdFor(platform, id) {
-    if (!platform || !id) return null;
-    const key = platform + ':' + id;
-    const hit = load()[key];
-    if (hit && hit.itunes) return hit.itunes;
-    let data = null;
-    try { data = await odesli({ platform, type: 'song', id: String(id) }, true); }
-    catch (e) { return null; }
-    if (!data) return null;
-    let found = '';
-    Object.values(data.entitiesByUniqueId || {}).forEach(e => {
-      if (!found && e && e.apiProvider === 'itunes' && e.type === 'song' && /^\d+$/.test(String(e.id || ''))) {
-        found = String(e.id);
-      }
-    });
-    if (!found) {
-      /* Zur Sicherheit auch der Link: …/album/x/123?i=456 traegt die ID. */
-      const l = (data.linksByPlatform || {}).appleMusic || (data.linksByPlatform || {}).itunes;
-      const m = l && safe(l.url) && /[?&]i=(\d+)/.exec(l.url);
-      if (m) found = m[1];
-    }
-    /* Nur Treffer werden gemerkt - ein „kennt Apple nicht" kann sich
-       aendern, und ein neuer Versuch soll wirklich fragen. */
-    if (found) store(key, { itunes: found });
-    return found || null;
-  }
-
-  /* Holt die genauen Adressen. Gibt {} zurueck, wenn nichts zu holen war -
-     der Aufrufer bleibt dann einfach bei den Suchlinks. */
-  async function exact(song) {
-    if (!song || !song.k) return null;
-    const key = String(song.k);
-    const hit = load()[key];
-    if (hit) return hit;
-
-    try {
-      const data = await odesli({ platform: 'itunes', type: 'song', id: key }, false);
-      if (!data) return null;
-      const links = data.linksByPlatform || {};
-      const out = {};
-      Object.keys(PLATFORM).forEach(id => { const u = pick(links, id); if (u) out[id] = u; });
-      if (safe(data.pageUrl)) out.songlink = data.pageUrl;
-      store(key, out);
-      return out;
-    } catch (e) { return null; }
-  }
-
-  return { SERVICES, forSong, one, name, has, exact, known, appleIdFor, DEFAULT: 'apple' };
+  return { SERVICES, forSong, one, name, has, known, DEFAULT: 'apple' };
 })();

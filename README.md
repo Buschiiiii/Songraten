@@ -234,11 +234,10 @@ sondern auf genau dieser Aufnahme – beim Dienst, den du dort anklickst.
 
 **Angemeldet bist du dabei schon.** Der Link öffnet sich in deinem Browser,
 und dort läuft deine Sitzung bei Spotify, Tidal oder Qobuz weiter – du landest
-also im Player und drückst Play. Damit du dort nicht erst suchen musst, holt
-die Seite bei eingeschaltetem *Genau diese Aufnahme* einmal je Song die echten
-Adressen bei song.link; ein grüner Punkt am Dienst heißt „führt direkt zu
-diesem Song". Qobuz und Bandcamp kennt song.link nicht, dort bleibt es bei der
-Suche im Player. Abschalten lässt sich das unter **Nachhören bei**.
+im Player, bei der Suche nach dem Song, und drückst Play. Früher hat die Seite
+die genauen Adressen je Dienst bei song.link geholt; diese Schnittstelle ist
+seit Herbst 2025 ohne Schlüssel abgeschaltet. Was davon noch im Browser
+gespeichert ist, wird weiter genutzt (grüner Punkt am Dienst).
 
 **Innerhalb des Spiels abspielen geht nur mit der eigenen Musik.** Spotify und
 Apple Music bräuchten dafür eine registrierte App und einen Server – und
@@ -349,13 +348,13 @@ zuerst:
 4. **Einzeln bei Apple**, und zwar so, dass Apple es auch findet: ohne
    „- 2005 Remaster", nur mit dem ersten Künstler, „JAŸ-Z" und schräge
    Apostrophe geglättet. Klappt das nicht, sucht die Seite lockerer weiter.
-5. **Umweg über song.link** für den Rest: Apples Suche verschweigt seit
-   Herbst 2025 explizite Titel, und auch die ISRC findet sie dann nicht.
-   Steht die Spotify-ID in der Datei (Exportify: *Track URI*) oder kommt
-   die Liste aus der Spotify-Anmeldung, fragt die Seite song.link nach der
-   passenden Apple-Aufnahme und holt die Hörprobe über deren Nummer. Das
-   kostet eine Anfrage je Titel und passiert nur für Titel, die sonst
-   nirgends zu finden waren.
+5. **Über das Album** für den Rest: Apples Suche verschweigt seit Herbst
+   2025 explizite Titel, und auch die ISRC findet sie dann nicht. Alben
+   findet die Suche aber, und die Titelliste eines Albums kommt über einen
+   Nachschlag ohne diese Lücke. Steht der Albumname in der Datei (Exportify,
+   Spotify, die meisten Exporte), sucht die Seite das Album und nimmt den
+   Titel daraus. Zwei Anfragen je Titel, nur für Titel, die sonst nirgends
+   zu finden waren.
 
 Apple erlaubt nur rund zwanzig Anfragen pro Minute. Die Seite hält sich
 daran, statt in die Sperre zu laufen: nach einer Sperre langsam, nach vierzig
@@ -539,10 +538,9 @@ die Anzahl Songs pro Stufe, alles frei änderbar.
 ## Was die Seite nach außen schickt
 
 Nichts, was nicht sein muss. Titel und Künstler einer Playlist gehen an
-Apples Suche, damit es eine Hörprobe gibt; Apples Track-IDs gehen an
-song.link, wenn *Genau diese Aufnahme* an ist, und beim Import die
-Spotify-IDs der Titel, die Apple sonst nicht herausrückt; nach der
-Spotify-Anmeldung holt die Seite deine Playlists direkt bei Spotify. Eigene Musikdateien
+Apples Suche, damit es eine Hörprobe gibt; nach der Spotify-Anmeldung
+holt die Seite deine Playlists direkt bei Spotify. song.link wird nur noch
+verlinkt, nicht mehr abgefragt. Eigene Musikdateien
 bleiben auf dem Gerät. Alles Gespeicherte – Einstellungen, Statistik,
 Playlist, Spotify-Anmeldung, Zugang zum Mediathek-Server – liegt im Browser,
 unverschlüsselt; *Zugang vergessen* und *Bei Spotify abmelden* räumen auf.
