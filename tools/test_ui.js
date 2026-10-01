@@ -868,7 +868,8 @@ const dummy = n => ({ t: 'Song ' + n, a: 'Kuenstler ' + n, al: 'Album', y: 2020,
     + 'spotify:track:7,DEMOC9900099,"Gibts nicht","Nirgends","Niemand"\n'
     + 'spotify:track:8,DEMOC1200003,"Dieses Lied","X","Ganz Anders"\n'
     + 'spotify:track:9,,"Vier","Stapel","Stapelband"\n'
-    + 'https://open.spotify.com/track/expl1,,"Explizites Lied","Vol.1","Mockband"\n';
+    + 'https://open.spotify.com/track/expl1,,"Explizites Lied","Vol.1","Mockband"\n'
+    + 'spotify:track:11,,"Kaputt Lied","Nirgends","Kaputtband"\n';
   assert(G(`Playlist.parse(${JSON.stringify(exportify)}).tracks[0].isrc`) === 'DEMOC8300001'
     && G(`Playlist.parse(${JSON.stringify(exportify)}).tracks[1].isrc`) == null,
     'Export: die ISRC-Spalte wird gelesen, leere Zellen bleiben leer');
@@ -895,7 +896,17 @@ const dummy = n => ({ t: 'Song ' + n, a: 'Kuenstler ' + n, al: 'Album', y: 2020,
   assert(searchTerms.filter(x => x === 'katalog:stapelband').length === 1
     && !searchTerms.some(x => /^(Eins|Zwei|Drei)\b/.test(x)), 'Export: dafuer genuegt eine Anfrage');
   assert(via('Unstoppable') === 'local:Unstoppable', 'Export: was in songs.json steht, kostet nichts');
-  assert(G('plJob.missed.size') === 1 && via('Gibts') === 'fehlt', 'Export: der unbekannte Titel bleibt als fehlend stehen');
+  assert(G('plJob.missed.size') === 2 && via('Gibts') === 'fehlt', 'Export: der unbekannte Titel bleibt als fehlend stehen');
+  /* Warum etwas fehlt: Apple hatte nichts - oder die Anfrage kam nie an. */
+  const whyVon = k => G(`plJob.tracks.find(x => x.title.startsWith(${JSON.stringify(k)})).why`);
+  assert(whyVon('Gibts').kind === 'none' && whyVon('Gibts').log.some(l => /ISRC DEMOC9900099/.test(l))
+    && whyVon('Gibts').log.some(l => /^Suche „Gibts nicht Niemand“ \(DE\)/.test(l))
+    && whyVon('Gibts').log.some(l => /^Album „Nirgends“ \(US\)/.test(l)),
+    'Export: der Grund fuehrt Protokoll - ISRC, Suche, Album (' + whyVon('Gibts').log.join(' | ') + ')');
+  assert(whyVon('Kaputt').kind === 'error' && whyVon('Kaputt').error.net
+    && whyVon('Kaputt').log.filter(l => /neuer Versuch/.test(l)).length === 2
+    && searchTerms.filter(x => /^Kaputt Lied Kaputtband$/.test(x)).length === 3,
+    'Export: ein Netzfehler wird zweimal wiederholt, dann steht er als Grund da (' + whyVon('Kaputt').log.join(' | ') + ')');
   assert(via('Explizites') === 'album:Explizites Lied',
     'Export: was Apples Suche verschweigt, kommt ueber das Album (' + via('Explizites') + ')');
   /* „Explizites Lied": Album in DE gefunden, eine Suche. „Gibts nicht":
@@ -908,7 +919,7 @@ const dummy = n => ({ t: 'Song ' + n, a: 'Kuenstler ' + n, al: 'Album', y: 2020,
 
   assert(!searchTerms.some(x => /Remaster|Eins Gast|;/.test(x)),
     'Export: kein Suchbegriff traegt Zusatz oder Semikolon (' + searchTerms.join(' | ') + ')');
-  assert($('#plView').textContent.includes('1 fehlen'), 'Export: die Playlist-Zeile nennt, was fehlt');
+  assert($('#plView').textContent.includes('2 fehlen'), 'Export: die Playlist-Zeile nennt, was fehlt');
 
   /* ------------------------ Titelliste: sehen, was fehlt, selbst nachhelfen */
   $('#plView').click(); await tick(10);
@@ -916,6 +927,22 @@ const dummy = n => ({ t: 'Song ' + n, a: 'Kuenstler ' + n, al: 'Album', y: 2020,
   assert($('#impTab [data-v="found"]').textContent === 'Gefunden (9)',
     'Titelliste: die Reiter zaehlen mit (' + $('#impTab [data-v="found"]').textContent + ')');
   const missRow = $('#impList .brow');
+  {
+    const zeilen = [...$('#impList').querySelectorAll('.brow')];
+    const kaputt = zeilen.find(r => r.textContent.includes('Kaputt Lied'));
+    assert(missRow.textContent.includes('Gibts nicht') && /bei Apple nicht gefunden/.test(missRow.textContent)
+      && /ISRC DEMOC9900099/.test(missRow.querySelector('.why').title) && /Versucht:/.test(missRow.querySelector('.why').title),
+      'Titelliste: die Zeile sagt, warum der Titel fehlt, das ? zeigt das Protokoll');
+    assert(kaputt && /Verbindungsproblem/.test(kaputt.textContent) && /nicht angekommen/.test(kaputt.querySelector('.why').title)
+      && /↻ sucht noch einmal/.test(kaputt.querySelector('.why').title),
+      'Titelliste: ein Verbindungsproblem heisst nicht „gibt es nicht“');
+    kaputt.querySelector('.why').click();
+    assert(kaputt.querySelector(':scope > .whybox'), 'Titelliste: das Protokoll klappt in der Zeile auf');
+    kaputt.querySelector('.why').click();
+    const q = JSON.parse(w.localStorage.getItem('songrate:plqueue'));
+    assert(q.whys && Object.values(q.whys).some(x => x.kind === 'error') && Object.values(q.whys).some(x => x.kind === 'none'),
+      'Titelliste: die Gruende werden mitgespeichert');
+  }
   assert(missRow && missRow.textContent.includes('Gibts nicht'), 'Titelliste: der fehlende Titel steht da');
   missRow.querySelector('button[title="Selbst suchen"]').click(); await tick(20);
   const finder = $('#impList .imp-find input');
@@ -931,8 +958,8 @@ const dummy = n => ({ t: 'Song ' + n, a: 'Kuenstler ' + n, al: 'Album', y: 2020,
   assert(G('PL.songs').some(s => s.t === 'Neuer Song'), 'Titelliste: und er spielt in der Playlist mit');
   assert(JSON.parse(w.localStorage.getItem('songrate:plcache'))[G("plJob.tracks.find(t => t.title === 'Gibts nicht').key")].t === 'Neuer Song',
     'Titelliste: die Zuordnung ueberlebt das Neuladen');
-  assert(G('plJob.missed.size') === 0 && $('#impList').textContent.includes('Alles gefunden'),
-    'Titelliste: nichts fehlt mehr');
+  assert(G('plJob.missed.size') === 1 && !$('#impList').textContent.includes('Gibts nicht'),
+    'Titelliste: der zugeordnete Titel steht nicht mehr unter „Fehlt“');
 
   /* Handsuche ueber Alben: Album antippen, Titel waehlen. */
   {

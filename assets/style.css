@@ -442,6 +442,7 @@ body.dragging::after{
 .brow .bact button:hover{background:var(--panel);color:var(--text)}
 .brow .bact button.on{color:var(--green)}
 .brow .blinks{flex:0 0 100%;order:9;padding:2px 0 6px}
+.brow>.whybox{flex:0 0 100%;order:8}
 .browse-foot{display:flex;align-items:center;gap:12px;margin-top:12px;padding-top:12px;border-top:1px solid var(--line)}
 .browse-foot .pl-link{flex:1;min-width:0;white-space:nowrap}
 .browse-foot .btn-ghost{width:auto;margin:0;padding:9px 12px;white-space:nowrap}

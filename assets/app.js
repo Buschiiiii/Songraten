@@ -112,23 +112,29 @@ function whyOf(e) {
   return z.join('\n');
 }
 
-/* Meldung setzen, mit ?-Knopf, wenn es einen Fehler zu erklaeren gibt. */
-function putNote(box, msg, e) {
-  if (!box) return;
-  box.textContent = msg || '';
-  const why = e ? whyOf(e) : '';
-  if (!why || !msg) return;
+/* Der ?-Knopf: Tooltip beim Hover, aufgeklappter Kasten in `host` beim
+   Tippen. */
+function whyButton(why, host) {
   const b = el('button', 'why', '?');
   b.type = 'button';
   b.title = why;
   b.setAttribute('aria-label', 'Was genau ist passiert?');
   b.onclick = ev => {
     ev.stopPropagation();
-    const offen = box.querySelector('.whybox');
+    const offen = host.querySelector(':scope > .whybox');
     if (offen) offen.remove();
-    else box.appendChild(el('div', 'whybox', why));
+    else host.appendChild(el('div', 'whybox', why));
   };
-  box.appendChild(b);
+  return b;
+}
+
+/* Meldung setzen, mit ?-Knopf, wenn es einen Fehler zu erklaeren gibt. */
+function putNote(box, msg, e) {
+  if (!box) return;
+  box.textContent = msg || '';
+  const why = e ? whyOf(e) : '';
+  if (!why || !msg) return;
+  box.appendChild(whyButton(why, box));
 }
 
 let DB = null;            /* { artists:[], songs:[] } */
@@ -1940,6 +1946,31 @@ function renderImport(voll) {
 /* Exportify und Spotify trennen Kuenstler mit Semikolon - lesen soll man Kommas. */
 const wer = a => String(a || '').replace(/\s*;\s*/g, ', ');
 
+/* Warum ein Titel fehlt: kurz in der Zeile, lang hinter dem ?. Zwei Faelle,
+   die man auseinanderhalten muss - Apple hat nichts Passendes (dann hilft
+   nur die Lupe), oder die Anfrage ist gar nicht angekommen (dann hilft ↻). */
+function impGrund(why) {
+  if (!why) return 'nicht gefunden';
+  if (why.kind === 'error') return why.error && why.error.status >= 500
+    ? `Apple-Server hat nicht geantwortet (HTTP ${why.error.status})` : 'Verbindungsproblem bei der Suche';
+  if (why.kind === 'stored') return 'nicht gefunden (vor dem Neuladen)';
+  return 'bei Apple nicht gefunden';
+}
+function impWhy(t, why) {
+  const log = (why.log || []).map(l => '• ' + l).join('\n');
+  if (why.kind === 'error') {
+    return 'Die automatische Suche ist an der Verbindung gescheitert, nicht an Apple – den Titel kann es dort geben. '
+      + 'Die Seite hat es zweimal kurz hintereinander versucht; ↻ sucht noch einmal.\n'
+      + whyOf(why.error) + (log ? '\nVorher versucht:\n' + log : '');
+  }
+  if (why.kind === 'stored' || !log) {
+    return 'Nicht gefunden – die Einzelheiten dieser Suche sind nicht mehr da. ↻ sucht noch einmal und protokolliert dabei.';
+  }
+  return 'Alle Wege sind durchgelaufen, ohne dass ein Titel mit gleichem Grundtitel und passendem Künstler dabei war. '
+    + 'Entweder gibt es die Aufnahme bei Apple nicht oder nur unter anderem Namen – oder Apples Suche verschweigt sie '
+    + '(explizite Titel). Mit der Lupe selbst suchen; bei expliziten Titeln über „Alben“.\nVersucht:\n' + log;
+}
+
 function impRow(t) {
   const j = plJob;
   const f = j.found.get(t.key);
@@ -1957,8 +1988,11 @@ function impRow(t) {
     }
   } else {
     txt.appendChild(el('b', null, t.title || '–'));
-    txt.appendChild(el('span', null, [wer(t.artist), j.current === t.key ? 'wird gerade gesucht' : '']
-      .filter(Boolean).join(' · ')));
+    const why = j.missed.has(t.key) ? t.why : null;
+    const sub = el('span', null, [wer(t.artist), j.current === t.key ? 'wird gerade gesucht' : impGrund(why)]
+      .filter(Boolean).join(' · '));
+    txt.appendChild(sub);
+    if (why) sub.appendChild(whyButton(impWhy(t, why), row));
   }
   row.appendChild(txt);
 

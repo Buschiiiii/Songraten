@@ -464,7 +464,24 @@ Offen / Fehlt), je Zeile:
 
 - **Offen**: Vorziehen (`Playlist.prio()`), läuft nichts, geht es los.
   Mit Suchbegriff: „Diese n vorziehen".
-- **Fehlt**: ↻ (`Playlist.retry()`, auch für alle), Lupe.
+- **Fehlt**: ↻ (`Playlist.retry()`, auch für alle), Lupe – und **der
+  Grund**: jeder Titel führt beim Auflösen Protokoll (`note(t, …)` →
+  `t.log`: ISRC ohne Aufnahme, Katalog ohne passenden Grundtitel, jede
+  Suche mit Begriff, Land und Trefferzahl, Album nicht gefunden oder Titel
+  nicht dabei). Am Ende steht in `t.why` `{kind, log, error}`: `none` („bei
+  Apple nicht gefunden") oder `error` („Verbindungsproblem bei der Suche",
+  `error` als einfaches Objekt mit `message/url/status/net/cause`, damit
+  `whyOf()` es auch nach dem Neuladen lesen kann). `impGrund()` schreibt es
+  kurz in die Zeile, `impWhy()` lang hinter das ? (Kasten in der Zeile,
+  `.brow>.whybox`). Gewünscht, weil drei fehlende Titel am Handy an der
+  Verbindung lagen und einer wirklich nicht bei iTunes ist – das sah vorher
+  gleich aus. Die Gründe wandern als `whys` in `songrate:plqueue`;
+  ältere Stände bekommen `kind: 'stored'`.
+
+  **Ein Netzfehler ist kein Urteil.** Früher war ein Titel nach einem
+  `TypeError` sofort „fehlt". Jetzt wird derselbe Titel nach `NET_RETRY`
+  (1,5 s, 3 s) noch zweimal versucht, erst dann steht er unter *Fehlt* –
+  und nicht in `misses`, „Weiter suchen" nimmt ihn wieder mit.
 - **Gefunden**: ▶, Lupe (anderen Song zuordnen), ✕ falscher Treffer
   (`Playlist.assign(j, key, null)`: Cache-Eintrag weg, Titel nach *Fehlt*).
   Weicht der Grundtitel ab, steht das Original gelb darunter.

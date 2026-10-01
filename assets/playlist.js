@@ -40,6 +40,12 @@ const Playlist = (() => {
     pace.ok = 0;
   }
   const BACKOFF = [30, 60, 120, 240, 300];
+  /* Ein Netzfehler ist keine Antwort von Apple, sondern keine - kurz
+     warten und denselben Titel noch einmal, erst danach aufgeben. */
+  const NET_RETRY = [1500, 3000];
+  /* Jeder Titel fuehrt Protokoll, was fuer ihn versucht wurde. Steht er am
+     Ende unter „Fehlt", sagt die Titelliste damit, warum (`t.why`). */
+  const note = (t, s) => { (t.log || (t.log = [])).push(s); };
   /* So viele ISRC-Codes gehen in einen Nachschlag. Ob Apple mehrere auf
      einmal nimmt, zeigt der erste Versuch - bleibt er leer, geht es einzeln
      weiter (`isrcBatch`). */
@@ -380,6 +386,7 @@ const Playlist = (() => {
       const c = pick(cands, t);
       paceOk();
       if (c) return c;
+      note(t, `Suche „${q.term}“ (${q.country}): ${cands.length} Treffer, keiner mit gleichem Grundtitel und passendem Künstler`);
       alle.push(...cands);
       await sleep(pace.delay);
     }
@@ -388,6 +395,7 @@ const Playlist = (() => {
       const sc = score(c, t);
       if (sc > bestScore) { bestScore = sc; best = c; }
     }
+    if (best && bestScore < 2.5) note(t, `Ähnlichster Treffer „${best.trackName}“ – ${best.artistName}: zu unähnlich (${bestScore} von 2,5 Punkten)`);
     return bestScore >= 2.5 ? best : null;
   }
 
@@ -607,10 +615,12 @@ const Playlist = (() => {
       const alben = await get('search', { media: 'music', entity: 'album', limit: 10, country,
                                           term: glatt(titleOf(t.album) + ' ' + leadName(t)) });
       const album = alben.find(c => albumFits(c, t));
-      if (!album) continue;
+      if (!album) { note(t, `Album „${t.album}“ (${country}): ${alben.length ? 'kein Album mit diesem Namen und Künstler unter ' + alben.length + ' Treffern' : 'bei Apple nicht gefunden'}`); continue; }
       const titel = await get('lookup', { id: album.collectionId, entity: 'song', limit: 200, country });
-      const c = pick(titel.filter(r => r.wrapperType === 'track'), t);
+      const songs = titel.filter(r => r.wrapperType === 'track');
+      const c = pick(songs, t);
       if (c) return c;
+      note(t, `Album „${album.collectionName}“ (${country}, ${songs.length} Titel): „${t.title}“ ist nicht dabei`);
     }
     return null;
   }
@@ -660,7 +670,7 @@ const Playlist = (() => {
                 if (einzeln && isrcDoubt) { isrcBatch = false; isrcDoubt = false; }
                 const song = toSong(c); cache[x.key] = song; hit(x, song, 'isrc');
                 j.isrcTried.add(x.key);
-              } else if (einzeln) j.isrcTried.add(x.key);     /* dann eben die Suche */
+              } else if (einzeln) { j.isrcTried.add(x.key); note(x, `ISRC ${x.isrc}: keine Aufnahme mit dieser Kennung bei Apple`); }
               else x.isrcSingle = true;
             });
           }
@@ -671,15 +681,17 @@ const Playlist = (() => {
         const wer = leadKey(t);
         const gruppe = wer && !j.tried.has(wer) ? j.pending.filter(x => leadKey(x) === wer) : [];
         if (gruppe.length >= BATCH_MIN) {
-          let kat = [];
+          let kat = [], panne = null;
           try { kat = await catalog(leadName(t)); }
-          catch (e) { if (e.throttled) throw e; }
+          catch (e) { if (e.throttled) throw e; panne = e; }
           j.tried.add(wer);
           paceOk();
           gruppe.forEach(x => {
             if (!j.pending.includes(x)) return;      /* inzwischen von Hand zugeordnet */
             const c = pick(kat, x);
             if (c) { const song = toSong(c); cache[x.key] = song; hit(x, song, 'artist'); }
+            else note(x, panne ? `Katalog „${leadName(t)}“: Anfrage gescheitert (${panne.message})`
+              : `Katalog „${leadName(t)}“ (${kat.length} Titel): kein passender Grundtitel`);
           });
           waits = 0;
           await sleep(pace.delay);
@@ -689,13 +701,15 @@ const Playlist = (() => {
            verschweigt. Einmal je Kuenstler, fuer alle seine offenen Titel. */
         if (wer && !j.deepTried.has(wer)) {
           j.deepTried.add(wer);
-          let kat = [];
+          let kat = [], panne = null;
           try { kat = await catalogDeep(leadName(t)); }
-          catch (e) { if (e.throttled) throw e; }
+          catch (e) { if (e.throttled) throw e; panne = e; }
           paceOk();
           j.pending.filter(x => leadKey(x) === wer).forEach(x => {
             const c = pick(kat, x);
             if (c) { const song = toSong(c); cache[x.key] = song; hit(x, song, 'artist'); }
+            else note(x, panne ? `Katalog über Lookup „${leadName(t)}“: Anfrage gescheitert (${panne.message})`
+              : `Katalog über Lookup „${leadName(t)}“ (${kat.length} Titel): kein passender Grundtitel`);
           });
           waits = 0;
           await sleep(pace.delay);
@@ -711,11 +725,25 @@ const Playlist = (() => {
           if (!j.pending.includes(t)) continue;
         }
         if (c) { const song = toSong(c); cache[t.key] = song; hit(t, song, via); }
-        else { misses.add(t.key); hit(t, null); }
+        else { misses.add(t.key); t.why = { kind: 'none', log: t.log || [] }; hit(t, null); }
         waits = 0;
       } catch (e) {
         fehler = e;
-        if (!e.throttled) { if (j.pending.includes(t)) hit(t, null); continue; }
+        if (!e.throttled) {
+          if (!j.pending.includes(t)) continue;
+          t.netTries = (t.netTries || 0) + 1;
+          if ((e.net || e.status >= 500) && t.netTries <= NET_RETRY.length) {
+            note(t, `${e.net ? 'Verbindungsfehler' : 'HTTP ' + e.status} – neuer Versuch in ${NET_RETRY[t.netTries - 1] / 1000} s`);
+            await sleep(NET_RETRY[t.netTries - 1]);
+            continue;
+          }
+          /* Kein Urteil von Apple, sondern keine Antwort: `misses` bleibt
+             leer, „Weiter suchen" und ↻ nehmen den Titel wieder mit. */
+          t.why = { kind: 'error', log: t.log || [],
+                    error: { message: e.message, url: e.url, status: e.status, net: !!e.net, cause: e.cause } };
+          hit(t, null);
+          continue;
+        }
         saveCache(cache);
         paceThrottled();
         if (waits >= BACKOFF.length) { throttled = true; break; }
@@ -744,7 +772,10 @@ const Playlist = (() => {
     const list = [].concat(keys).map(k => j.missed.get(k)).filter(Boolean);
     /* Der Umweg darf noch einmal (die ISRC nicht: die liefert immer dasselbe,
        und wer den Treffer gerade als falsch markiert hat, will die Suche). */
-    list.forEach(t => { j.missed.delete(t.key); misses.delete(t.key); j.albumTried.delete(t.key); });
+    list.forEach(t => {
+      j.missed.delete(t.key); misses.delete(t.key); j.albumTried.delete(t.key);
+      t.log = []; t.why = null; t.netTries = 0;
+    });
     j.pending = [...list, ...j.pending.filter(t => !list.includes(t))];
     return list.length;
   }
@@ -799,6 +830,8 @@ const Playlist = (() => {
           tracks: j.tracks.map(t => ({ title: t.title, artist: t.artist, album: t.album,
                                        loose: t.loose || undefined, lead: t.lead, isrc: t.isrc })),
           missed: [...j.missed.keys()],
+          /* Warum etwas fehlt, soll das Neuladen ueberleben. */
+          whys: Object.fromEntries([...j.missed.values()].filter(t => t.why).map(t => [t.key, t.why])),
         }));
       } else localStorage.removeItem(QUEUE_KEY);
     } catch (e) {}
@@ -829,7 +862,9 @@ const Playlist = (() => {
     prefill(j, local);
     (q.missed || []).forEach(k => {
       const t = j.pending.find(x => x.key === k);
-      if (t) mark(j, t, null);
+      if (!t) return;
+      t.why = (q.whys && q.whys[k]) || { kind: 'stored', log: [] };
+      mark(j, t, null);
     });
     return j;
   }

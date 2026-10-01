@@ -358,7 +358,11 @@ zuerst:
 
 Geht etwas schief, steht neben der Meldung ein kleines **?** – darüber
 fahren oder antippen sagt, was genau passiert ist: welche Adresse, welcher
-Fehler, woran es liegen kann.
+Fehler, woran es liegen kann. In der Titelliste steht bei jedem fehlenden
+Titel, warum: „bei Apple nicht gefunden" (dann hilft die Lupe) oder
+„Verbindungsproblem bei der Suche" (dann hilft ↻), und das ? zeigt, was
+alles versucht wurde. Ein Verbindungsproblem wird außerdem von selbst
+zweimal kurz hintereinander wiederholt, bevor der Titel als fehlend gilt.
 
 Apple erlaubt nur rund zwanzig Anfragen pro Minute. Die Seite hält sich
 daran, statt in die Sperre zu laufen: nach einer Sperre langsam, nach vierzig
