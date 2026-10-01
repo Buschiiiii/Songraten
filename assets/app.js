@@ -14,6 +14,9 @@ const RECENT_MAX = 60;
    Playlist und fuer Jahrzehnte oder Genres, in denen zu wenige Songs fuer eine
    sinnvolle Stufenleiter stecken. */
 const FLAT_SLOTS = [1, 2, 3, 4, 5].map(n => ({ id: 'pl' + n, label: 'Song ' + n, short: String(n), mult: 1.0 }));
+/* Im Heimspiel heissen die Plaetze auch so - man soll sehen, worauf man sich
+   eingelassen hat. */
+const HIT_SLOTS = FLAT_SLOTS.map(t => ({ ...t, label: 'Hit ' + t.short, hit: true }));
 const TIER_MIN = 5;       /* so viele Songs braucht jede Stufe mindestens */
 
 const $ = s => document.querySelector(s);
@@ -63,6 +66,7 @@ let settings = load('settings', {
   arFilters: Filters.DEFAULT.map(r => ({ ...r })),
   loFilters: Filters.DEFAULT.map(r => ({ ...r })),
   hard: false,
+  hits: false,            /* Heimspiel: nur die grossen Hits, in jedem Modus */
 });
 /* Zusammengefasste Genres: alte Regeln auf den neuen Namen ziehen. */
 settings.filters = Filters.migrate(settings.filters);
@@ -132,6 +136,78 @@ function unblockAll() {
   applyFilters();
 }
 
+/* ------------------------------------------- Abgleich mit songs.json */
+
+/* Steht ein Song aus einer Playlist, einem Kuenstlerkatalog oder der eigenen
+   Musik auch in songs.json? Dann kennt man seine Streams - das braucht das
+   Heimspiel -, und ein Import muss ihn nicht erst bei Apple suchen.
+   Verglichen wird der Grundtitel ohne Fassungszusatz („- 2005 Remaster",
+   „(feat. X)") und der Kuenstler ueber die Namen einzeln. */
+let dbIndex = null;
+function dbFind(title, artist) {
+  if (!dbIndex) {
+    dbIndex = new Map();
+    DB.songs.forEach(s => {
+      const k = Playlist.base(s.t);
+      if (!dbIndex.has(k)) dbIndex.set(k, []);
+      dbIndex.get(k).push(s);
+    });
+  }
+  const cands = dbIndex.get(Playlist.base(title));
+  const want = Playlist.names(artist);
+  if (!cands || !want.length) return null;
+  const voll = norm(title);
+  let best = null, rank = -Infinity;
+  for (const s of cands) {
+    if (!s.p || !Playlist.fits([s.a, ...s.ar.map(i => DB.artists[i])], want)) continue;
+    const r = (norm(s.t) === voll ? 1e12 : 0) + (s.s || 0);
+    if (r > rank) { rank = r; best = s; }
+  }
+  return best;
+}
+
+/* ---- Heimspiel ---- */
+
+/* Fuer Erfolgserlebnisse: in jedem Modus nur das oberste Fuenftel nach
+   Bekanntheit. Bekanntheit heisst Streams, wo es welche gibt - das sind die
+   Songs, die man heute kennt -, sonst der Jahreschartplatz (`f`). Songs aus
+   Playlist, Kuenstlerkatalog oder eigener Musik bekommen sie ueber songs.json;
+   was dort fehlt, ist vermutlich nicht der grosse Hit und kommt hinten an -
+   im Kuenstlermodus in Apples Reihenfolge, die grob nach Beliebtheit geht. */
+const HIT_SHARE = 0.2;
+const HIT_MIN = 10;       /* darunter waere jede Runde dieselbe */
+const fameMemo = new Map();
+let hitMemo = { src: null, mode: '', out: [] };
+
+function fameOf(s) {
+  let m = s;
+  if (s.d === 'playlist' || s.d === 'local') {
+    const k = songKey(s);
+    if (!fameMemo.has(k)) fameMemo.set(k, dbFind(s.t, s.a));
+    m = fameMemo.get(k);
+    if (!m) return null;
+  }
+  if (m.s > 0) return 1000 + m.s / 1e7;
+  /* In den Charts zaehlen nur Streams - ein Jahressieger von 1962 ist dort
+     kein Heimspiel. */
+  return mode === 'charts' || m.f == null ? null : m.f;
+}
+
+function hitPool(list) {
+  if (hitMemo.src === list && hitMemo.mode === mode) return hitMemo.out;
+  const known = [], rest = [];
+  list.forEach(s => { const v = fameOf(s); if (v == null) rest.push(s); else known.push([v, s]); });
+  known.sort((a, b) => b[0] - a[0]);
+  const ranked = known.map(x => x[1]).concat(rest);
+  const n = Math.min(ranked.length, Math.max(HIT_MIN, Math.ceil(known.length * HIT_SHARE)));
+  hitMemo = { src: list, mode, out: ranked.slice(0, n) };
+  return hitMemo.out;
+}
+
+/* Ist in der laufenden Runde schon etwas passiert? Solange nicht, verliert
+   man nichts, wenn sie ersetzt wird. */
+const roundUntouched = () => round.every(r => r.status === 'playing' && !r.guesses.length && r.stage === 0);
+
 /* Breiten der sichtbaren Kaesten: ein Kasten je Stufe, alle gleich breit.
 
    Nach Sekunden zu teilen geht nicht - 0,01s waere 0,07 % breit und damit
@@ -175,7 +251,7 @@ function barStops(segs) {
   return stops;
 }
 
-const slots = () => (usesTiers() ? TIERS : FLAT_SLOTS);
+const slots = () => (usesTiers() ? TIERS : settings.hits ? HIT_SLOTS : FLAT_SLOTS);
 /* Vorschlaege im Suchfeld: aus der eigenen Liste, wo es eine gibt. */
 const pool = () => (mode === 'playlist' && PL ? PL
   : mode === 'local' && LO ? LO
@@ -193,8 +269,10 @@ async function boot() {
     s.ar = s.ar || [];        /* aeltere Datenlaeufe kannten das Feld nicht */
     s.na = s.ar.map(a => norm(DB.artists[a])).join(' ');
   });
-  PL = buildPlaylist(Playlist.restore());
-  plQueue = Playlist.restoreQueue();
+  const gespeichert = Playlist.restore();
+  PL = buildPlaylist(gespeichert);
+  const liste = Playlist.restoreQueue();
+  plJob = liste ? Playlist.revive(liste, gespeichert, localFind) : null;
   applyFilters();                       /* erst rechnen, dann den Modus waehlen */
   if (plPlayable() && settings.mode === 'playlist') mode = 'playlist';
   else if (PICKED.includes(settings.mode) && listFor(settings.mode).length) mode = settings.mode;
@@ -260,6 +338,18 @@ function buildChrome() {
     };
     b.classList.toggle('on', b.dataset.v === (settings.draw || 'tiers'));
   });
+
+  /* Heimspiel: wie die Spielweise ab der naechsten Runde - „Alle neu
+     wuerfeln" startet sie sofort. */
+  const hits = $('#hitMode');
+  hits.checked = !!settings.hits;
+  hits.onchange = () => {
+    settings.hits = hits.checked;
+    save('settings', settings);
+    applyFilters();
+    renderPanelSums();
+    focusSearch();
+  };
 
   const vol = $('#volume');
   vol.value = Math.round(settings.volume * 100);
@@ -329,6 +419,10 @@ function buildChrome() {
       if (e.key === 'Escape') closeBrowse();
       return;
     }
+    if (!$('#imp').hidden) {
+      if (e.key === 'Escape') closeImport();
+      return;
+    }
     if (e.target.tagName === 'INPUT') return;
     if (!$('#reveal').hidden || !$('#summary').hidden) {
       if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); (!$('#reveal').hidden ? $('#revealNext') : $('#summaryNext')).click(); }
@@ -351,9 +445,11 @@ function buildChrome() {
   buildPlaylistUI();
   buildPlFindUI();
   buildBrowseUI();
+  buildImportUI();
   buildArtistUI();
   buildLocalUI();
   buildServerUI();
+  buildSpotifyUI();
   buildServiceUI();
   buildFilterUI();
   renderStats();
@@ -443,7 +539,14 @@ function newRound() {
   Audio2.stop();
   clearTimeout(sweepTimer);
   cancelAnimationFrame(sweepRaf);
-  const picked = usesTiers() ? null : shuffled(activePool());
+  /* Ohne Stufen: gemischt, zuletzt Gespieltes nach hinten - gerade im
+     Heimspiel ist der Pool klein genug, dass es sonst auffaellt. */
+  let picked = null;
+  if (!usesTiers()) {
+    const zuletzt = new Set(recent), frisch = [], alt = [];
+    shuffled(activePool()).forEach(x => (zuletzt.has(songKey(x)) ? alt : frisch).push(x));
+    picked = [...frisch, ...alt];
+  }
   const used = new Set();
   round = slots().map((t, idx) => {
     const song = picked ? (picked[idx] || null) : drawSong(t.id, used);
@@ -799,7 +902,8 @@ function finish(r, won) {
     stats.streak = (stats.streak || 0) + 1;
     if (stats.streak > (stats.bestStreak || 0)) stats.bestStreak = stats.streak;
   } else stats.streak = 0;
-  const key = mode === 'playlist' ? 'playlist'
+  const key = r.tier.hit ? 'hits'
+    : mode === 'playlist' ? 'playlist'
     : mode === 'local' ? 'local'
     : PICKED.includes(mode) ? mode.slice(0, 3) + '-' + ((currentPick() || {}).value)
     : r.tier.id;
@@ -1205,6 +1309,260 @@ async function previewSong(s, done) {
   } catch (e) { if (done) done(); }
 }
 
+/* ------------------------------------------- Titelliste eines Imports */
+
+/* Was aus der importierten Liste geworden ist: gefunden, noch offen, nicht
+   gefunden. Offene lassen sich vorziehen (der Lauf nimmt immer den ersten),
+   nicht gefundene noch einmal suchen - oder von Hand: die Zeile klappt eine
+   Suche auf, vorbelegt mit Titel und erstem Kuenstler, und ein Klick auf
+   einen Treffer ordnet ihn zu. Auch ein falscher Treffer laesst sich so
+   austauschen. Was man von Hand zuordnet, merkt sich der Cache. */
+
+let impTab = 'found';
+let impOpen = '';            /* Titel, dessen Suche gerade aufgeklappt ist */
+let impPlaying = '';
+
+const LUPE = '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" '
+  + 'stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="6.5"/><path d="M20 20l-4-4"/></svg>';
+const NACH_VORN = '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" '
+  + 'stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 4h14M12 20V9M7 13l5-5 5 5"/></svg>';
+const IMP_VIA = { cache: 'schon bekannt', local: 'aus der Songliste', stored: '',
+                  artist: 'über den Künstlerkatalog', search: 'über die Suche', manual: 'von Hand' };
+
+function buildImportUI() {
+  $('#impClose').onclick = closeImport;
+  $('#impDone').onclick = closeImport;
+  $('#imp').onclick = e => { if (e.target === $('#imp')) closeImport(); };
+  $('#impTab').querySelectorAll('button').forEach(b => {
+    b.onclick = () => { impTab = b.dataset.v; impOpen = ''; $('#impSearch').value = ''; renderImport(true); };
+  });
+  $('#impSearch').oninput = () => renderImport(true);
+  $('#impAll').onclick = () => {
+    const keys = impRows().map(t => t.key);
+    if (!plJob || !keys.length) return;
+    if (impTab === 'missed') Playlist.retry(plJob, keys);
+    else if (impTab === 'pending') Playlist.prio(plJob, keys);
+    impKick();
+  };
+  $('#impRun').onclick = () => {
+    if (plBusy) { plStop = true; return; }
+    if (plJob) runResolve(plJob);
+    renderImport(true);
+  };
+}
+
+function openImport(tab) {
+  if (!plJob) return;
+  Audio2.stop();
+  impTab = tab || (plBusy ? 'pending' : plJob.missed.size ? 'missed' : 'found');
+  impOpen = '';
+  impPlaying = '';
+  $('#impSearch').value = '';
+  $('#imp').hidden = false;
+  renderImport(true);
+}
+
+function closeImport() {
+  Audio2.stop();
+  impPlaying = '';
+  impOpen = '';
+  $('#imp').hidden = true;
+  focusSearch();
+}
+
+/* Nach Vorziehen oder Nochmal: laeuft nichts, geht es gleich los. */
+function impKick() {
+  Playlist.storeQueue(plJob);
+  if (!plBusy && plJob.pending.length) runResolve(plJob);
+  renderPlaylist();
+  renderImport(true);
+}
+
+function impRows() {
+  const j = plJob;
+  if (!j) return [];
+  const n = norm($('#impSearch').value);
+  const list = impTab === 'found' ? j.tracks.filter(t => j.found.has(t.key))
+    : impTab === 'missed' ? j.tracks.filter(t => j.missed.has(t.key))
+    : j.pending.slice();
+  if (!n) return list;
+  return list.filter(t => {
+    const f = j.found.get(t.key);
+    return norm(t.title + ' ' + t.artist).includes(n) || (f && norm(f.song.t + ' ' + f.song.a).includes(n));
+  });
+}
+
+/* `voll`: Liste neu aufbauen. Ohne wird waehrend eines Laufs laufend
+   nachgezeichnet, aber nie, solange eine Suche aufgeklappt ist - sonst
+   verschwaende beim Tippen das Feld. */
+function renderImport(voll) {
+  if ($('#imp').hidden || !plJob) return;
+  const j = plJob, total = j.tracks.length;
+  const f = j.found.size, m = j.missed.size, o = j.pending.length;
+  $('#impTitle').textContent = 'Titelliste · ' + j.name;
+  const zahl = { found: f, pending: o, missed: m };
+  $('#impTab').querySelectorAll('button').forEach(b => {
+    b.classList.toggle('on', b.dataset.v === impTab);
+    b.textContent = { found: 'Gefunden', pending: 'Offen', missed: 'Fehlt' }[b.dataset.v]
+      + ` (${zahl[b.dataset.v]})`;
+  });
+  fillBar($('#impBar'), f, m, total);
+  $('#impNote').textContent = plBusy
+    ? `${f + m} von ${total} durchsucht · ${f} gefunden` + (plWait ? ` · Apple bremst – weiter in ${plWait} s` : '')
+    : `${f} gefunden · ${m} nicht gefunden` + (o ? ` · ${o} offen` : '');
+
+  const rows = impRows();
+  const gesucht = !!norm($('#impSearch').value);
+  const all = $('#impAll');
+  all.hidden = !rows.length || impTab === 'found' || (impTab === 'pending' && !gesucht);
+  all.textContent = impTab === 'missed' ? `Alle ${rows.length} nochmal` : `Diese ${rows.length} vorziehen`;
+  const run = $('#impRun');
+  run.hidden = !plBusy && !o;
+  run.textContent = plBusy ? 'Anhalten' : `Weiter suchen (${o})`;
+
+  if (impOpen && !voll) return;
+  const box = $('#impList');
+  const top = box.scrollTop;
+  box.innerHTML = '';
+  if (!rows.length) {
+    box.appendChild(el('p', 'note', impTab === 'missed' ? 'Alles gefunden.'
+      : impTab === 'pending' ? 'Nichts mehr offen.' : 'Noch nichts gefunden.'));
+  }
+  rows.forEach(t => box.appendChild(impRow(t)));
+  box.scrollTop = top;
+}
+
+/* Exportify und Spotify trennen Kuenstler mit Semikolon - lesen soll man Kommas. */
+const wer = a => String(a || '').replace(/\s*;\s*/g, ', ');
+
+function impRow(t) {
+  const j = plJob;
+  const f = j.found.get(t.key);
+  const row = el('div', 'brow imp' + (j.current === t.key ? ' now' : ''));
+  row.dataset.key = t.key;
+
+  const txt = el('div', 'bt');
+  if (f) {
+    txt.appendChild(el('b', null, f.song.t));
+    txt.appendChild(el('span', null, [f.song.a, IMP_VIA[f.via]].filter(Boolean).join(' · ')));
+    /* Weicht der Treffer im Titel ab, steht das Original darunter - so
+       faellt ein falscher Treffer auf. */
+    if (Playlist.base(f.song.t) !== Playlist.base(t.title)) {
+      txt.appendChild(el('span', 'orig', `In der Liste: ${t.title}${t.artist ? ' – ' + wer(t.artist) : ''}`));
+    }
+  } else {
+    txt.appendChild(el('b', null, t.title || '–'));
+    txt.appendChild(el('span', null, [wer(t.artist), j.current === t.key ? 'wird gerade gesucht' : '']
+      .filter(Boolean).join(' · ')));
+  }
+  row.appendChild(txt);
+
+  const act = el('div', 'bact');
+  const knopf = (zeichen, titel, fn, cls) => {
+    const b = el('button', cls || '', zeichen);
+    b.title = titel;
+    b.setAttribute('aria-label', titel);
+    b.onclick = fn;
+    act.appendChild(b);
+    return b;
+  };
+  if (f) {
+    const an = impPlaying === t.key;
+    knopf(an ? '■' : '▶', 'Kurz reinhören', () => impPreview(t.key, f.song), 'bplay' + (an ? ' on' : ''));
+  }
+  if (!f && j.missed.has(t.key)) {
+    knopf('↻', 'Nochmal automatisch suchen', () => { Playlist.retry(j, t.key); impKick(); });
+  }
+  if (!f && !j.missed.has(t.key)) {
+    knopf('', 'Vorziehen', () => { Playlist.prio(j, t.key); impKick(); }).innerHTML = NACH_VORN;
+  }
+  const lupe = knopf('', f ? 'Anderen Song zuordnen' : 'Selbst suchen', () => {
+    impOpen = impOpen === t.key ? '' : t.key;
+    renderImport(true);
+  }, impOpen === t.key ? 'on' : '');
+  lupe.innerHTML = LUPE;
+  if (f) {
+    knopf('✕', 'Falscher Treffer – herausnehmen', () => {
+      Playlist.assign(j, t.key, null);
+      plSync();
+      renderPlaylist();
+      renderImport(true);
+    });
+  }
+  row.appendChild(act);
+  if (impOpen === t.key) row.appendChild(impFinder(t));
+  return row;
+}
+
+function impPreview(key, song) {
+  if (impPlaying === key) { Audio2.stop(); impPlaying = ''; return renderImport(true); }
+  impPlaying = key;
+  renderImport(true);
+  previewSong(song, () => { if (impPlaying === key) { impPlaying = ''; renderImport(true); } });
+}
+
+/* Die Suche unter einer Zeile. Vorbelegt mit Grundtitel und erstem
+   Kuenstler - genau das, was auch die automatische Suche zuerst probiert;
+   meist reicht es, ein Wort zu aendern. */
+function impFinder(t) {
+  const box = el('div', 'imp-find');
+  const inp = el('input');
+  inp.type = 'text';
+  inp.value = Playlist.hintOf(t);
+  inp.placeholder = 'Titel und Künstler';
+  inp.autocomplete = 'off';
+  inp.spellcheck = false;
+  const hits = el('div', 'fopts');
+  const note = el('p', 'note');
+  let timer = null, lauf = 0;
+
+  const go = async () => {
+    const q = inp.value.trim();
+    if (q.length < 2) return;
+    const meins = ++lauf;
+    note.textContent = 'Wird gesucht …';
+    try {
+      const res = await Playlist.find(q, 'song');
+      if (meins !== lauf) return;
+      hits.innerHTML = '';
+      note.textContent = res.length ? 'Antippen ordnet zu.' : 'Nichts gefunden – anders schreiben?';
+      res.slice(0, 15).forEach(h => {
+        const zeile = el('div', 'imp-hit');
+        const wahl = el('button', 'arhit');
+        wahl.appendChild(el('span', 'nm', h.t + (h.a ? ' – ' + h.a : '')));
+        wahl.appendChild(el('span', 'sub', String(h.y || '')));
+        wahl.onclick = () => {
+          Playlist.assign(plJob, t.key, h);
+          impOpen = '';
+          plSync();
+          renderPlaylist();
+          renderImport(true);
+        };
+        const hoer = el('button', 'bplay', '▶');
+        hoer.title = 'Kurz reinhören';
+        hoer.onclick = () => {
+          Audio2.stop();
+          hoer.textContent = '■';
+          previewSong(h, () => { hoer.textContent = '▶'; });
+        };
+        zeile.append(wahl, hoer);
+        hits.appendChild(zeile);
+      });
+    } catch (e) {
+      if (meins !== lauf) return;
+      note.textContent = e && e.throttled ? 'Apple bremst gerade – gleich nochmal.' : 'Die Suche kam nicht durch.';
+    }
+  };
+  inp.oninput = () => { clearTimeout(timer); timer = setTimeout(go, 400); };
+  inp.onkeydown = e => {
+    if (e.key === 'Enter') { e.preventDefault(); clearTimeout(timer); go(); }
+    if (e.key === 'Escape') { e.stopPropagation(); impOpen = ''; renderImport(true); }
+  };
+  box.append(inp, hits, note);
+  setTimeout(() => { if (inp.isConnected) inp.focus(); go(); }, 0);
+  return box;
+}
+
 /* ------------------------------------------------------- Ausklappbares */
 
 /* Mit sechs Modi, drei Quellen und den Einstellungen wird die Spalte lang.
@@ -1235,7 +1593,10 @@ function panelSum(k) {
       : 'noch nichts gespielt', false];
   }
   if (k === 'playlist') {
-    if (plBusy) return ['wird gesucht …', false];
+    if (plBusy && plJob) {
+      return [`${plJob.found.size}/${plJob.tracks.length}`
+        + (plWait ? ` · Pause ${plWait} s` : ' gefunden …'), false];
+    }
     return [PL ? `${PL.name} · ${PL.songs.length} Songs` : nichts, false];
   }
   if (k === 'artist') {
@@ -1249,14 +1610,14 @@ function panelSum(k) {
   }
   if (k === 'service') return [Links.name(settings.service), false];
   if (k === 'play') {
-    return [`${settings.draw === 'random' ? '5 zufällige' : 'gestuft'}`
+    return [`${settings.hits ? 'Heimspiel' : settings.draw === 'random' ? '5 zufällige' : 'gestuft'}`
       + `${settings.hard ? ' · Hardmode' : ''} · `
       + `${settings.start === 'random' ? 'zufällige Stelle' : 'Anfang'} · `
       + `${Math.round(settings.volume * 100)} %`, false];
   }
   if (k === 'filter') {
     const n = activePool().length;
-    const min = (mode === 'playlist' || mode === 'local') ? PL_MIN : Filters.MIN_POOL;
+    const min = (mode === 'playlist' || mode === 'local' || settings.hits) ? PL_MIN : Filters.MIN_POOL;
     const rules = activeFilters().length;
     /* Worauf die Regeln wirken, gehoert dazu: jeder Modus hat seinen eigenen
        Satz, und wer das nicht sieht, wundert sich. */
@@ -1268,10 +1629,11 @@ function panelSum(k) {
 
 /* Worauf sich die Songauswahl gerade bezieht. */
 function filterScope() {
-  if (mode === 'playlist') return 'Playlist';
-  if (mode === 'local') return LO ? LO.name : 'Eigene Musik';
-  if (PICKED.includes(mode)) { const now = currentPick(); return now ? now.text : '–'; }
-  return 'Charts';
+  const dazu = settings.hits ? ' · Heimspiel' : '';
+  if (mode === 'playlist') return 'Playlist' + dazu;
+  if (mode === 'local') return (LO ? LO.name : 'Eigene Musik') + dazu;
+  if (PICKED.includes(mode)) { const now = currentPick(); return (now ? now.text : '–') + dazu; }
+  return 'Charts' + dazu;
 }
 
 function renderPanelSums() {
@@ -1350,7 +1712,8 @@ function render() {
    angezeigt wurde es nie. Hier zusammengefasst, aber nur was bespielt wurde. */
 function statGroups() {
   const groups = [
-    ['Charts', k => TIERS.some(t => t.id === k)],
+    ['Charts', k => TIERS.some(t => t.id === k) || /^pl\d$/.test(k)],
+    ['Heimspiel', k => k === 'hits'],
     ['Jahrzehnte', k => k.startsWith('dec-')],
     ['Genres', k => k.startsWith('gen-')],
     ['Künstler', k => k.startsWith('art-')],
@@ -1388,10 +1751,12 @@ function renderStats() {
 const PICKED = ['decades', 'genres', 'artist'];   /* Modi mit Auswahlleiste oben */
 /* Ohne Stufen gibt es keinen Grund, die Songs aus den Jahrescharts
    auszulassen - die fehlende Streamzahl stoert nur beim Einsortieren. */
-const activePool = () => (mode === 'playlist' ? plFiltered
+const basePool = () => (mode === 'playlist' ? plFiltered
   : mode === 'local' ? loFiltered
   : PICKED.includes(mode) ? pickFiltered
   : usesTiers() ? chartFiltered : filtered);
+/* Was gezogen werden kann - im Heimspiel nur die grossen Hits davon. */
+const activePool = () => (settings.hits ? hitPool(basePool()) : basePool());
 
 /* Ein Jahrzehnt oder Genre braucht genug Songs, sonst ist die Runde nach zwei
    Partien auswendig gelernt. Genres brauchen mehr, weil sie sich nicht ueber
@@ -1436,7 +1801,7 @@ const inPick = (s, value) => (mode === 'decades'
    Genre wie eine Playlist gespielt: fuenf zufaellige Songs, keine Stufen.
    Im Kuenstlermodus gibt es nie Stufen - wer einen Kuenstler mit einem
    grossen Hit waehlt, haette den sonst als Easy sofort auf dem Tisch. */
-const usesTiers = () => settings.draw !== 'random' && (mode === 'charts'
+const usesTiers = () => settings.draw !== 'random' && !settings.hits && (mode === 'charts'
   || (PICKED.includes(mode) && mode !== 'artist' && pickFiltered.length >= TIER_MIN * TIERS.length));
 
 /* Das gespeicherte Jahrzehnt oder Genre kann durch Filter oder neue Daten
@@ -1475,8 +1840,9 @@ function renderPicker() {
   if (bar.hidden) return;
   const now = currentPick();
   $('#pickLabel').textContent = now ? now.text : '–';
-  $('#pickCount').textContent = `${pickFiltered.length} Songs`
-    + (usesTiers() ? '' : ' · ohne Stufen');
+  $('#pickCount').textContent = settings.hits
+    ? `${activePool().length} Hits aus ${pickFiltered.length}`
+    : `${pickFiltered.length} Songs` + (usesTiers() ? '' : ' · ohne Stufen');
   const only = pickList().length < 2;
   $('#pickPrev').disabled = only;
   $('#pickNext').disabled = only;
@@ -1679,7 +2045,7 @@ function renderFilters() {
   $('#fInst').checked = rules.some(r => r.type === 'instrumental' && r.mode === 'ohne');
   markRules();
 
-  const n = activePool().length;
+  const n = basePool().length;
   const c = $('#filterCount');
   let warn = true, msg;
   if (mode === 'playlist') {
@@ -1701,8 +2067,14 @@ function renderFilters() {
     const empty = TIERS.filter(t => !(byTier[t.id] || []).length).map(t => t.label);
     if (!n) msg = 'Kein Song passt zu den Filtern.';
     else if (n < Filters.MIN_POOL) msg = `Nur ${n} Songs übrig – das wird schnell vorhersehbar.`;
-    else if (empty.length) msg = `${n} Songs · leer: ${empty.join(', ')} – dort kommt Ersatz aus dem Rest.`;
+    else if (empty.length && usesTiers()) msg = `${n} Songs · leer: ${empty.join(', ')} – dort kommt Ersatz aus dem Rest.`;
     else { msg = `${n} Songs im Pool`; warn = false; }
+  }
+  /* Im Heimspiel zaehlt, was davon gross genug ist. */
+  if (settings.hits && n) {
+    const h = activePool().length;
+    msg += ` · im Heimspiel die ${h} bekanntesten`;
+    warn = h < PL_MIN;
   }
   c.textContent = msg;
   c.classList.toggle('warn', warn);
@@ -2001,18 +2373,25 @@ async function addAlbum(album) {
   }
 }
 
-/* Dazugelegt wird zur bestehenden Playlist; Doppelte fallen weg. */
+/* Dazugelegt wird zur bestehenden Playlist; Doppelte fallen weg. Gehoert
+   die Playlist zu einem Import, kommt es dort als Zugabe dazu - sonst waere
+   es beim naechsten Nachziehen wieder weg. */
 function addSongs(songs, was) {
   const vorher = PL ? PL.songs.length : 0;
-  const alle = Playlist.dedupe([...(PL ? PL.songs : []), ...songs]);
-  const name = PL ? PL.name : 'Eigene Playlist';
-  PL = buildPlaylist({ name, songs: alle, missed: PL ? PL.missed : [] });
-  Playlist.store({ name, songs: alle, missed: PL.missed });
-  applyFilters();
+  if (plJob) {
+    plJob.extra = Playlist.dedupe([...plJob.extra, ...songs]);
+    plSync();
+  } else {
+    const name = PL ? PL.name : 'Eigene Playlist';
+    const alle = Playlist.dedupe([...(PL ? PL.songs : []), ...songs]);
+    PL = buildPlaylist({ name, songs: alle });
+    Playlist.store({ name, songs: alle });
+    applyFilters();
+  }
   renderPlaylist();
   renderFinds([]);
   $('#plFind').value = '';
-  const neu = PL.songs.length - vorher;
+  const neu = (PL ? PL.songs.length : 0) - vorher;
   plFindNote(neu ? `${was}: ${neu} Titel dazu.` : `${was} war schon drin.`);
   if (plPlayable() && mode !== 'playlist') setMode('playlist');
 }
@@ -2151,6 +2530,124 @@ async function loadServer(cfg, opts) {
   $('#srvGo').disabled = false;
 }
 
+/* -------------------------------------------------------------- Spotify */
+
+/* Anmelden, eigene Playlists durchsehen, eine antippen - dann laeuft sie wie
+   ein Export durch die Aufloesung. Details und Grenzen in spotify.js. */
+
+let spLists = null;          /* null = noch nicht geholt */
+let spBusy = false;
+const spNote = m => { $('#spNote').textContent = m; };
+
+function buildSpotifyUI() {
+  if (!$('#spBox')) return;
+  $('#spRedirect').textContent = Spotify.redirectUri();
+  $('#spClient').value = Spotify.clientId();
+  $('#spClient').onchange = () => Spotify.setClientId($('#spClient').value);
+  $('#spCopy').onclick = () => {
+    const ok = () => spNote('Adresse kopiert.');
+    if (navigator.clipboard) navigator.clipboard.writeText(Spotify.redirectUri()).then(ok, () => {});
+  };
+  $('#spLogin').onclick = async () => {
+    if (!Spotify.FIXED) Spotify.setClientId($('#spClient').value);
+    try { await Spotify.login(); } catch (e) { spNote(e.message); }
+  };
+  $('#spLogout').onclick = () => {
+    Spotify.logout();
+    spLists = null;
+    renderSpotify();
+    spNote('Abgemeldet.');
+  };
+  $('#spFilter').oninput = () => renderSpotifyLists();
+  /* Die Liste wird erst geholt, wenn man hineinschaut. */
+  $('#spBox').addEventListener('toggle', () => {
+    if ($('#spBox').open && Spotify.loggedIn() && !spLists) loadSpotifyLists();
+  });
+  renderSpotify();
+
+  /* Zurueck von der Anmeldung? Dann gleich aufklappen und die Playlists
+     zeigen - deshalb ist man ja hier. */
+  Spotify.callback().then(r => {
+    if (!r) return;
+    const panel = $('#plPanel');
+    panel.open = true;
+    $('#spBox').open = true;
+    renderSpotify();
+    if (!r.ok) return spNote(r.error);
+    if (!spLists) loadSpotifyLists();
+  }).catch(() => spNote('Die Anmeldung kam nicht durch.'));
+}
+
+function renderSpotify() {
+  const drin = Spotify.loggedIn();
+  $('#spSetup').hidden = drin || Spotify.FIXED;
+  $('#spLogin').hidden = drin;
+  $('#spLogout').hidden = !drin;
+  $('#spFilter').hidden = !drin || !spLists || spLists.length < 8;
+  if (!drin) $('#spLists').innerHTML = '';
+  else renderSpotifyLists();
+}
+
+async function loadSpotifyLists() {
+  if (spBusy) return;
+  spBusy = true;
+  spNote('Playlists werden geholt …');
+  try {
+    spLists = await Spotify.playlists();
+    const u = Spotify.user();
+    spNote(`${u ? u.name + ': ' : ''}${spLists.length} Playlists`);
+  } catch (e) {
+    spLists = null;
+    spNote(e.auth ? 'Die Anmeldung ist abgelaufen – bitte neu anmelden.' : e.message);
+  }
+  spBusy = false;
+  renderSpotify();
+}
+
+function renderSpotifyLists() {
+  const box = $('#spLists');
+  box.innerHTML = '';
+  if (!spLists) return;
+  const n = norm($('#spFilter').value);
+  const alle = [{ id: 'liked', name: 'Lieblingssongs', readable: true, count: 0 }, ...spLists];
+  alle.filter(p => !n || norm(p.name).includes(n)).forEach(p => {
+    const b = el('button', 'arhit');
+    b.appendChild(el('span', 'nm', p.name));
+    b.appendChild(el('span', 'sub', !p.readable ? 'nicht lesbar'
+      : p.count ? `${p.count} Titel` : ''));
+    /* Fremde Playlists stehen da, damit niemand seine sucht - antippen
+       laesst sich nur, was Spotify auch herausgibt. */
+    if (!p.readable) {
+      b.disabled = true;
+      b.title = `Gehört ${p.owner || 'jemand anderem'} – Spotify gibt die Titel nur für eigene und gemeinsame Playlists heraus.`;
+    }
+    b.onclick = () => importSpotify(p);
+    box.appendChild(b);
+  });
+}
+
+async function importSpotify(p) {
+  if (plBusy || spBusy) return spNote('Erst die laufende Suche anhalten.');
+  const max = Playlist.MAX_TRACKS;
+  spBusy = true;
+  spNote(`${p.name}: Titel werden geholt …`);
+  let list = [];
+  try {
+    list = await Spotify.tracks(p.id, {
+      max,
+      onProgress: (n, total) => spNote(`${p.name}: ${n} von ${Math.min(total, max)} Titeln geholt …`),
+    });
+  } catch (e) {
+    spBusy = false;
+    if (e.auth) { renderSpotify(); return spNote('Die Anmeldung ist abgelaufen – bitte neu anmelden.'); }
+    return spNote(e.forbidden ? 'Diese Playlist gibt Spotify nicht heraus – nur eigene und gemeinsame.' : e.message);
+  }
+  spBusy = false;
+  if (!list.length) return spNote(`${p.name} ist leer.`);
+  spNote(`${p.name}: ${list.length} Titel${p.count > max ? ` (die ersten ${max})` : ''} – sie werden jetzt bei Apple gesucht.`);
+  await startImport(p.name, list);
+}
+
 /* ------------------------------------------------------------- Playlist */
 
 const PL_MIN = 5;
@@ -2174,6 +2671,7 @@ function buildPlaylist(pl, kind) {
     const add = x => { const id = idOf(x); if (id >= 0) ids.add(id); };
     add(s.a);
     String(s.a || '').split(SPLIT_ARTIST).forEach(add);
+    (s.an || []).forEach(add);
     (String(s.t || '').match(/\((?:feat|ft|with)\.?\s+([^)]+)\)/i) || [])[1]?.split(SPLIT_ARTIST).forEach(add);
     s.ar = [...ids];
     s.n = norm(s.t);
@@ -2188,7 +2686,62 @@ const plPlayable = () => !!PL && PL.songs.length >= PL_MIN;
 
 let plBusy = false;       /* Suche laeuft gerade */
 let plStop = false;       /* Abbruch angefordert */
-let plQueue = null;       /* eingelesene Liste, solange sie nicht fertig ist */
+let plJob = null;         /* Titelliste des letzten Imports: gefunden, offen, nicht gefunden */
+let plWait = 0;           /* so viele Sekunden laesst Apple gerade warten */
+let plSyncTimer = null;
+
+/* Ein Titel der Liste, gefunden in songs.json - kostet keine Anfrage. Bei
+   Freitext ist offen, welche Haelfte der Titel ist, also beide. */
+function localFind(t) {
+  const pairs = t.loose && t.artist ? [[t.title, t.artist], [t.artist, t.title]] : [[t.title, t.artist]];
+  for (const [titel, wer] of pairs) {
+    const s = dbFind(titel, wer);
+    if (s) {
+      /* `an`: die Beteiligten, die songs.json kennt - sonst waere ein Tipp
+         auf DaBaby bei „Levitating" nicht mehr gelb. */
+      return { t: s.t, a: s.a, an: s.ar.map(i => DB.artists[i]), al: s.al || '', y: s.y || 0,
+               g: s.g || '', s: 0, p: s.p, c: s.c || '', id: s.k || undefined, k: s.k || undefined };
+    }
+  }
+  return null;
+}
+
+/* Die Playlist eines Auftrags: Gefundenes in der Reihenfolge der Liste,
+   dazu, was von Hand dazugelegt wurde. */
+function jobSongs(j) {
+  const out = [];
+  j.tracks.forEach(t => { const f = j.found.get(t.key); if (f) out.push(f.song); });
+  return Playlist.dedupe([...out, ...j.extra]);
+}
+
+/* Die Playlist aus dem Auftrag nachziehen - waehrend der Suche laufend,
+   damit man mit dem schon Gefundenen spielen kann. Eine alte Playlist bleibt
+   stehen, bis die neue fuer eine Runde reicht; sonst waere der Modus in den
+   ersten Sekunden einer neuen Suche gesperrt. */
+function plSync() {
+  clearTimeout(plSyncTimer);
+  plSyncTimer = null;
+  const j = plJob;
+  if (!j) return;
+  const songs = jobSongs(j);
+  const war = plPlayable();
+  if (j.own || songs.length >= PL_MIN || !PL) {
+    j.own = true;
+    PL = buildPlaylist({ name: j.name, songs });
+    Playlist.store(PL ? { name: j.name, songs } : null);
+  }
+  Playlist.storeQueue(j);
+  if (mode === 'playlist') applyFilters();
+  else plFiltered = PL ? unblocked(Filters.apply(PL.songs, settings.plFilters, PL)) : [];
+  renderModes();
+  /* Gewechselt wird nur, solange in der laufenden Runde nichts passiert ist -
+     mitten aus einer Runde heraus waere es ein Aufgeben. Sonst ist der Knopf
+     jetzt frei, und die Zeile darunter sagt es. */
+  if (!war && plPlayable() && mode !== 'playlist' && roundUntouched()) setMode('playlist');
+  plShow();
+  renderImport();
+}
+const plSoon = () => { if (!plSyncTimer) plSyncTimer = setTimeout(plSync, 250); };
 
 function buildPlaylistUI() {
   const file = $('#plFile');
@@ -2210,14 +2763,16 @@ function buildPlaylistUI() {
     if (box.value.trim()) loadPlaylistText(box.value, 'Eingefügte Liste');
   };
 
-  $('#plCancel').onclick = () => { plStop = true; plNote('Wird abgebrochen …'); };
-  $('#plResume').onclick = () => { if (plQueue) runResolve(plQueue.name, plQueue.tracks); };
+  $('#plCancel').onclick = () => { plStop = true; plNote('Wird angehalten …'); };
+  $('#plResume').onclick = () => { if (plJob) runResolve(plJob); };
+  $('#plView').onclick = () => openImport();
 
   $('#plClear').onclick = () => {
+    if (plBusy) return;
     PL = null;
-    plQueue = null;
+    plJob = null;
     Playlist.store(null);
-    Playlist.storeQueue(null, null);
+    Playlist.storeQueue(null);
     if (mode === 'playlist') setMode('charts');
     applyFilters();
     renderPlaylist();
@@ -2258,50 +2813,73 @@ function readPlaylistFile(f) {
 }
 
 async function loadPlaylistText(text, name) {
-  if (plBusy) return;
   const parsed = Playlist.parse(text);
   if (!parsed.tracks.length) return plNote(parsed.note || 'Keine Titel in der Datei gefunden.');
-  plQueue = { name, tracks: parsed.tracks };
-  Playlist.storeQueue(name, parsed.tracks);
-  await runResolve(name, parsed.tracks);
+  await startImport(name, parsed.tracks);
 }
 
-/* Ein Lauf ueber die Titelliste. Was schon im Cache liegt, geht ohne Anfrage
-   durch - deshalb macht ein zweiter Lauf genau dort weiter, wo der erste
-   aufgehoert hat. */
-async function runResolve(name, tracks) {
-  if (plBusy) return;
+/* Eine neue Liste - aus einer Datei, eingefuegt oder von Spotify. */
+async function startImport(name, tracks) {
+  if (plBusy) return plNote('Erst die laufende Suche anhalten.');
+  await runResolve(Playlist.job(name, tracks));
+}
+
+/* Ein Lauf ueber den Auftrag. Was schon im Cache oder in songs.json steht,
+   geht ohne Anfrage durch - ein zweiter Lauf macht also genau dort weiter,
+   wo der erste aufgehoert hat. */
+async function runResolve(j) {
+  if (plBusy || !j) return;
   plBusy = true;
   plStop = false;
+  plWait = 0;
+  plJob = j;
+  Playlist.storeQueue(j);
   renderPlaylist();
-  plNote(`Titel werden gesucht … 0/${tracks.length}`);
 
-  const res = await Playlist.resolve(tracks, {
+  const res = await Playlist.run(j, {
     cancelled: () => plStop,
-    onProgress: (done, total) => plNote(`Titel werden gesucht … ${done}/${total}`),
-    onWait: secs => plNote(`Apple bremst – weiter in ${secs} s`),
+    local: localFind,
+    onFound: plSoon,
+    onProgress: () => { plWait = 0; plShow(); },
+    onWait: secs => { plWait = secs; plShow(); },
   });
 
   plBusy = false;
-  const raw = { name, songs: res.songs, missed: res.missed };
-  PL = buildPlaylist(raw);
-  Playlist.store(PL ? raw : null);
-
-  applyFilters();
-  const complete = !res.throttled && res.done >= res.total;
-  if (complete) { plQueue = null; Playlist.storeQueue(null, null); }
-  else plQueue = { name, tracks };
-
-  if (plPlayable() && mode !== 'playlist') setMode('playlist');
+  plWait = 0;
+  plSync();
   renderPlaylist();
+  renderImport();
 
-  if (res.throttled) plNote(`${res.songs.length} von ${res.total} gefunden – Apple bremst. Später auf „Weiter suchen“ tippen.`);
-  else if (!complete) plNote(`Abgebrochen bei ${res.done} von ${res.total} – „Weiter suchen“ macht dort weiter.`);
-  else if (!PL) plNote('Kein einziger Titel gefunden. Stimmen Titel- und Künstlerspalte?');
-  else if (!plPlayable()) plNote(`Nur ${PL.songs.length} von ${res.total} Titeln gefunden – für eine Runde braucht es ${PL_MIN}.`);
+  const total = j.tracks.length, f = j.found.size;
+  if (res.throttled) plNote(`${f} von ${total} gefunden – Apple bremst. Später auf „Weiter suchen“ tippen.`);
+  else if (!res.complete) plNote(`Angehalten bei ${total - j.pending.length} von ${total} – „Weiter suchen“ macht dort weiter.`);
+  else if (!f) plNote('Kein einziger Titel gefunden. Stimmen Titel- und Künstlerspalte?');
+  else if (!plPlayable()) plNote(`Nur ${f} von ${total} Titeln gefunden – für eine Runde braucht es ${PL_MIN}.`);
 }
 
 function plNote(msg) { $('#plStatus').textContent = msg; }
+
+/* Der Fortschritt bleibt stehen, auch wenn Apple bremst - die Wartezeit
+   steht darunter, statt ihn zu verdraengen. */
+function plShow() {
+  const j = plJob, lauf = plBusy && !!j;
+  $('#plBar').hidden = !lauf;
+  $('#plSub').hidden = !lauf;
+  if (lauf) {
+    const total = j.tracks.length, f = j.found.size, m = j.missed.size;
+    fillBar($('#plBar'), f, m, total);
+    plNote(`${f + m} von ${total} durchsucht · ${f} gefunden` + (m ? ` · ${m} nicht` : ''));
+    $('#plSub').textContent = plWait ? `Apple bremst – weiter in ${plWait} s`
+      : plPlayable() && j.own ? 'Schon spielbar – der Rest kommt beim Spielen dazu.'
+      : `Ab ${PL_MIN} gefundenen Songs geht es los.`;
+  }
+  renderPanelSums();
+}
+
+function fillBar(bar, f, m, total) {
+  bar.querySelector('.ok').style.width = (total ? f / total * 100 : 0) + '%';
+  bar.querySelector('.no').style.width = (total ? m / total * 100 : 0) + '%';
+}
 
 /* Welcher Modus ueberhaupt zur Wahl steht, haengt am Bestand: ohne Playlist
    keine Playlist, ohne geladenen Kuenstler kein Kuenstlermodus. */
@@ -2324,21 +2902,25 @@ function renderPlaylist() {
   renderModes();
   renderPanelSums();
   if ($('#arHits')) renderArtists();
+  const offen = plJob ? plJob.pending.length : 0;
+  const fehlt = plJob ? plJob.missed.size : 0;
   $('#plPick').disabled = plBusy;
   $('#plPick').hidden = plBusy;
   $('#plPasteToggle').hidden = plBusy;
   $('#plCancel').hidden = !plBusy;
-  $('#plResume').hidden = plBusy || !plQueue;
-  $('#plClear').hidden = plBusy || !PL;
+  $('#plResume').hidden = plBusy || !offen;
+  $('#plResume').textContent = `Weiter suchen (${offen} offen)`;
+  $('#plView').hidden = !plJob;
+  $('#plView').textContent = 'Titelliste ansehen' + (fehlt ? ` · ${fehlt} fehlen` : '');
+  $('#plClear').hidden = plBusy || (!PL && !plJob);
   $('#plPaste').hidden = true;
   $('#plPasteGo').hidden = true;
-  if (plQueue) $('#plResume').textContent = `Weiter suchen (${plQueue.tracks.length} Titel)`;
 
+  plShow();
   if (plBusy) return;
-  if (!PL) return plNote('');
-  const miss = PL.missed.length;
-  plNote(`${PL.name}: ${PL.songs.length} Songs${miss ? ` · ${miss} nicht gefunden` : ''}`);
-  $('#plStatus').title = miss ? PL.missed.slice(0, 40).join('\n') : '';
+  if (!PL) return plNote(fehlt ? 'Nichts gefunden – in der Titelliste lässt sich jeder Titel selbst suchen.' : '');
+  plNote(`${PL.name}: ${PL.songs.length} Songs`
+    + (fehlt ? ` · ${fehlt} nicht gefunden` : '') + (offen ? ` · ${offen} offen` : ''));
 }
 
 function setMode(m) {

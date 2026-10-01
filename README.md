@@ -3,8 +3,9 @@
 Erkenne den Song in 0,01 Sekunden. Fünf Songs pro Runde, von Easy bis Impossible,
 nach echten Spotify-Streamzahlen sortiert.
 
-Die Seite ist reines HTML/CSS/JavaScript. Kein Server, kein Build, keine Anmeldung,
-keine Bibliotheken. Alles läuft im Browser.
+Die Seite ist reines HTML/CSS/JavaScript. Kein Server, kein Build, keine
+Bibliotheken. Alles läuft im Browser – anmelden musst du dich nur, wenn du
+Playlists direkt von Spotify holen willst, und auch das ohne Server.
 
 **Sechs Arten zu spielen**
 
@@ -18,7 +19,27 @@ keine Bibliotheken. Alles läuft im Browser.
 | Eigene Musik | Dateien vom eigenen Gerät oder die Mediathek vom eigenen Server |
 
 Dazu Filter für Genre, Künstler, Jahrzehnt und Instrumentals, die sich
-kombinieren lassen.
+kombinieren lassen – und **Heimspiel**, das jeden Modus auf die großen Hits
+beschränkt.
+
+---
+
+## Heimspiel – nur die großen Hits
+
+Für Erfolgserlebnisse: rechts unter **Modus** den Schalter *Heimspiel*
+anmachen. Dann kommen in **jedem** Modus nur noch die bekanntesten Songs dran
+– das oberste Fünftel nach Streams, fünf gleichwertige Plätze „Hit 1" bis
+„Hit 5", keine Stufen.
+
+| Modus | Was im Heimspiel übrig bleibt |
+|---|---|
+| Charts | die meistgestreamten 20 % (rund 600 Songs ab 1,3 Mrd. Streams) |
+| Jahrzehnte, Genres | die bekanntesten 20 % des Jahrzehnts bzw. Genres |
+| Künstler | seine größten Hits laut Songliste, sonst Apples Reihenfolge |
+| Eigene Playlist, eigene Musik | was die Songliste als Hit kennt, zuerst |
+
+Es gilt ab der nächsten Runde – *Alle neu würfeln* startet sie sofort. In der
+Statistik bekommt das Heimspiel eine eigene Zeile.
 
 ---
 
@@ -266,15 +287,15 @@ Warnung Bescheid.
 
 ## Eigene Playlist spielen
 
-Rechts unter **Modus** auf *Playlist laden* — oder die Datei einfach irgendwo
-aufs Fenster ziehen. Danach werden fünf zufällige Songs aus der Liste gespielt,
-ohne Schwierigkeitsstufen.
+Rechts im Panel **Eigene Playlist** auf *Playlist laden* – oder die Datei
+einfach irgendwo aufs Fenster ziehen. Danach werden fünf zufällige Songs aus
+der Liste gespielt, ohne Schwierigkeitsstufen.
 
 Woher die Datei kommt:
 
 | Dienst | Weg |
 |---|---|
-| Spotify | [Exportify](https://exportify.net) → CSV je Playlist |
+| Spotify | direkt anmelden (siehe unten) – oder [Exportify](https://exportify.net) → CSV je Playlist |
 | Apple Music | Musik-App am Mac: Playlist auswählen → *Ablage → Exportieren* (TXT) |
 | YouTube Music | [Google Takeout](https://takeout.google.com) → YouTube → Playlists (CSV) |
 | Deezer, Tidal, Amazon | TuneMyMusic oder Soundiiz, beide exportieren CSV |
@@ -282,17 +303,69 @@ Woher die Datei kommt:
 | Irgendwas anderes | *oder Liste einfügen*: eine Zeile pro Song, `Titel – Künstler` |
 
 Titel und Künstler werden automatisch erkannt, egal wie die Spalten heißen.
-Anschließend sucht die Seite jeden Titel bei Apple – rechne mit gut vier
-Sekunden pro zehn Songs. Das passiert nur einmal, danach liegt die Playlist im
-Browser. Songs, die Apple nicht findet, fallen raus; wie viele es waren, steht
-unter dem Knopf. Für eine Runde braucht es mindestens fünf gefundene Songs.
+Dann wird jeder Titel einem Song mit Hörprobe zugeordnet, schnellster Weg
+zuerst:
+
+1. **Sofort, ohne Anfrage:** was schon einmal gefunden wurde, und alles, was
+   in der eingebauten Songliste steht. Bei einer Liste mit bekannten Hits ist
+   das der größte Teil – von 233 Klassikern kamen so 149 in null Sekunden.
+2. **Ein Katalog statt vieler Suchen:** stehen drei oder mehr Titel desselben
+   Künstlers an, holt eine Anfrage seinen ganzen Katalog.
+3. **Einzeln bei Apple**, und zwar so, dass Apple es auch findet: ohne
+   „- 2005 Remaster", nur mit dem ersten Künstler, „JAŸ-Z" und schräge
+   Apostrophe geglättet. Klappt das nicht, sucht die Seite lockerer weiter.
+
+**Spielen kannst du, sobald fünf Songs gefunden sind** – der Rest kommt
+während des Spielens dazu. Ist in der laufenden Runde noch nichts passiert,
+wechselt die Seite von selbst in die Playlist.
 
 Bei langen Listen bremst Apple irgendwann und schickt ein paar Minuten lang
-nur noch Absagen. Dann steht im Status **„Apple bremst – weiter in … s"** und
-die Suche macht von selbst weiter, sobald die Zeit um ist; bis dahin kannst du
-mit **Abbrechen** anhalten. Bereits gefundene Songs sind gespeichert, und
-**Weiter suchen** setzt genau dort wieder an – auch nach dem Schließen der
-Seite.
+nur noch Absagen. Der Fortschritt bleibt dabei stehen („161 von 233
+durchsucht · 149 gefunden"), darunter steht **„Apple bremst – weiter in …
+s"**, und die Suche macht von selbst weiter. **Abbrechen** hält an, **Weiter
+suchen** setzt genau dort wieder an – auch nach dem Schließen der Seite.
+
+### Was fehlt – und selbst nachhelfen
+
+**Titelliste ansehen** zeigt die ganze Liste in drei Reitern:
+
+| Reiter | Knöpfe je Titel |
+|---|---|
+| Gefunden | ▶ reinhören · Lupe: anderen Song zuordnen · ✕ falscher Treffer |
+| Offen | Pfeil nach oben: **vorziehen** – wird als Nächstes gesucht |
+| Fehlt | ↻ nochmal automatisch · Lupe: **selbst suchen** |
+
+Die Lupe klappt unter der Zeile eine Suche auf, schon mit Titel und Künstler
+ausgefüllt; meist reicht es, ein Wort zu ändern. Ein Tipp auf einen Treffer
+ordnet ihn zu, ▶ daneben spielt ihn vorher an. Die Zuordnung bleibt
+gespeichert. Mit dem Suchfeld oben lassen sich auch viele auf einmal
+vorziehen („Rihanna" eintippen → *Diese 12 vorziehen*).
+
+### Direkt von Spotify
+
+Unter **Eigene Playlist → Von Spotify** meldest du dich bei Spotify an und
+tippst eine deiner Playlists an – oder *Lieblingssongs*. Ohne Server geht das
+über das PKCE-Verfahren, aber Spotify verlangt eine eigene App:
+
+1. [developer.spotify.com/dashboard](https://developer.spotify.com/dashboard) →
+   *Create app*.
+2. Als *Redirect URI* genau die Adresse eintragen, die im Panel steht
+   (`https://DEIN-NAME.github.io/songraten/`, mit Schrägstrich am Ende).
+3. *Web API* anhaken, speichern, die *Client ID* ins Panel kopieren,
+   *Mit Spotify anmelden*.
+
+Was Spotify dabei vorgibt, nicht die Seite:
+
+- Die App braucht ein **Premium-Konto** ihres Besitzers; weitere Leute
+  (höchstens fünf) trägst du im Dashboard unter *User Management* ein.
+- Lesbar sind nur **eigene und gemeinsame Playlists** und die
+  Lieblingssongs. Fremde – auch „Discover Weekly", die gehört Spotify –
+  stehen ausgegraut da.
+- **Spotify liefert nur die Titelliste, keinen Ton.** Hörproben gibt Spotify
+  neuen Apps seit Ende 2024 nicht mehr. Gespielt wird deshalb weiter über
+  Apples Hörproben, die Titel laufen durch dieselbe Suche wie ein Export.
+
+Die Anmeldung bleibt im Browser gespeichert; *Bei Spotify abmelden* löscht sie.
 
 ### Wenn die Seite leer bleibt
 
@@ -337,8 +410,8 @@ Die Kürzel sind deshalb keine Schriftzeichen.
 | ← → | Stufe wechseln, solange das Suchfeld leer ist |
 | Cmd/Strg + Enter | alle neu würfeln |
 
-Klickst du irgendwo neben das Suchfeld, funktionieren zusätzlich Leertaste,
-S, R und 1–5 wie gewohnt.
+Klickst du irgendwo neben das Suchfeld, funktionieren zusätzlich Leertaste
+und 1–5.
 
 ### Stufen einstellen
 
@@ -357,7 +430,7 @@ liegen lokal im Browser.
 
 ## Woher die Songs kommen
 
-`data/songs.json` enthält 1945 Songs mit Titel, Künstlern, Album, Jahr,
+`data/songs.json` enthält über 5000 Songs mit Titel, Künstlern, Album, Jahr,
 Streamzahl, Stufe sowie Links auf Apples 30-Sekunden-Preview und das Cover.
 Es liegen keine Audiodateien im Repo — die Ausschnitte kommen beim Spielen direkt
 vom Apple-Preview-Server.

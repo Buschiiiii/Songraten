@@ -72,7 +72,7 @@
 
     <div class="player">
       <button id="playBtn" class="play" aria-label="Ausschnitt abspielen">
-        <svg class="ic-play" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5.5v13a1 1 0 0 0 1.54.84l10-6.5a1 1 0 0 0 0-1.68l-10-6.5A1 1 0 0 0 8 5.5z"/></svg>
+        <svg class="ic-play" viewBox="1 0 24 24" fill="currentColor"><path d="M8 5.5v13a1 1 0 0 0 1.54.84l10-6.5a1 1 0 0 0 0-1.68l-10-6.5A1 1 0 0 0 8 5.5z"/></svg>
         <svg class="ic-stop" viewBox="0 0 24 24" fill="currentColor"><rect x="7" y="7" width="10" height="10" rx="2"/></svg>
       </button>
       <span id="stageLabel" class="stage-label">2s</span>
@@ -110,6 +110,15 @@
       </div>
       <p class="note">Was noch nichts geladen hat, ist ausgegraut – die Quelle
         steht darunter.</p>
+
+      <label class="switch hit-switch" for="hitMode">
+        <input type="checkbox" id="hitMode">
+        <span class="track"></span>
+        <span class="switch-txt"><b>Heimspiel</b> – nur die großen Hits</span>
+      </label>
+      <p class="note">Für Erfolgserlebnisse, in jedem Modus: nur das bekannteste
+        Fünftel, fünf Songs ohne Stufen. Gilt ab der nächsten Runde –
+        „Alle neu würfeln“ startet sie sofort.</p>
     </div>
 
     <details class="panel" data-k="playlist" id="plPanel">
@@ -123,10 +132,44 @@
         <button id="plResume" class="btn-ghost" hidden>Weiter suchen</button>
         <button id="plCancel" class="btn-ghost" hidden>Abbrechen</button>
       </div>
+      <div id="plBar" class="pl-bar" hidden><i class="ok"></i><i class="no"></i></div>
       <p id="plStatus" class="note"></p>
+      <p id="plSub" class="note pl-sub" hidden></p>
+      <button id="plView" class="btn-ghost" hidden>Titelliste ansehen</button>
       <button id="plClear" class="pl-link" hidden>Playlist entfernen</button>
       <p class="note">CSV, TSV, TXT, M3U oder JSON aus Exportify, TuneMyMusic, Soundiiz,
         der Musik-App oder Google Takeout – Datei hierher ziehen geht auch.</p>
+
+      <details class="fgroup" id="spBox">
+        <summary>Von Spotify</summary>
+        <div class="srv sp">
+          <div id="spSetup">
+            <p class="note">Spotify gibt Playlists nur an eine angemeldete App heraus.
+              Die legst du einmal selbst an, kostenlos:</p>
+            <ol class="note sp-steps">
+              <li><a href="https://developer.spotify.com/dashboard" target="_blank"
+                     rel="noopener noreferrer">developer.spotify.com/dashboard</a> → <i>Create app</i></li>
+              <li>Als <i>Redirect URI</i> genau diese Adresse:
+                <code id="spRedirect"></code>
+                <button id="spCopy" class="pl-link">kopieren</button></li>
+              <li><i>Web API</i> anhaken, speichern und die <i>Client ID</i> hier einfügen:</li>
+            </ol>
+            <input id="spClient" type="text" placeholder="Client ID" autocomplete="off" spellcheck="false">
+          </div>
+          <button id="spLogin" class="btn-ghost">Mit Spotify anmelden</button>
+          <input id="spFilter" type="text" placeholder="Playlists durchsuchen …"
+                 autocomplete="off" spellcheck="false" hidden>
+          <div id="spLists" class="fopts"></div>
+          <p id="spNote" class="note"></p>
+          <button id="spLogout" class="pl-link" hidden>Bei Spotify abmelden</button>
+          <p class="note">Spotify liefert nur die Titelliste – gespielt wird über
+            Apples Hörproben. Lesbar sind eigene und gemeinsame Playlists und die
+            Lieblingssongs; fremde, auch die von Spotify selbst, gibt Spotify seit
+            März 2026 nicht mehr heraus. Die App braucht ein Premium-Konto ihres
+            Besitzers, weitere Nutzer (höchstens fünf) kommen im Dashboard unter
+            <i>User Management</i> dazu.</p>
+        </div>
+      </details>
 
       <p class="fhead">Einzeln hinzufügen</p>
       <div class="seg seg-row" id="plFindKind">
@@ -319,6 +362,30 @@
   </div>
 </div>
 
+<div id="imp" class="reveal" hidden>
+  <div class="reveal-card list">
+    <div class="browse-head">
+      <h3 id="impTitle">Titelliste</h3>
+      <button id="impClose" class="browse-x" aria-label="Schließen">×</button>
+    </div>
+    <div id="impBar" class="pl-bar"><i class="ok"></i><i class="no"></i></div>
+    <p id="impNote" class="note"></p>
+    <div class="seg seg-row" id="impTab">
+      <button data-v="found" class="on">Gefunden</button>
+      <button data-v="pending">Offen</button>
+      <button data-v="missed">Fehlt</button>
+    </div>
+    <input id="impSearch" class="list-search" type="text" placeholder="In der Liste suchen …"
+           autocomplete="off" spellcheck="false">
+    <div id="impList" class="browse-list"></div>
+    <div class="browse-foot">
+      <button id="impAll" class="pl-link" hidden></button>
+      <button id="impRun" class="btn-ghost" hidden></button>
+      <button id="impDone" class="btn-action">Fertig</button>
+    </div>
+  </div>
+</div>
+
 <div id="summary" class="reveal" hidden>
   <div class="reveal-card wide">
     <h3>Runde vorbei</h3>
@@ -335,6 +402,7 @@
 <script src="assets/server.js"></script>
 <script src="assets/audio.js"></script>
 <script src="assets/playlist.js"></script>
+<script src="assets/spotify.js"></script>
 <script src="assets/filters.js"></script>
 <script src="assets/artist.js"></script>
 <script src="assets/app.js"></script>

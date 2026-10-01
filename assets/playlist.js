@@ -1,7 +1,12 @@
 /* Playlist-Modus: Datei einlesen, Titel gegen die iTunes-Suche aufloesen.
-   Direkt bei Spotify/Apple/YouTube nachfragen geht nicht - deren APIs wollen
-   OAuth mit registrierter App und Login, also einen Server. Der Umweg ueber
-   einen Export (CSV/TSV/TXT/JSON) kommt ohne beides aus. */
+   Gespielt wird immer Apples Hoerprobe - Spotify gibt keine mehr heraus,
+   YouTube nur im eigenen Player. Die Titelliste kommt aus einem Export
+   (CSV/TSV/TXT/JSON) oder, mit eigener App, direkt von Spotify (spotify.js).
+
+   Aufgeloest wird in drei Stufen, schnellste zuerst: was schon einmal
+   gefunden wurde (Cache) und was in songs.json steht, geht ohne Anfrage;
+   stehen mehrere Titel desselben Kuenstlers an, holt eine Anfrage dessen
+   ganzen Katalog; erst der Rest geht einzeln an die Suche. */
 
 const Playlist = (() => {
 
@@ -181,6 +186,61 @@ const Playlist = (() => {
   const termOf = t => [t.title, t.artist].filter(Boolean).join(' ').replace(/\s+/g, ' ').trim();
   const keyOf = t => norm(termOf(t));
 
+  /* ------------------------------------------------------- Abgleich */
+
+  /* Fassungszusaetze hinten am Titel: „- Remastered 2011", „(feat. X)",
+     „[Live]". Spotify haengt sie mit Bindestrich an, Apple in Klammern - fuer
+     den Abgleich zaehlt nur, was davor steht. Wiederholt, weil „Only Girl
+     (In the World) [Extended Club]" zwei davon hat. */
+  const TAIL = /\s+[-–—]\s+[^-–—]+$/;
+  function base(titel) {
+    let s = String(titel || '').replace(TAIL, '');
+    for (let i = 0; i < 4; i++) {
+      const kurz = s.replace(/\s*[([][^)\]]*[)\]]\s*$/, '');
+      if (kurz === s) break;
+      s = kurz;
+    }
+    return norm(s) || norm(titel);
+  }
+
+  /* Kuenstlerfeld in Namen: der ganze String und die Beteiligten einzeln.
+     „Simon & Garfunkel" bleibt als Ganzes mit drin - zerlegt wuerde es sonst
+     auf jeden Simon passen, so passt es auf sich selbst. */
+  const SPLIT = /\s*(?:[,;&/]|\bfeat\.?|\bft\.?|\bfeaturing\b|\bwith\b|\bx\b|\bvs\.?)\s*/i;
+  function names(a) {
+    const out = [norm(a), ...String(a || '').split(SPLIT).map(norm)].filter(Boolean);
+    return [...new Set(out)];
+  }
+
+  const wort = (heuhaufen, nadel) => ` ${heuhaufen} `.includes(` ${nadel} `);
+
+  /* Passt einer der gesuchten Namen? Gleich oder als eigenes Wort im Namen
+     des Kandidaten - „Dua Lipa" in „Dua Lipa & DaBaby". Umgekehrt nicht:
+     sonst passte „Pink" auf jeden Song von Pink Floyd. */
+  function fits(theirs, want) {
+    const da = theirs.flatMap(names);
+    return want.some(w => da.some(x => x === w || wort(x, w)));
+  }
+
+  /* Der genaue Treffer: gleicher Grundtitel, passender Kuenstler. Unter
+     mehreren gewinnt der wortgleiche Titel, sonst der kuerzeste - „Song"
+     vor „Song (Live)". Bei Freitext ist offen, welche Haelfte der Titel ist. */
+  function pick(cands, t) {
+    const pairs = t.loose && t.artist ? [[t.title, t.artist], [t.artist, t.title]] : [[t.title, t.artist]];
+    let best = null, rank = -Infinity;
+    for (const [titel, wer] of pairs) {
+      const b = base(titel), voll = norm(titel), want = names(wer);
+      if (!b || !want.length) continue;
+      for (const c of cands) {
+        if (!c.previewUrl || base(c.trackName) !== b) continue;
+        if (!fits([c.artistName], want)) continue;
+        const r = (norm(c.trackName) === voll ? 1000 : 0) - String(c.trackName).length;
+        if (r > rank) { rank = r; best = c; }
+      }
+    }
+    return best;
+  }
+
   function score(c, t) {
     const cn = norm(c.trackName), ca = norm(c.artistName);
     const tt = norm(t.title), ta = norm(t.artist);
@@ -190,6 +250,7 @@ const Playlist = (() => {
       let s = 0;
       if (wantT) {
         if (cn === wantT) s += 5;
+        else if (base(c.trackName) === base(wantT)) s += 4;
         else if (cn.startsWith(wantT) || wantT.startsWith(cn)) s += 3;
         else if (cn.includes(wantT) || wantT.includes(cn)) s += 2;
         else s -= 2;
@@ -211,14 +272,80 @@ const Playlist = (() => {
     return best;
   }
 
-  async function lookup(track, country) {
-    const url = 'https://itunes.apple.com/search?media=music&entity=song&limit=8'
-      + '&country=' + country + '&term=' + encodeURIComponent(termOf(track));
+  /* Apples Suche findet nur, was **jedes** Wort im Suchbegriff traegt. Ein
+     Spotify-Export bringt aber „Sweet Dreams (Are Made of This) - 2005
+     Remaster" von „Eurythmics;Annie Lennox;Dave Stewart" mit - drei Woerter
+     zu viel, und Apple liefert nichts. Bei einer Testliste blieb so die
+     Haelfte liegen. Gesucht wird deshalb in Stufen, jede lockerer als die
+     davor, und bewertet wird erst danach:
+
+       1. Grundtitel und erster Kuenstler      „Sweet Dreams Eurythmics"
+       2. nur der Grundtitel, mehr Treffer      „Sweet Dreams"
+       3. wie 1, im US-Store
+
+     „JAŸ-Z", „Beyoncé" und typografische Apostrophe werden vorher
+     geglaettet. Der Schluessel im Cache bleibt der volle Titel, sonst waeren
+     alte Treffer verloren. */
+  const glatt = x => String(x || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/[’‘`´]/g, "'").replace(/[“”„]/g, '"').replace(/\s+/g, ' ').trim();
+  /* Der erste Kuenstler. Steht ein Semikolon drin (Exportify, Spotify), ist
+     das die Trennung und ein Komma Teil des Namens - „Earth, Wind & Fire;
+     Someone". Sonst trennt auch das Komma. Wo Spotify die Namen einzeln
+     liefert, steht der erste als `lead` schon am Titel. */
+  const LEAD = /\s*(?:[,;]|\bfeat\.?|\bft\.|\bfeaturing\b|\bwith\b)\s*/i;
+  const leadOf = a => {
+    const s = String(a || '');
+    return (s.includes(';') ? s.split(';')[0] : s.split(LEAD)[0]).trim();
+  };
+  const leadName = t => t.lead || leadOf(t.artist);
+  function titleOf(titel) {
+    let s = String(titel || '').replace(TAIL, '');
+    for (let i = 0; i < 4; i++) {
+      const kurz = s.replace(/\s*[([][^)\]]*[)\]]\s*$/, '');
+      if (kurz === s || !kurz.trim()) break;
+      s = kurz;
+    }
+    return glatt(s);
+  }
+
+  function queries(t) {
+    if (t.loose) return ['DE', 'US'].map(country => ({ term: glatt(termOf(t)), country, limit: 15 }));
+    const titel = titleOf(t.title), wer = glatt(leadName(t));
+    const out = [];
+    if (titel && wer) out.push({ term: titel + ' ' + wer, country: 'DE', limit: 15 });
+    if (titel) out.push({ term: titel, country: 'DE', limit: 25 });
+    if (titel && wer) out.push({ term: titel + ' ' + wer, country: 'US', limit: 15 });
+    if (!out.length) out.push({ term: glatt(termOf(t)), country: 'DE', limit: 15 });
+    return out;
+  }
+
+  async function lookup(q) {
+    const url = 'https://itunes.apple.com/search?media=music&entity=song&limit=' + q.limit
+      + '&country=' + q.country + '&term=' + encodeURIComponent(q.term);
     const res = await fetch(url);
     if (res.status === 403 || res.status === 429) { const e = new Error('throttled'); e.throttled = true; throw e; }
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const data = await res.json();
     return (data.results || []).filter(r => r.previewUrl);
+  }
+
+  /* Ein Titel, so lange, bis eine Stufe sicher trifft. Erst wenn keine
+     trifft, entscheidet die alte Punktwertung ueber alles Gesammelte. */
+  async function searchOne(t) {
+    const alle = [];
+    for (const q of queries(t)) {
+      const cands = await lookup(q);
+      const c = pick(cands, t);
+      if (c) return c;
+      alle.push(...cands);
+      await sleep(PAUSE_MS);
+    }
+    let best = null, bestScore = 0;
+    for (const c of alle) {
+      const sc = score(c, t);
+      if (sc > bestScore) { bestScore = sc; best = c; }
+    }
+    return bestScore >= 2.5 ? best : null;
   }
 
   function toSong(c) {
@@ -290,53 +417,169 @@ const Playlist = (() => {
     return true;
   }
 
-  /* Loest die Titelliste ueber die iTunes-Suche auf. Sequentiell mit Pause,
-     weil Apple sonst mit 403 dichtmacht; passiert es doch, wird gewartet und
-     an derselben Stelle weitergemacht. Alles, was einmal gefunden wurde,
-     bleibt im localStorage - ein zweiter Lauf ueberspringt es sofort. */
-  async function resolve(tracks, opts) {
+  /* ------------------------------------------------------- Auftrag */
+
+  /* Ein Import ist ein Auftrag: jeder Titel steht entweder unter `found`,
+     unter `missed` oder noch in `pending`. Die Reihenfolge von `pending`
+     darf sich waehrend des Laufs aendern - wer einen Titel vorzieht,
+     schiebt ihn nach vorn, und der Lauf nimmt immer den ersten. Deshalb
+     kein `for … of` ueber eine feste Liste. */
+  function job(name, tracks) {
+    const list = [];
+    const seen = new Set();
+    (tracks || []).forEach(t => {
+      const x = { title: t.title || '', artist: t.artist || '', album: t.album || '', loose: !!t.loose };
+      if (t.lead) x.lead = t.lead;
+      x.key = keyOf(x);
+      if (!x.key || seen.has(x.key)) return;
+      seen.add(x.key);
+      list.push(x);
+    });
+    return { name, tracks: list, pending: list.slice(), found: new Map(), missed: new Map(),
+             tried: new Set(), current: null, extra: [] };
+  }
+
+  const take = (j, t) => { const i = j.pending.indexOf(t); if (i >= 0) j.pending.splice(i, 1); };
+  const byKey = (j, key) => j.tracks.find(t => t.key === key);
+
+  /* Treffer und Fehlschlag eintragen. `via` sagt, woher der Treffer kam -
+     die Titelliste zeigt es an. */
+  function mark(j, t, song, via) {
+    take(j, t);
+    if (song) {
+      j.missed.delete(t.key);
+      j.found.set(t.key, { song: { ...song, q: t.key }, via });
+    } else {
+      j.found.delete(t.key);
+      j.missed.set(t.key, t);
+    }
+  }
+
+  /* Was keine Anfrage kostet: schon einmal gefunden (Cache) oder in der
+     eigenen Songliste (`local`, kommt aus songs.json). Laeuft vor dem
+     ersten Netzzugriff, damit eine Liste voller bekannter Hits sofort
+     spielbar ist. */
+  function prefill(j, local, cache) {
+    cache = cache || loadCache();
+    let n = 0;
+    for (const t of j.pending.slice()) {
+      if (cache[t.key]) { mark(j, t, cache[t.key], 'cache'); n++; continue; }
+      const s = local ? local(t) : null;
+      if (s) { mark(j, t, s, 'local'); n++; }
+    }
+    return n;
+  }
+
+  /* Gehoeren mehrere offene Titel zum selben Kuenstler, holt eine Anfrage
+     dessen Katalog (200 Songs) - das ersetzt bei einer Liste mit zehn
+     Rihanna-Songs zehn Einzelsuchen. Nur bei sicherer Spaltenzuordnung:
+     bei Freitext ist offen, welche Haelfte der Kuenstler ist. */
+  const BATCH_MIN = 3;
+  const leadKey = t => (t.loose ? '' : norm(leadName(t)));
+  const catalogs = new Map();       /* nur fuer diese Sitzung */
+
+  async function catalog(name) {
+    const k = norm(name);
+    if (catalogs.has(k)) return catalogs.get(k);
+    const res = await get('search', { media: 'music', entity: 'song', attribute: 'artistTerm',
+                                      limit: 200, country: 'DE', term: glatt(name) });
+    const list = res.filter(r => r.previewUrl);
+    catalogs.set(k, list);
+    return list;
+  }
+
+  /* Der Lauf. Was gefunden wird, meldet `onFound` sofort - die Playlist
+     waechst also mit und ist ab fuenf Songs spielbar, waehrend der Rest
+     noch gesucht wird. Bremst Apple, wird gewartet und an derselben Stelle
+     weitergemacht; der Fortschritt bleibt dabei stehen, statt von der
+     Wartezeit verdraengt zu werden. */
+  async function run(j, opts) {
     opts = opts || {};
     const cache = loadCache();
-    const songs = [], missed = [];
-    let done = 0, throttled = false, waits = 0;
     const stop = () => !!(opts.cancelled && opts.cancelled());
+    const tell = () => { if (opts.onProgress) opts.onProgress(j); };
+    const hit = (t, song, via) => { mark(j, t, song, via); if (opts.onFound) opts.onFound(t); };
 
-    for (const t of tracks) {
-      if (stop()) break;
-      const key = keyOf(t);
-      let hit = cache[key];
-      if (hit === undefined && misses.has(key)) hit = null;
+    if (prefill(j, opts.local, cache) && opts.onFound) opts.onFound(null);
+    tell();
 
-      while (hit === undefined) {
-        try {
-          let cands = await lookup(t, 'DE');
-          if (!cands.length) cands = await lookup(t, 'US');
-          let best = null, bestScore = 0;
-          for (const c of cands) {
-            const s = score(c, t);
-            if (s > bestScore) { bestScore = s; best = c; }
-          }
-          hit = bestScore >= 2.5 && best ? toSong(best) : null;
-          if (hit) cache[key] = hit; else misses.add(key);
+    let waits = 0, throttled = false;
+    while (j.pending.length && !stop()) {
+      const t = j.pending[0];
+      if (misses.has(t.key)) { hit(t, null); continue; }
+      j.current = t.key;
+      tell();
+      try {
+        const wer = leadKey(t);
+        const gruppe = wer && !j.tried.has(wer) ? j.pending.filter(x => leadKey(x) === wer) : [];
+        if (gruppe.length >= BATCH_MIN) {
+          let kat = [];
+          try { kat = await catalog(leadName(t)); }
+          catch (e) { if (e.throttled) throw e; }
+          j.tried.add(wer);
+          gruppe.forEach(x => {
+            if (!j.pending.includes(x)) return;      /* inzwischen von Hand zugeordnet */
+            const c = pick(kat, x);
+            if (c) { const song = toSong(c); cache[x.key] = song; hit(x, song, 'artist'); }
+          });
           waits = 0;
-        } catch (e) {
-          if (!e.throttled) { hit = null; break; }
-          saveCache(cache);
-          if (waits >= BACKOFF.length) { throttled = true; break; }
-          if (!await waitOut(BACKOFF[waits++], opts)) break;
+          await sleep(PAUSE_MS);
+          continue;          /* der vorderste ist jetzt gefunden oder geht einzeln */
         }
-        await sleep(PAUSE_MS);
+        const c = await searchOne(t);
+        /* Wer waehrend der Suche selbst zugeordnet hat, behaelt seine Wahl. */
+        if (!j.pending.includes(t)) continue;
+        if (c) { const song = toSong(c); cache[t.key] = song; hit(t, song, 'search'); }
+        else { misses.add(t.key); hit(t, null); }
+        waits = 0;
+      } catch (e) {
+        if (!e.throttled) { if (j.pending.includes(t)) hit(t, null); continue; }
+        saveCache(cache);
+        if (waits >= BACKOFF.length) { throttled = true; break; }
+        if (!await waitOut(BACKOFF[waits++], opts)) break;
+        continue;
       }
-      if (throttled || stop()) break;
-
-      if (hit) songs.push({ ...hit }); else missed.push(termOf(t));
-      done++;
-      if (opts.onProgress) opts.onProgress(done, tracks.length);
+      await sleep(PAUSE_MS);
     }
-
+    j.current = null;
     saveCache(cache);
-    return { songs: dedupe(songs), missed, throttled, done, total: tracks.length };
+    tell();
+    return { throttled, complete: !j.pending.length };
   }
+
+  /* Vorziehen: an die Spitze der Warteschlange. Mehrere behalten ihre
+     Reihenfolge untereinander. */
+  function prio(j, keys) {
+    const want = new Set([].concat(keys));
+    const vor = j.pending.filter(t => want.has(t.key));
+    j.pending = [...vor, ...j.pending.filter(t => !want.has(t.key))];
+    return vor.length;
+  }
+
+  /* Nicht Gefundenes noch einmal versuchen - ganz vorn. */
+  function retry(j, keys) {
+    const list = [].concat(keys).map(k => j.missed.get(k)).filter(Boolean);
+    list.forEach(t => { j.missed.delete(t.key); misses.delete(t.key); });
+    j.pending = [...list, ...j.pending.filter(t => !list.includes(t))];
+    return list.length;
+  }
+
+  /* Von Hand zuordnen: der Treffer gilt fortan, auch im Cache. Mit `null`
+     wird ein falscher Treffer wieder herausgenommen. */
+  function assign(j, key, song) {
+    const t = byKey(j, key);
+    if (!t) return false;
+    const cache = loadCache();
+    if (song) cache[key] = { ...song, q: undefined };
+    else delete cache[key];
+    saveCache(cache);
+    if (!song) misses.add(key);
+    mark(j, t, song, 'manual');
+    return true;
+  }
+
+  /* Die Suchanfrage, mit der man einen Titel selbst nachschlagen kann. */
+  const hintOf = t => (t.loose ? glatt(termOf(t)) : [titleOf(t.title), glatt(leadName(t))].filter(Boolean).join(' '));
 
   function dedupe(songs) {
     const seen = new Set(), out = [];
@@ -358,12 +601,21 @@ const Playlist = (() => {
     } catch (e) {}
   }
 
-  /* Die eingelesene Titelliste bleibt liegen, damit ein abgebrochener Lauf
-     spaeter weitergehen kann - auch nach einem Neuladen der Seite. */
-  function storeQueue(name, tracks) {
+  /* Die Titelliste bleibt liegen - auch fertig, damit man nach einem
+     Neuladen noch sieht, was fehlt, und es nachholen kann. Dazu, was nicht
+     gefunden wurde, und ob die gespeicherte Playlist schon zu dieser Liste
+     gehoert (`own`): eine alte bleibt stehen, bis die neue fuer eine Runde
+     reicht. */
+  function storeQueue(j) {
     try {
-      if (tracks && tracks.length) localStorage.setItem(QUEUE_KEY, JSON.stringify({ name, tracks }));
-      else localStorage.removeItem(QUEUE_KEY);
+      if (j && j.tracks.length) {
+        localStorage.setItem(QUEUE_KEY, JSON.stringify({
+          name: j.name, own: !!j.own,
+          tracks: j.tracks.map(t => ({ title: t.title, artist: t.artist, album: t.album,
+                                       loose: t.loose || undefined, lead: t.lead })),
+          missed: [...j.missed.keys()],
+        }));
+      } else localStorage.removeItem(QUEUE_KEY);
     } catch (e) {}
   }
 
@@ -374,6 +626,29 @@ const Playlist = (() => {
     } catch (e) { return null; }
   }
 
+  /* Nach dem Neuladen: Auftrag aus der gespeicherten Liste und der
+     gespeicherten Playlist wieder zusammensetzen. Songs ohne `q` kamen von
+     Hand dazu und bleiben als Zugabe dabei. Aeltere Speicherstaende kennen
+     `own` nicht - dort gehoerte die Playlist immer zum letzten Lauf. */
+  function revive(q, pl, local) {
+    const j = job(q.name, q.tracks);
+    j.own = q.own !== false;
+    if (j.own && pl && pl.songs) {
+      const index = new Map(j.tracks.map(t => [t.key, t]));
+      pl.songs.forEach(s => {
+        const t = s.q && index.get(s.q);
+        if (t && j.pending.includes(t)) mark(j, t, s, 'stored');
+        else if (!s.q) j.extra.push(s);
+      });
+    }
+    prefill(j, local);
+    (q.missed || []).forEach(k => {
+      const t = j.pending.find(x => x.key === k);
+      if (t) mark(j, t, null);
+    });
+    return j;
+  }
+
   function restore() {
     try {
       const pl = JSON.parse(localStorage.getItem(STORE_KEY) || 'null');
@@ -381,6 +656,7 @@ const Playlist = (() => {
     } catch (e) { return null; }
   }
 
-  return { parse, resolve, store, restore, storeQueue, restoreQueue, find, albumTracks,
-           dedupe, MAX_TRACKS };
+  return { parse, job, run, prefill, prio, retry, assign, hintOf, store, restore,
+           storeQueue, restoreQueue, revive, find, albumTracks, dedupe, base, names, fits, keyOf,
+           MAX_TRACKS };
 })();

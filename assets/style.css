@@ -128,8 +128,12 @@ main{
 .play:active{transform:scale(.97)}
 .play.playing{box-shadow:0 0 0 14px rgba(62,224,122,.09)}
 .play.loading{background:var(--panel-2);color:var(--muted);cursor:wait}
-.play svg{width:52px;height:52px;margin-left:5px}
-.play .ic-stop{display:none;margin-left:0;width:40px;height:40px}
+/* Ein Dreieck wirkt erst mittig, wenn es ein Stueck nach rechts rutscht -
+   aber nur ein Stueck: die Mitte seines Rahmens liegt halb zwischen
+   Kreismitte und Schwerpunkt. Das macht die viewBox ("1 0 24 24"), nicht ein
+   Rand, der bei jeder Groesse anders ausfiele. */
+.play svg{width:52px;height:52px}
+.play .ic-stop{display:none;width:40px;height:40px}
 .play.playing .ic-play{display:none}
 .play.playing .ic-stop{display:block}
 .stage-label{position:absolute;right:8px;font-family:var(--mono);font-size:18px;color:var(--green);font-weight:600}
@@ -373,7 +377,9 @@ body.dragging::after{
 #stats dd{font-family:var(--mono);text-align:right}
 
 /* ---------- Aufloesung ---------- */
-.reveal{position:fixed;inset:0;z-index:40;display:grid;place-items:center;background:rgba(6,8,7,.82);backdrop-filter:blur(7px);padding:20px}
+/* minmax(0,1fr): sonst richtet sich die Spalte nach dem Inhalt, und ein
+   langer Titel ohne Umbruch drueckt die Karte ueber den Bildschirmrand. */
+.reveal{position:fixed;inset:0;z-index:40;display:grid;grid-template-columns:minmax(0,1fr);place-items:center;background:rgba(6,8,7,.82);backdrop-filter:blur(7px);padding:20px}
 .reveal-card{
   background:var(--panel);border:1px solid var(--line);border-radius:22px;
   padding:30px 34px;text-align:center;max-width:400px;width:100%;
@@ -407,11 +413,11 @@ body.dragging::after{
 .browse-head h3{flex:1;font-size:18px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .browse-x{font-size:24px;line-height:1;color:var(--muted);padding:0 4px}
 .browse-x:hover{color:var(--text)}
-.reveal-card.list #browseSearch{
+.reveal-card.list #browseSearch,.reveal-card.list .list-search{
   width:100%;margin-top:8px;padding:9px 12px;border-radius:10px;background:var(--panel-2);
   border:1px solid var(--line);color:var(--text);font:inherit;font-size:13px;outline:none;
 }
-.reveal-card.list #browseSearch:focus{border-color:var(--green-dim)}
+.reveal-card.list #browseSearch:focus,.reveal-card.list .list-search:focus{border-color:var(--green-dim)}
 #browseNote{margin:8px 0 0}
 .browse-list{
   flex:1;min-height:120px;overflow:auto;overscroll-behavior:contain;
@@ -435,13 +441,55 @@ body.dragging::after{
 .brow .bact button.on{color:var(--green)}
 .brow .blinks{flex:0 0 100%;order:9;padding:2px 0 6px}
 .browse-foot{display:flex;align-items:center;gap:12px;margin-top:12px;padding-top:12px;border-top:1px solid var(--line)}
-.browse-foot .pl-link{flex:1}
+.browse-foot .pl-link{flex:1;min-width:0;white-space:nowrap}
+.browse-foot .btn-ghost{width:auto;margin:0;padding:9px 12px;white-space:nowrap}
+.browse-foot .btn-action{width:auto}
 .browse-foot .btn-action{padding:10px 22px}
 .brow-more{
   width:100%;padding:9px 0;margin-top:4px;color:var(--muted);font-size:12px;
   border-radius:9px;background:var(--panel-2);
 }
 .brow-more:hover{color:var(--text)}
+
+/* ---------- Titelliste eines Imports ---------- */
+/* Fortschritt: gruen gefunden, grau nicht gefunden, der Rest ist offen. */
+.pl-bar{display:flex;height:6px;border-radius:999px;background:var(--panel-2);overflow:hidden;margin:10px 0 2px}
+.pl-bar i{display:block;height:100%;transition:width .3s}
+.pl-bar .ok{background:var(--green)}
+.pl-bar .no{background:var(--grey);opacity:.6}
+.pl-sub{margin-top:-4px;color:var(--grey)}
+#plView{margin-top:6px;width:100%}
+#impNote{margin:6px 0 10px}
+.brow.imp .orig{color:var(--yellow);opacity:.85}
+.brow.imp.now{background:var(--panel-2)}
+.imp-find{flex:0 0 100%;order:9;padding:2px 0 6px}
+.imp-find input{
+  width:100%;padding:7px 10px;border-radius:9px;background:var(--panel);
+  border:1px solid var(--line);color:var(--text);font:inherit;font-size:12.5px;outline:none;
+}
+.imp-find input:focus{border-color:var(--green-dim)}
+.imp-find .fopts{max-height:240px;margin-top:4px}
+.imp-find .note{margin:4px 0 0}
+.imp-hit{display:flex;align-items:center;gap:4px}
+.imp-hit .arhit{flex:1;min-width:0}
+.imp-hit .bplay{flex:none;width:28px;height:28px;border-radius:8px;color:var(--muted)}
+.imp-hit .bplay:hover{background:var(--panel);color:var(--text)}
+.hit-switch{margin-top:12px}
+
+/* ---------- Spotify ---------- */
+#spBox{margin-top:10px}
+.sp-steps{margin:0 0 4px;padding-left:18px}
+.sp-steps li{margin:3px 0}
+.sp-steps a{color:var(--text);text-underline-offset:3px}
+.sp-steps code{
+  display:block;margin:3px 0 1px;padding:4px 7px;border-radius:7px;background:var(--panel-2);
+  font-family:var(--mono);font-size:11px;color:var(--text);overflow-wrap:anywhere;
+}
+#spLists{max-height:260px}
+#spNote:empty{display:none}
+#spLists:empty{display:none}
+#spLists .arhit:disabled{opacity:.45;cursor:default}
+#spLists .arhit:disabled:hover{background:none;color:var(--muted)}
 
 /* ---------- Nachhoeren bei ---------- */
 .svc-head{font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--grey);margin:-4px 0 8px}
@@ -480,7 +528,9 @@ body.dragging::after{
 
 /* ---------- Mobil / Hochformat ---------- */
 @media (max-width:900px){
-  main{grid-template-columns:1fr;gap:20px;padding:20px 15px 50px;max-width:560px}
+  /* minmax(0,1fr) statt 1fr: sonst macht eine lange Panelzeile („Charts ·
+     Heimspiel · 595 Songs · 1 Regel") die ganze Spalte breiter als das Handy. */
+  main{grid-template-columns:minmax(0,1fr);gap:20px;padding:20px 15px 50px;max-width:560px}
   /* Die Kopfzeile bleibt oben, die Panels der linken Spalte wandern unter
      das Spielfeld - sonst muesste man an ihnen vorbeiscrollen, um den
      Abspielknopf zu sehen. */

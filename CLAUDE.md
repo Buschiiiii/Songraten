@@ -17,6 +17,11 @@ lieber die Funktion anders schneiden.
 Die GitHub Actions sind kein Widerspruch dazu: sie erzeugen nur `songs.json`
 und committen sie. Ausgeliefert wird weiterhin, was im Repo liegt.
 
+**Eine bewusste Ausnahme beim Login:** die Spotify-Anmeldung (siehe unten).
+Sie ist freiwillig, braucht keinen Server (PKCE im Browser) und keinen
+Schlüssel im Repo – nur eine Client ID, die kein Geheimnis ist. Ohne sie
+läuft alles wie vorher. Gewünscht vom Besitzer der Seite.
+
 ## Warum Apple-Previews
 
 Geprüft: Deezers API schickt kein `Access-Control-Allow-Origin`, bräuchte also
@@ -55,11 +60,12 @@ so lange erneut versucht, bis der Context wirklich läuft.
 
 ## Datenpipeline — läuft nur beim Bauen, nie zur Laufzeit
 
-Zur Laufzeit fragt die Seite nur an vier Stellen nach, alle vom Nutzer
+Zur Laufzeit fragt die Seite nur an fünf Stellen nach, alle vom Nutzer
 angestoßen und alle ohne Schlüssel: der **Playlist-Modus** löst Titel über die
 iTunes-Suche auf, der **Künstlermodus** holt den Katalog bei Apple, der
-**Mediathek-Server** ist der eigene, und **song.link** liefert auf Wunsch die
-genauen Links in der Auflösung. Nichts davon braucht ein Backend.
+**Mediathek-Server** ist der eigene, **song.link** liefert auf Wunsch die
+genauen Links in der Auflösung, und **Spotify** gibt nach Anmeldung die
+eigenen Playlists heraus. Nichts davon braucht ein Backend.
 
 0. `tools/fetch_kworb.py <anzahl>` holt die Streamzahlen: Künstlerübersicht
    und die Songseiten der größten Künstler, daraus `artists_top.json` und
@@ -264,9 +270,10 @@ Künstler. Eigener Regelsatz: `settings.arFilters`.
 
 ## Playlist-Modus
 
-Direkt bei Spotify, Apple Music oder YouTube nachfragen geht nicht: alle drei
-wollen OAuth mit registrierter App und Login, also einen Server. Deshalb der
-Umweg über einen Export. Eingelesen werden CSV, TSV, TXT, M3U und JSON — Exportify
+Apple Music und YouTube wollen für Playlists einen Server (signierter
+Developer-Token bzw. OAuth mit Secret). Spotify geht seit PKCE ohne – mit
+eigener App, siehe *Spotify-Anmeldung*. Für alles andere der Umweg über einen
+Export. Eingelesen werden CSV, TSV, TXT, M3U und JSON — Exportify
 (Spotify), TuneMyMusic, Soundiiz, „Playlist exportieren" in der Musik-App und
 Google Takeout decken damit alles Übliche ab, notfalls tut es eine eingefügte
 Liste „Titel – Künstler".
@@ -276,18 +283,81 @@ Titel/Künstler/Album). Ohne erkennbare Kopfzeile werden die ersten zwei Spalten
 genommen; bei Freitextzeilen ist unklar, welche Hälfte der Titel ist, deshalb
 wird beim Bewerten **beide Reihenfolgen** geprüft (`loose`).
 
-Danach wird jeder Titel über die iTunes-Suche aufgelöst — die **einzige**
-Stelle, an der zur Laufzeit gesucht wird. Sequentiell mit 260 ms Pause; Apple
-lässt trotzdem nur ein paar hundert Anfragen durch und schickt dann für einige
-Minuten 403. Der Lauf bricht deshalb **nicht** ab, sondern wartet sichtbar
-(30, 60, 120, 240, 300 s) und macht an derselben Stelle weiter; erst danach
-gibt er auf. „Abbrechen" hält an, „Weiter suchen" nimmt die gespeicherte Liste
-(`songrate:plqueue`) wieder auf — was schon gefunden wurde, liegt im Cache und
-kostet keine Anfrage mehr. Treffer landen in `songrate:plcache` und überleben
-das Neuladen, Fehlschläge nicht — ein Titel, den Apple gerade nicht ausspuckt,
-wäre sonst dauerhaft verloren.
-Übernommen wird nur, was `previewUrl` hat und beim Abgleich von Titel und
-Künstler mindestens 2,5 Punkte erreicht.
+### Auflösen: schnellster Weg zuerst
+
+Ein Import ist ein **Auftrag** (`Playlist.job()`): jeder Titel steht unter
+`found`, `missed` oder noch in `pending`. Der Lauf (`Playlist.run()`) nimmt
+immer `pending[0]` – kein `for … of` über eine feste Liste, sonst ginge
+Vorziehen nicht. Aufgelöst wird in drei Stufen:
+
+1. **Ohne Anfrage** (`prefill`): Cache (`songrate:plcache`) und
+   `songs.json` über `localFind()` → `dbFind()`. Verglichen wird der
+   **Grundtitel** (`Playlist.base()`: ohne „- 2005 Remaster", ohne
+   angehängte Klammern) und der Künstler über die Namen einzeln
+   (`Playlist.names()`/`fits()`). Bei der Classics-Liste des Besitzers (233
+   Titel, Exportify) kamen so 149 sofort. Der Treffer bringt in `an` die
+   Beteiligten aus `songs.json` mit, sonst wäre „Levitating" für DaBaby nicht
+   mehr gelb.
+2. **Künstlerkatalog** (`catalog()`): stehen `BATCH_MIN` (3) offene Titel
+   desselben ersten Künstlers an, holt **eine** Anfrage mit
+   `attribute=artistTerm&limit=200` alle; zugeordnet wird nur bei gleichem
+   Grundtitel (`pick()`), der Rest geht einzeln.
+3. **Einzelsuche in Stufen** (`searchOne()` → `queries()`). Apples Suche
+   findet nur, was **jedes** Wort trägt – „Sweet Dreams (Are Made of This) -
+   2005 Remaster Eurythmics;Annie Lennox;Dave Stewart" liefert nichts. Genau
+   daran ist bei der Classics-Liste die Hälfte gescheitert. Deshalb: Grundtitel
+   + erster Künstler (DE), dann nur der Grundtitel mit 25 Treffern (DE), dann
+   wie zuerst im US-Store. „JAŸ-Z", „Beyoncé" und typografische Apostrophe
+   glättet `glatt()`. Erst wenn keine Stufe sicher trifft, entscheidet die alte
+   Punktwertung (≥ 2,5) über alles Gesammelte.
+
+Der erste Künstler (`leadOf()`): steht ein Semikolon drin (Exportify,
+Spotify), trennt nur das – „Earth, Wind & Fire" bleibt ganz. Spotify liefert
+ihn zusätzlich als `lead`.
+
+Sequentiell mit 260 ms Pause; Apple lässt trotzdem nur ein paar hundert
+Anfragen durch und schickt dann für einige Minuten 403. Der Lauf bricht
+deshalb **nicht** ab, sondern wartet (30, 60, 120, 240, 300 s) und macht an
+derselben Stelle weiter; erst danach gibt er auf. **Der Fortschritt bleibt
+dabei stehen** – früher hat „Apple bremst – weiter in 30 s" ihn ersetzt, jetzt
+steht die Wartezeit in `#plSub` darunter, der Balken (`#plBar`, grün gefunden,
+grau fehlt) bleibt, und die zugeklappte Zeile sagt „149/233 · Pause 30 s".
+
+**Spielen, während noch gesucht wird.** Jeder Treffer meldet sich über
+`onFound`, `plSync()` zieht die Playlist (gedrosselt auf 250 ms) nach. Ab
+`PL_MIN` Songs ist der Modus frei; ist in der laufenden Runde noch nichts
+passiert (`roundUntouched()`), wird gleich gewechselt. Eine **alte** Playlist
+bleibt stehen, bis die neue für eine Runde reicht (`j.own`) – sonst wäre der
+Modus in den ersten Sekunden einer neuen Suche gesperrt.
+
+**Gespeichert** wird die Titelliste jetzt auch **fertig** (`songrate:plqueue`,
+mit `own` und den Schlüsseln der fehlenden), damit man nach dem Neuladen noch
+sieht, was fehlt. `Playlist.revive()` setzt den Auftrag aus Liste und
+gespeicherter Playlist wieder zusammen: Songs mit `q` (Schlüssel des Titels)
+gehören zum Auftrag, Songs ohne `q` kamen von Hand dazu und bleiben als
+`extra`. Treffer liegen in `songrate:plcache`; Fehlschläge nur in der
+Sitzung (`misses`), außer die Titelliste hat sie als fehlend gespeichert.
+Übernommen wird nur, was `previewUrl` hat.
+
+### Titelliste: sehen, was fehlt, selbst nachhelfen
+
+`#imp`, geöffnet über *Titelliste ansehen* im Panel. Drei Reiter (Gefunden /
+Offen / Fehlt), je Zeile:
+
+- **Offen**: Vorziehen (`Playlist.prio()`), läuft nichts, geht es los.
+  Mit Suchbegriff: „Diese n vorziehen".
+- **Fehlt**: ↻ (`Playlist.retry()`, auch für alle), Lupe.
+- **Gefunden**: ▶, Lupe (anderen Song zuordnen), ✕ falscher Treffer
+  (`Playlist.assign(j, key, null)`: Cache-Eintrag weg, Titel nach *Fehlt*).
+  Weicht der Grundtitel ab, steht das Original gelb darunter.
+
+Die Lupe klappt eine Suche unter der Zeile auf (`impFinder()`), vorbelegt mit
+`Playlist.hintOf()` – Grundtitel und erster Künstler, also genau das, was die
+Automatik zuerst probiert. Ein Klick ordnet zu (`assign`, landet im Cache,
+überlebt also das Neuladen). Während eines Laufs wird die Liste laufend
+nachgezeichnet, **aber nicht, solange eine Suche offen ist** – sonst
+verschwände das Feld beim Tippen. Ordnet man einen Titel zu, der gerade
+gesucht wird, verwirft der Lauf sein spätes Ergebnis (`pending.includes`).
 
 Im Modus selbst: keine Schwierigkeitsstufen, fünf zufällige Songs aus der
 Liste, Faktor 1,0, Vorschläge im Suchfeld nur aus der Playlist. Die Filter
@@ -469,6 +539,56 @@ statt aus `chartFiltered`. Die Songs aus den Jahrescharts haben keine
 Streamzahl und damit keine Stufe — einsortieren kann man sie nicht, mitspielen
 lassen sehr wohl. Aus 1913 werden so über 4000.
 
+## Heimspiel – nur die großen Hits
+
+Gewünscht als Modus „für Erfolgserlebnisse". Umgesetzt als Schalter im Panel
+*Modus* (`settings.hits`), der sich mit **jedem** Modus kombiniert: gezogen
+wird aus `hitPool(basePool())` – `activePool()` ist dafür in `basePool()` und
+die Hülle geteilt. Keine Stufen (`usesTiers()` ist dann `false`), die Plätze
+heißen „Hit 1"–„Hit 5" (`HIT_SLOTS`, `hit: true`), in der Statistik ein
+eigener Schlüssel `hits`.
+
+Bekanntheit (`fameOf()`): Streams, wo es welche gibt (`1000 + s/1e7`, damit
+sie immer vor einem Jahreschartplatz liegen), sonst `f`. **In den Charts
+zählen nur Streams** – ein Jahressieger von 1962 ist dort kein Heimspiel.
+Songs aus Playlist, Künstlerkatalog und eigener Musik bekommen ihren Wert über
+`dbFind()`; was dort fehlt, ist vermutlich kein großer Hit und kommt hinten an,
+im Künstlermodus in Apples Reihenfolge. Genommen wird das oberste Fünftel der
+Songs mit bekanntem Wert (`HIT_SHARE`), mindestens `HIT_MIN` (10).
+
+Wie die Spielweise gilt es **ab der nächsten Runde** (Fallstrick 2), die
+Notiz darunter verweist auf *Alle neu würfeln*. Ohne Stufen werden zuletzt
+gespielte Songs jetzt nach hinten gemischt, sonst fiele im kleinen Pool die
+Wiederholung auf.
+
+## Spotify-Anmeldung
+
+`assets/spotify.js`, Panel *Eigene Playlist → Von Spotify*. Ausdrücklich
+gewünscht, deshalb die Ausnahme oben.
+
+- **PKCE ohne Server**: `login()` legt Verifier und State in
+  `songrate:spotify` ab und schickt zu `accounts.spotify.com/authorize`;
+  `callback()` (beim Start) prüft den State, tauscht den Code gegen ein Token
+  und macht die Adresse wieder sauber. Refresh-Token werden genutzt und, wenn
+  Spotify sie austauscht, ersetzt.
+- **Eigene App nötig**: Client ID trägt der Nutzer ein (oder fest in
+  `CLIENT_ID`), Redirect-URI ist `redirectUri()` – die Seite ohne
+  `index.html`, wird im Panel zum Abschreiben angezeigt und muss im Dashboard
+  exakt so stehen.
+- **Stand März 2026** (Entwicklungsmodus): Titel nur aus eigenen oder
+  gemeinsamen Playlists und den Lieblingssongs (`me/tracks`); fremde stehen
+  ausgegraut da. Der Endpunkt heißt `playlists/{id}/items`, der Song darin
+  `item` statt `track` – gelesen wird beides. Keine `external_ids`/ISRC mehr.
+  Premium beim Besitzer der App, höchstens fünf Nutzer.
+- **Kein Ton von Spotify**: `preview_url` gibt es für neue Apps seit Ende 2024
+  nicht. Spotify liefert nur Titel, Künstler (mit `;` wie Exportify, dazu
+  `lead`) und Album; die Liste geht durch `startImport()` wie eine Datei.
+- `Spotify.nav.go` ist austauschbar, damit der Test nicht wegnavigiert.
+
+**Ungetestet gegen das echte Spotify.** Die Umgebung kommt weder an
+`accounts.spotify.com` noch an `api.spotify.com`; geprüft ist gegen
+nachgebaute Antworten im Format von 2026.
+
 ## Playlist: einzeln hinzufügen
 
 Eine Playlist muss nicht aus einer Datei kommen. Das Suchfeld im Panel
@@ -580,8 +700,8 @@ Frontend hält ein fehlendes Feld zusätzlich aus.
 ## Aufbau der Seite
 
 Links Kopfzeile (Marke, Stufenliste, Neuwürfeln, Rundenpunkte) und darunter
-*Stufen* und *Statistik*; in der Mitte das Spielfeld; rechts *Modus*, *Eigene
-Playlist*, *Künstler*, *Eigene Musik*, *Nachhören bei*, *Spielweise* und ganz
+*Stufen* und *Statistik*; in der Mitte das Spielfeld; rechts *Modus* (mit dem
+Heimspiel-Schalter), *Eigene Playlist* (mit *Von Spotify*), *Künstler*, *Eigene Musik*, *Nachhören bei*, *Spielweise* und ganz
 unten die *Songauswahl*. *Songs ansehen* öffnet von zwei Stellen aus
 (`.js-browse`) die Songliste.
 
@@ -611,6 +731,13 @@ Playlist"). Das steht jetzt in der Zeile (`filterScope()`) — eine lange
 
 ## Fallstricke im Frontend
 
+0. **Einspaltige Raster brauchen `minmax(0,1fr)`, nicht `1fr`.** `1fr` heißt
+   `minmax(auto,1fr)`: die Spalte nimmt die Breite vom längsten Inhalt ohne
+   Umbruch. Zweimal passiert – in `.reveal` drückte „Moves Like Jagger -
+   Studio Recording From …" die Titelliste über den Rand, und in `main` auf
+   dem Handy machte die Panelzeile „Charts · Heimspiel · 595 Songs · 1 Regel"
+   die ganze Seite 17 px zu breit. `width:100%` hilft dann nicht, es sind
+   100 % einer zu breiten Spalte.
 1. **`[hidden]{display:none !important}` in `style.css` muss bleiben.**
    `.reveal` setzt `display:grid`, was das `hidden`-Attribut aushebelt. Das hat
    die Seite schon einmal komplett blockiert: beide Overlays waren dauerhaft
@@ -672,8 +799,9 @@ Playlist"). Das steht jetzt in der Zeile (`filterScope()`) — eine lange
    eigenen Musik), `songrate:server` (Zugang zum Mediathek-Server),
    `songrate:device` (Geräte-ID für Jellyfin), `songrate:links`
    (genaue Dienst-Links je Song), `songrate:plcache`
-   (Titel → iTunes-Treffer), `songrate:plqueue` (Titelliste eines noch nicht
-   fertigen Laufs). Das Präfix bleibt
+   (Titel → iTunes-Treffer, auch von Hand zugeordnete), `songrate:plqueue`
+   (Titelliste des letzten Imports, auch fertig, mit `own` und den fehlenden),
+   `songrate:spotify` (Client ID, Tokens, Verifier während der Anmeldung). Das Präfix bleibt
    `songrate:`, obwohl die Seite Songraten heißt — Umbenennen würde alle
    bereits gespeicherten Einstellungen und Statistiken verwerfen.
 
@@ -697,8 +825,7 @@ Die Bausteine exportiert die Datei, `test_ui.js` baut damit die Testmediathek.
 
 ## Testen ohne Browser
 
-Es gibt keinen Browser in der Entwicklungsumgebung, aber jsdom reicht und hat
-bisher jeden Fehler gefunden: `index.html` laden, `AudioContext` mocken,
+jsdom reicht für die Logik und hat bisher fast jeden Fehler gefunden: `index.html` laden, `AudioContext` mocken,
 `fetch` auf die lokale `songs.json` biegen, dann alle Skripte auswerten und
 die Handler direkt aufrufen. Genau das macht `tools/test_ui.js` (`npm i
 jsdom`, dann `node tools/test_ui.js`) — es spielt jeden Modus einmal durch.
@@ -714,6 +841,15 @@ Vier Stolpersteine dabei:
 4. `decodeAudioData` muss einen echten Puffer nachbilden (Kanäle, Rate,
    `getChannelData`), sonst lässt sich der Ausschnitt für eigene Dateien
    nicht prüfen. Am Byteumfang unterscheidet der Mock Preview von Datei.
+
+**Für alles Sichtbare gibt es Chromium**: `/opt/pw-browsers`, Playwright
+liegt global (`require('/opt/node22/lib/node_modules/playwright')`), nie
+`playwright install`. Seite mit `python3 -m http.server` ausliefern, dann
+Screenshots bei 1300 und 400 px Breite. So aufgefallen: das Play-Dreieck saß
+6,8 px rechts der Mitte (jetzt über die viewBox `1 0 24 24` versetzt, halb
+zwischen Kreismitte und Schwerpunkt), und die Titelliste lief auf dem Handy
+über den Rand (Fallstrick 0). Netz hat auch Chromium hier nicht – Apple,
+Spotify und song.link antworten nicht.
 
 Vor jeder Auslieferung einmal durchspielen: Runde starten, raten,
 überspringen, auflösen, neue Runde, Stufen umschalten, Neuwürfeln, Filter
@@ -845,10 +981,13 @@ seine Kataloge trotzdem da, und der nächste baut darauf auf.
    für echte Ausfälle — kworb baut seine Tabellen um, Apple antwortet gar
    nicht. Sie sollte jetzt nicht mehr regelmäßig auslösen; tut sie es doch,
    ist wirklich etwas kaputt.
-2. **Playlist-Modus.** Steht (siehe oben). Offen bleibt: die Trefferquote der
-   iTunes-Suche ist bei Remixen und Live-Versionen mager. Wie lange Apple nach
-   einem 403 wirklich dichthält, ist nicht dokumentiert — die Wartestufen sind
-   geraten und müssen an echten großen Listen nachjustiert werden.
+2. **Playlist-Modus.** Steht (siehe oben). Die gestufte Suche ist gegen
+   nachgebaute Apple-Antworten geprüft, nicht gegen echte – ob sie die
+   Classics-Liste wirklich fast vollständig findet, zeigt der erste Lauf; was
+   übrig bleibt, lässt sich in der Titelliste von Hand zuordnen. Wie lange
+   Apple nach einem 403 wirklich dichthält, ist nicht dokumentiert — die
+   Wartestufen sind geraten.
+3. **Spotify** ist nur gegen nachgebaute Antworten geprüft (siehe oben).
 
 ## Deployment
 

@@ -32,7 +32,26 @@ const CATALOG = {
   'bad guy billie eilish':      { trackName: 'bad guy', artistName: 'Billie Eilish', collectionName: 'WWAFA', releaseDate: '2019-03-29', primaryGenreName: 'Alternative', previewUrl: 'https://audio/5.m4a', artworkUrl100: 'https://art/5/100x100bb.jpg', trackId: 5 },
   'stronger britney spears':    { trackName: 'Stronger', artistName: 'Britney Spears', collectionName: 'Oops!', releaseDate: '2000-05-16', primaryGenreName: 'Pop', previewUrl: 'https://audio/6.m4a', artworkUrl100: 'https://art/6/100x100bb.jpg', trackId: 6 },
 };
-const sortKey = s => s.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim().split(' ').sort().join(' ');
+/* Songs, die nicht in songs.json stehen - an ihnen haengt die Suche bei
+   Apple. Die Titel sind so gewaehlt, wie ein Spotify-Export sie liefert:
+   mit „- 2005 Remaster", mehreren Kuenstlern und typografischem Apostroph. */
+const EXTRA = [
+  { trackName: 'Testlied', artistName: 'Mockband', collectionName: 'Mockalbum', releaseDate: '1983-01-01',
+    primaryGenreName: 'Pop', previewUrl: 'https://audio/m1.m4a', artworkUrl100: 'https://art/m1/100x100bb.jpg', trackId: 31 },
+  { trackName: "Gänsehaut's Lied", artistName: 'JAY-Band', collectionName: 'Gans', releaseDate: '2009-01-01',
+    primaryGenreName: 'Rock', previewUrl: 'https://audio/m2.m4a', artworkUrl100: 'https://art/m2/100x100bb.jpg', trackId: 32 },
+];
+/* Apples Suche findet nur, was jedes Wort des Begriffs traegt. */
+const nrm = x => String(x || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, ' ').trim();
+const appleSearch = (term, list) => {
+  const words = nrm(term).split(' ').filter(Boolean);
+  return list.filter(c => {
+    const hay = ' ' + nrm(c.trackName + ' ' + c.artistName + ' ' + (c.collectionName || '')) + ' ';
+    return words.length && words.every(w => hay.includes(' ' + w + ' '));
+  });
+};
+let searchTerms = [];
+let spotifyCalls = [];
 let itunesCalls = 0;
 let srvCalls = [];
 let odesliCalls = [];
@@ -53,8 +72,13 @@ function fakeBuffer(secs, silent, chans, rate, leer) {
            getChannelData: c => data[c] };
 }
 
-function makeWindow(store, patchDb) {
-  const w = new JSDOM(read('index.html'), { runScripts: 'outside-only', url: 'https://example.org/' }).window;
+function makeWindow(store, patchDb, url) {
+  const w = new JSDOM(read('index.html'), { runScripts: 'outside-only', url: url || 'https://example.org/' }).window;
+  /* PKCE braucht crypto.subtle und TextEncoder - jsdom bringt sie nicht
+     immer mit, Node schon. */
+  const webcrypto = require('crypto').webcrypto;
+  if (!w.crypto || !w.crypto.subtle) Object.defineProperty(w, 'crypto', { value: webcrypto, configurable: true });
+  if (!w.TextEncoder) w.TextEncoder = TextEncoder;
 
   w.HTMLCanvasElement.prototype.getContext = () => ({
     clearRect() {}, save() {}, restore() {}, translate() {}, rotate() {}, fillRect() {},
@@ -87,7 +111,7 @@ function makeWindow(store, patchDb) {
 
   Object.entries(store || {}).forEach(([k, v]) => w.localStorage.setItem(k, v));
 
-  w.fetch = async url => {
+  w.fetch = async (url, opts) => {
     url = String(url);
     /* Der Browser bricht http-Anfragen aus einer https-Seite ab, ohne zu
        fragen - hier genauso. */
@@ -104,6 +128,17 @@ function makeWindow(store, patchDb) {
                     { artistId: 2, artistName: 'Testband Zwei', primaryGenreName: 'Pop' }];
       const treffer = alle.filter(a => a.artistName.toLowerCase().includes(term.replace(/\+/g, ' ')));
       return { ok: true, status: 200, json: async () => ({ results: treffer }) };
+    }
+    if (url.includes('itunes.apple.com/search') && url.includes('attribute=artistTerm')
+        && /term=stapelband/i.test(url)) {
+      itunesCalls++;
+      searchTerms.push('katalog:stapelband');
+      const st = (name, id, extra) => ({ trackName: name, artistName: 'Stapelband', collectionName: 'Stapel',
+        releaseDate: '2012-01-01', primaryGenreName: 'Rock', trackId: id, previewUrl: 'https://audio/st' + id,
+        artworkUrl100: 'https://art/st/100x100bb.jpg', ...extra });
+      return { ok: true, status: 200, json: async () => ({ results: [
+        st('Eins', 41), st('Zwei', 42), st('Drei (Live)', 43), st('Drei', 44), st('Vier', 45, { previewUrl: undefined }),
+      ] }) };
     }
     if (url.includes('itunes.apple.com/search') && url.includes('attribute=artistTerm')) {
       itunesCalls++;
@@ -141,6 +176,54 @@ function makeWindow(store, patchDb) {
           releaseDate: '2022-01-01', trackId: 502, previewUrl: 'https://audio/g3' },
       ] }) };
     }
+    /* ---- Spotify: Anmeldung und Web API ---- */
+    if (url.includes('accounts.spotify.com/api/token')) {
+      const body = new URLSearchParams(opts && opts.body || '');
+      spotifyCalls.push('token:' + body.get('grant_type'));
+      if (body.get('grant_type') === 'authorization_code'
+          && (body.get('code') !== 'abc' || !body.get('code_verifier') || body.get('client_id') !== 'test-client')) {
+        return { ok: false, status: 400, json: async () => ({ error: 'invalid_grant' }) };
+      }
+      return { ok: true, status: 200, json: async () => ({ access_token: 'tok-' + spotifyCalls.length,
+        token_type: 'Bearer', expires_in: 3600, refresh_token: 'ref-1' }) };
+    }
+    if (url.includes('api.spotify.com/v1/')) {
+      const pfad = url.split('/v1/')[1];
+      spotifyCalls.push(pfad.split('?')[0]);
+      if (!opts || !opts.headers || !/^Bearer tok-/.test(opts.headers.Authorization)) {
+        return { ok: false, status: 401, json: async () => ({}) };
+      }
+      const json = x => ({ ok: true, status: 200, headers: { get: () => null }, json: async () => x });
+      if (pfad.startsWith('me/playlists')) {
+        return json({ next: null, items: [
+          { id: 'pl1', name: 'Meine Klassiker', owner: { id: 'u1', display_name: 'Ich' }, items: { total: 3 } },
+          { id: 'pl2', name: 'Gemeinsam', owner: { id: 'u9' }, collaborative: true, tracks: { total: 1 } },
+          { id: 'pl3', name: 'Discover Weekly', owner: { id: 'spotify', display_name: 'Spotify' }, items: { total: 30 } },
+        ] });
+      }
+      if (pfad.startsWith('me/tracks')) {
+        return json({ next: null, total: 1, items: [{ track: { type: 'track', name: 'Hello', artists: [{ name: 'Adele' }], album: { name: '25' } } }] });
+      }
+      if (pfad === 'me') return json({ id: 'u1', display_name: 'Ich' });
+      if (pfad.startsWith('playlists/pl1/items')) {
+        const off = +(/offset=(\d+)/.exec(pfad) || [0, 0])[1];
+        /* Zwei Seiten, wie Spotify sie liefert - mit `next`. Seit Maerz 2026
+           steht der Song unter `item`, nicht mehr unter `track`. */
+        if (!off) {
+          return json({ total: 4, next: 'https://api.spotify.com/v1/playlists/pl1/items?offset=2&limit=50', items: [
+            { item: { type: 'track', name: 'Blinding Lights', artists: [{ name: 'The Weeknd' }], album: { name: 'After Hours' } } },
+            { item: { type: 'episode', name: 'Ein Podcast' } },
+          ] });
+        }
+        return json({ total: 4, next: null, items: [
+          { item: { type: 'track', name: 'September', artists: [{ name: 'Earth, Wind & Fire' }], album: { name: 'X' } } },
+          { item: { type: 'track', name: 'Levitating (feat. DaBaby)', artists: [{ name: 'Dua Lipa' }, { name: 'DaBaby' }], album: { name: 'FN' } } },
+        ] });
+      }
+      if (pfad.startsWith('playlists/pl3/items')) return { ok: false, status: 403, json: async () => ({}) };
+      return { ok: false, status: 404, json: async () => ({}) };
+    }
+
     /* ---- song.link: die genauen Adressen je Dienst ---- */
     if (url.includes('api.song.link')) {
       odesliCalls.push(url);
@@ -243,15 +326,16 @@ function makeWindow(store, patchDb) {
 
     if (url.includes('itunes.apple.com/search')) {
       itunesCalls++;
-      const term = sortKey(decodeURIComponent(url.split('term=')[1]));
-      const hit = Object.entries(CATALOG).find(([k]) => sortKey(k) === term);
-      return { ok: true, status: 200, json: async () => ({ results: hit ? [hit[1]] : [] }) };
+      const term = decodeURIComponent(url.split('term=')[1].split('&')[0]);
+      searchTerms.push(term);
+      return { ok: true, status: 200, json: async () => ({
+        results: appleSearch(term, [...Object.values(CATALOG), ...EXTRA]) }) };
     }
     return { ok: true, status: 200, arrayBuffer: async () => new ArrayBuffer(8) };  /* Preview */
   };
 
   w.eval(['assets/links.js', 'assets/tags.js', 'assets/local.js', 'assets/server.js',
-    'assets/audio.js', 'assets/playlist.js', 'assets/filters.js', 'assets/artist.js',
+    'assets/audio.js', 'assets/playlist.js', 'assets/spotify.js', 'assets/filters.js', 'assets/artist.js',
     'assets/app.js']
     .map(read).join('\n;\n')
     + '\n;window.__ev = s => eval(s);');
@@ -482,6 +566,38 @@ const dummy = n => ({ t: 'Song ' + n, a: 'Kuenstler ' + n, al: 'Album', y: 2020,
   G('newRound()'); await tick(30);
   assert(G('usesTiers()') && G('round')[0].tier.id === 'easy', 'Ziehung: und wieder zurueck');
 
+  /* ------------------------------------------------------- Heimspiel */
+  const hitSwitch = on => { $('#hitMode').checked = on; $('#hitMode').dispatchEvent(new w.Event('change')); };
+  hitSwitch(true);
+  assert(G('settings.hits') && !G('usesTiers()'), 'Heimspiel: ohne Stufen');
+  const gestreamt = G('filtered.filter(s => s.s > 0).length');
+  assert(G('activePool().length') === Math.ceil(gestreamt * 0.2),
+    `Heimspiel: in den Charts das oberste Fuenftel (${G('activePool().length')} von ${gestreamt})`);
+  const kleinsterHit = G('Math.min(...activePool().map(s => s.s))');
+  assert(G(`filtered.filter(s => s.s > ${kleinsterHit}).every(s => activePool().includes(s))`)
+    && G('activePool().every(s => s.s > 0)'), 'Heimspiel: und zwar die mit den meisten Streams');
+  assert(G('round')[0].tier.id === 'easy', 'Heimspiel: die laufende Runde bleibt, wie sie ist');
+  $('#rerollAll').click(); await tick(30);
+  assert(G('round').every(r => r.tier.hit) && G('round')[0].tier.label === 'Hit 1'
+    && $('#tierList').textContent.includes('Hit 5'), 'Heimspiel: die Plaetze heissen Hit 1 bis 5');
+  assert(G('round.every(r => activePool().includes(r.song))'), 'Heimspiel: gezogen wird nur aus den Hits');
+  assert(/Heimspiel/.test(G("panelSum('play')[0]")) && /Heimspiel/.test(G("panelSum('filter')[0]")),
+    'Heimspiel: die Panelzeilen sagen es');
+  assert(/im Heimspiel die \d+ bekanntesten/.test($('#filterCount').textContent),
+    'Heimspiel: die Songauswahl nennt die Zahl (' + $('#filterCount').textContent + ')');
+  G("setMode('decades')"); await tick(30);
+  assert(G('activePool().length') === Math.max(10, Math.ceil(G('pickFiltered.length') * 0.2)),
+    'Heimspiel: im Jahrzehnt das oberste Fuenftel');
+  assert(/Hits aus \d+/.test($('#pickCount').textContent), 'Heimspiel: die Leiste oben sagt es (' + $('#pickCount').textContent + ')');
+  const hitsVor = (G('stats.byTier.hits') || { p: 0 }).p;
+  G('choose(round[active].song); submit()'); await tick(10); G('closeReveal()'); await tick(10);
+  assert(G('stats.byTier.hits').p === hitsVor + 1 && $('#stats').textContent.includes('Heimspiel'),
+    'Heimspiel: eigene Zeile in der Statistik');
+  G("setMode('charts')"); await tick(30);
+  hitSwitch(false);
+  G('newRound()'); await tick(30);
+  assert(G('usesTiers()') && G('round')[0].tier.id === 'easy', 'Heimspiel: und wieder aus');
+
   /* ---------------------------------------------------- Playlist-Modus */
   const csv = 'Track Name,Artist Name(s)\nUnstoppable,Sia\nBlinding Lights,The Weeknd\nLevitating,Dua Lipa\n'
             + 'Hello,Adele\nBad Guy,Billie Eilish\nStronger,Britney Spears\nGibtsNicht,Niemand';
@@ -489,7 +605,9 @@ const dummy = n => ({ t: 'Song ' + n, a: 'Kuenstler ' + n, al: 'Album', y: 2020,
   await waitFor(() => G('plBusy') === false, 20000);
 
   assert(G('PL') != null && G('PL.songs.length') === 6, 'Playlist: sechs von sieben aufgeloest');
-  assert(G('PL.missed').length === 1, 'Playlist: der unbekannte Titel wird gemeldet');
+  assert(G('plJob.missed.size') === 1, 'Playlist: der unbekannte Titel wird gemeldet');
+  assert(G("[...plJob.found.values()].filter(f => f.via === 'local').length") === 6,
+    'Playlist: bekannte Hits kommen ohne Anfrage aus songs.json');
   assert(G('mode') === 'playlist', 'Playlist: Modus schaltet um');
   assert($('#tabs').children.length === 5, 'Playlist: fuenf Reiter');
   assert(new Set(G('round').map(r => r.song.t)).size === 5, 'Playlist: fuenf verschiedene Songs');
@@ -498,8 +616,9 @@ const dummy = n => ({ t: 'Song ' + n, a: 'Kuenstler ' + n, al: 'Album', y: 2020,
   G("suggest('bl')");
   assert(G('sugItems').length > 0 && G('sugItems').every(s => G('PL.songs').some(x => x.t === s.t)),
     'Playlist: Vorschlaege kommen nur aus der Playlist');
-  assert(G("PL.songs.find(s => s.t.startsWith('Levitating')).ar").length >= 3,
-    'Playlist: Kollaboration bekommt mehrere Kuenstler-IDs');
+  assert(G("PL.songs.find(s => s.t.startsWith('Levitating')).ar").length >= 2
+    && G('PL.artists').includes('DaBaby'),
+    'Playlist: Kollaboration bekommt mehrere Kuenstler-IDs, auch die aus songs.json');
 
   for (let i = 0; i < 5; i++) { G('choose(round[active].song); submit()'); await tick(10); G('closeReveal()'); await tick(10); }
   assert(!$('#summary').hidden, 'Playlist: Rundenende zeigt das Ergebnis');
@@ -515,7 +634,97 @@ const dummy = n => ({ t: 'Song ' + n, a: 'Kuenstler ' + n, al: 'Album', y: 2020,
   const calls = itunesCalls;
   await G(`loadPlaylistText(${JSON.stringify(csv)}, 'Testliste')`);
   await waitFor(() => G('plBusy') === false, 20000);
-  assert(itunesCalls === calls, 'Playlist: zweiter Import kommt aus dem Cache');
+  assert(itunesCalls === calls, 'Playlist: zweiter Import kostet keine Anfrage ('
+    + (itunesCalls - calls) + ')');
+
+  /* Heimspiel in der Playlist: was songs.json kennt, nach Streams vorn. */
+  G('settings.hits = true');
+  assert(G('activePool()[0].t') === 'Blinding Lights' && G('activePool().length') === 6,
+    'Heimspiel: in der Playlist kommen die bekanntesten nach vorn');
+  G('settings.hits = false');
+
+  /* ------------------------------- Ein Spotify-Export, wie er wirklich ist */
+  searchTerms = [];
+  const exportify = 'Track URI,Track Name,Album Name,Artist Name(s)\n'
+    + 'spotify:track:1,"Testlied - 2005 Remaster","Mockalbum","Mockband;Gast Eins;Gast Zwei"\n'
+    + 'spotify:track:2,"Gänsehaut’s Lied","Gans","JAŸ-Band"\n'
+    + 'spotify:track:3,"Eins","Stapel","Stapelband"\n'
+    + 'spotify:track:4,"Zwei","Stapel","Stapelband"\n'
+    + 'spotify:track:5,"Drei","Stapel","Stapelband;Gast"\n'
+    + 'spotify:track:6,"Unstoppable","This Is Acting","Sia"\n'
+    + 'spotify:track:7,"Gibts nicht","Nirgends","Niemand"\n';
+  await G(`loadPlaylistText(${JSON.stringify(exportify)}, 'Export')`);
+  await waitFor(() => G('plBusy') === false, 20000);
+  const via = k => G(`(() => { const t = plJob.tracks.find(x => x.title.startsWith(${JSON.stringify(k)}));
+    const f = t && plJob.found.get(t.key); return f ? f.via + ':' + f.song.t : 'fehlt'; })()`);
+  assert(via('Testlied') === 'search:Testlied',
+    'Export: „- 2005 Remaster" und drei Kuenstler stoeren die Suche nicht (' + via('Testlied') + ')');
+  assert(/^search:Gänsehaut/.test(via('Gänsehaut')),
+    'Export: JAŸ und typografischer Apostroph werden geglaettet (' + via('Gänsehaut') + ')');
+  assert(['Eins', 'Zwei', 'Drei'].every(t => via(t) === 'artist:' + t),
+    'Export: drei Titel eines Kuenstlers kommen aus seinem Katalog');
+  assert(searchTerms.filter(x => x === 'katalog:stapelband').length === 1
+    && !searchTerms.some(x => /^(Eins|Zwei|Drei)\b/.test(x)), 'Export: dafuer genuegt eine Anfrage');
+  assert(via('Unstoppable') === 'local:Unstoppable', 'Export: was in songs.json steht, kostet nichts');
+  assert(G('plJob.missed.size') === 1 && via('Gibts') === 'fehlt', 'Export: der unbekannte Titel bleibt als fehlend stehen');
+  assert(!searchTerms.some(x => /Remaster|Eins Gast|;/.test(x)),
+    'Export: kein Suchbegriff traegt Zusatz oder Semikolon (' + searchTerms.join(' | ') + ')');
+  assert($('#plView').textContent.includes('1 fehlen'), 'Export: die Playlist-Zeile nennt, was fehlt');
+
+  /* ------------------------ Titelliste: sehen, was fehlt, selbst nachhelfen */
+  $('#plView').click(); await tick(10);
+  assert(!$('#imp').hidden && G('impTab') === 'missed', 'Titelliste: oeffnet bei dem, was fehlt');
+  assert($('#impTab [data-v="found"]').textContent === 'Gefunden (6)',
+    'Titelliste: die Reiter zaehlen mit (' + $('#impTab [data-v="found"]').textContent + ')');
+  const missRow = $('#impList .brow');
+  assert(missRow && missRow.textContent.includes('Gibts nicht'), 'Titelliste: der fehlende Titel steht da');
+  missRow.querySelector('button[title="Selbst suchen"]').click(); await tick(20);
+  const finder = $('#impList .imp-find input');
+  assert(finder && finder.value === 'Gibts nicht Niemand',
+    'Titelliste: die Suche ist mit Titel und Kuenstler vorbelegt (' + (finder && finder.value) + ')');
+  finder.value = 'neuer song';
+  finder.dispatchEvent(new w.Event('input'));
+  await waitFor(() => $('#impList .imp-hit .arhit'), 3000);
+  G('renderImport()');
+  assert($('#impList .imp-find input') === finder, 'Titelliste: Nachzeichnen laesst die offene Suche stehen');
+  $('#impList .imp-hit .arhit').click(); await tick(300);
+  assert(via('Gibts') === 'manual:Neuer Song', 'Titelliste: ein Klick ordnet den Treffer zu');
+  assert(G('PL.songs').some(s => s.t === 'Neuer Song'), 'Titelliste: und er spielt in der Playlist mit');
+  assert(JSON.parse(w.localStorage.getItem('songrate:plcache'))[G("plJob.tracks.find(t => t.title === 'Gibts nicht').key")].t === 'Neuer Song',
+    'Titelliste: die Zuordnung ueberlebt das Neuladen');
+  assert(G('plJob.missed.size') === 0 && $('#impList').textContent.includes('Alles gefunden'),
+    'Titelliste: nichts fehlt mehr');
+
+  $('#impTab [data-v="found"]').click(); await tick(10);
+  const testRow = [...$('#impList').querySelectorAll('.brow')].find(r => r.textContent.includes('Testlied'));
+  assert(testRow && testRow.textContent.includes('über die Suche') && testRow.textContent.includes('In der Liste: Testlied - 2005 Remaster') === false,
+    'Titelliste: sagt, woher der Treffer kam');
+  testRow.querySelector('button[title^="Falscher Treffer"]').click(); await tick(300);
+  assert(via('Testlied') === 'fehlt' && !G('PL.songs').some(s => s.t === 'Testlied'),
+    'Titelliste: ein falscher Treffer laesst sich herausnehmen');
+  $('#impTab [data-v="missed"]').click(); await tick(10);
+  $('#impList .brow button[title="Nochmal automatisch suchen"]').click();
+  await waitFor(() => G('plBusy') === false && via('Testlied') !== 'fehlt', 5000);
+  assert(via('Testlied') === 'search:Testlied', 'Titelliste: „nochmal" sucht wieder automatisch');
+  $('#impDone').click();
+  assert($('#imp').hidden, 'Titelliste: schliesst wieder');
+
+  /* Von Hand zugeordnet, waehrend genau dieser Titel noch gesucht wird: die
+     Hand gewinnt, das spaete Suchergebnis wird verworfen. */
+  {
+    const echt = w.fetch;
+    let freigeben;
+    w.fetch = (url, o) => (String(url).includes('term=Testlied')
+      ? new Promise(r => { freigeben = () => r(echt(url, o)); }) : echt(url, o));
+    G("Playlist.assign(plJob, plJob.tracks.find(t => t.title.startsWith('Testlied')).key, null)");
+    G("Playlist.retry(plJob, plJob.tracks.find(t => t.title.startsWith('Testlied')).key); runResolve(plJob)");
+    await waitFor(() => freigeben, 3000);
+    G("Playlist.assign(plJob, plJob.tracks.find(t => t.title.startsWith('Testlied')).key, { t: 'Handwahl', a: 'Mockband', p: 'https://audio/h', k: 77 })");
+    freigeben();
+    await waitFor(() => G('plBusy') === false, 5000);
+    w.fetch = echt;
+    assert(via('Testlied') === 'manual:Handwahl', 'Titelliste: die Handwahl schlaegt die laufende Suche (' + via('Testlied') + ')');
+  }
 
   G("setMode('charts')"); await tick(30);
   assert(G('mode') === 'charts' && G('round')[0].tier.id === 'easy', 'Rueckschaltung in den Chartsmodus');
@@ -842,6 +1051,13 @@ const dummy = n => ({ t: 'Song ' + n, a: 'Kuenstler ' + n, al: 'Album', y: 2020,
     'Kuenstler: alle aus dem Katalog');
   assert(!k$('#pickBar').hidden && /Testband/.test(k$('#pickLabel').textContent),
     'Kuenstler: die Leiste oben nennt den Namen');
+
+  /* Heimspiel: songs.json kennt die Testband nicht, also Apples Reihenfolge. */
+  K('settings.hits = true');
+  assert(K('activePool().length') === Math.min(10, K('pickFiltered.length'))
+    && K('activePool()[0].t') === K('pickFiltered[0].t'),
+    'Heimspiel: beim Kuenstler ohne Streamzahlen in Apples Reihenfolge');
+  K('settings.hits = false');
 
   /* Vorschlaege kommen aus dem Katalog */
   K("suggest('katalog')");
@@ -1536,23 +1752,135 @@ const dummy = n => ({ t: 'Song ' + n, a: 'Kuenstler ' + n, al: 'Album', y: 2020,
     'Zu kurze Playlist: Modus bleibt gesperrt');
 
   /* Drosselung: der Lauf bricht nicht ab, sondern wartet sichtbar und laesst
-     sich abbrechen; die Titelliste bleibt fuer „Weiter suchen" liegen. */
+     sich abbrechen; die Titelliste bleibt fuer „Weiter suchen" liegen. Was
+     schon gefunden ist, laesst sich waehrenddessen spielen. */
   w = makeWindow({});
   await waitFor(() => !w.document.querySelector('#app').hidden);
   w.fetch = async url => String(url).includes('itunes')
     ? { ok: false, status: 403, json: async () => ({}) }
     : { ok: true, status: 200, arrayBuffer: async () => new ArrayBuffer(8) };
   const status = () => w.document.querySelector('#plStatus').textContent;
-  w.__ev("loadPlaylistText('Track Name,Artist Name(s)\\nA,B\\nC,D', 'X')");
-  await waitFor(() => /Apple bremst/.test(status()));
-  assert(/Apple bremst – weiter in \d+ s/.test(status()), 'Drosselung: Wartezeit wird heruntergezählt (' + status() + ')');
+  const sub = () => w.document.querySelector('#plSub').textContent;
+  w.__ev("loadPlaylistText('Track Name,Artist Name(s)\\nUnstoppable,Sia\\nBlinding Lights,The Weeknd\\n"
+    + "Hello,Adele\\nbad guy,Billie Eilish\\nStronger,Britney Spears\\nLevitating,Dua Lipa\\nA,B\\nC,D', 'X')");
+  await waitFor(() => /Apple bremst/.test(sub()));
+  assert(/Apple bremst – weiter in \d+ s/.test(sub()), 'Drosselung: Wartezeit wird heruntergezaehlt (' + sub() + ')');
+  assert(/6 von 8 durchsucht · 6 gefunden/.test(status()),
+    'Drosselung: der Fortschritt bleibt dabei stehen (' + status() + ')');
+  assert(!w.document.querySelector('#plBar').hidden, 'Drosselung: der Balken auch');
+  assert(/^6\/8 · Pause \d+ s/.test(w.__ev("panelSum('playlist')[0]")),
+    'Drosselung: die zugeklappte Zeile sagt es (' + w.__ev("panelSum('playlist')[0]") + ')');
   assert(!w.document.querySelector('#plCancel').hidden, 'Drosselung: Abbrechen ist sichtbar');
+  await waitFor(() => w.__ev('mode') === 'playlist', 3000);
+  assert(w.__ev('plBusy') && w.__ev('mode') === 'playlist'
+    && w.__ev('round').every(r => w.__ev('PL.songs').some(s => s.t === r.song.t)),
+    'Spielen waehrend der Suche: mit dem Gefundenen geht es schon los');
+
+  /* Vorziehen, waehrend der Lauf wartet. */
+  w.document.querySelector('#plView').click(); await tick(10);
+  assert(w.__ev('impTab') === 'pending', 'Titelliste: waehrend der Suche zuerst das Offene');
+  const offenRows = [...w.document.querySelectorAll('#impList .brow')];
+  assert(offenRows.length === 2 && offenRows[0].textContent.includes('wird gerade gesucht'),
+    'Titelliste: der vorderste Titel ist als laufend markiert');
+  offenRows[1].querySelector('button[title="Vorziehen"]').click(); await tick(10);
+  assert(w.__ev('plJob.pending[0].title') === 'C', 'Titelliste: Vorziehen stellt den Titel an die Spitze');
+  assert(w.document.querySelector('#impList .brow').textContent.includes('C'), 'Titelliste: und zeigt ihn oben');
+  w.document.querySelector('#impDone').click();
 
   w.document.querySelector('#plCancel').click();
   await waitFor(() => w.__ev('plBusy') === false);
   assert(w.__ev('plBusy') === false, 'Abbrechen: Lauf endet');
-  assert(!w.document.querySelector('#plResume').hidden, 'Abbrechen: „Weiter suchen" steht bereit');
+  assert(!w.document.querySelector('#plResume').hidden
+    && /Weiter suchen \(2 offen\)/.test(w.document.querySelector('#plResume').textContent),
+    'Abbrechen: „Weiter suchen" steht bereit');
   assert(w.__ev('Playlist.restoreQueue()') != null, 'Abbrechen: Titelliste bleibt gespeichert');
+
+  /* Nach dem Neuladen ist der Auftrag wieder da - mit dem, was offen ist. */
+  const merk = {};
+  for (let i = 0; i < w.localStorage.length; i++) merk[w.localStorage.key(i)] = w.localStorage.getItem(w.localStorage.key(i));
+  w = makeWindow(merk);
+  await waitFor(() => !w.document.querySelector('#app').hidden);
+  assert(w.__ev('plJob') && w.__ev('plJob.found.size') === 6 && w.__ev('plJob.pending.length') === 2,
+    'Neuladen: der Auftrag steht wieder mit 6 gefunden und 2 offen');
+  assert(w.__ev('PL.songs.length') === 6 && /Weiter suchen \(2 offen\)/.test(w.document.querySelector('#plResume').textContent),
+    'Neuladen: Playlist und „Weiter suchen" sind da');
+
+  { /* eigener Block: die Namen hier gibt es weiter oben schon */
+  /* ------------------------------------------------------------ Spotify */
+  w = makeWindow({});
+  await waitFor(() => !w.document.querySelector('#app').hidden);
+  let ziel = null;
+  w.__ev('Spotify.nav').go = u => { ziel = u; };
+  const sp$ = q => w.document.querySelector(q);
+  assert(sp$('#spRedirect').textContent === 'https://example.org/', 'Spotify: die Redirect-Adresse steht zum Abschreiben da');
+  assert(!sp$('#spSetup').hidden && !sp$('#spLogin').hidden && sp$('#spLogout').hidden,
+    'Spotify: abgemeldet stehen Anleitung und Anmeldeknopf da');
+  sp$('#spLogin').click(); await tick(20);
+  assert(ziel === null && /Client ID/.test(sp$('#spNote').textContent), 'Spotify: ohne Client ID geht es nicht los');
+  sp$('#spClient').value = 'test-client';
+  sp$('#spLogin').click();
+  await waitFor(() => ziel, 3000);
+  const auth = new URL(ziel);
+  assert(auth.origin === 'https://accounts.spotify.com' && auth.searchParams.get('code_challenge_method') === 'S256'
+    && auth.searchParams.get('code_challenge').length === 43 && auth.searchParams.get('client_id') === 'test-client'
+    && auth.searchParams.get('redirect_uri') === 'https://example.org/'
+    && /playlist-read-private/.test(auth.searchParams.get('scope')),
+    'Spotify: Anmeldung mit PKCE (S256), Client ID und Redirect-Adresse');
+  const gemerkt = JSON.parse(w.localStorage.getItem('songrate:spotify'));
+  assert(gemerkt.verifier && gemerkt.verifier.length === 64 && gemerkt.state === auth.searchParams.get('state'),
+    'Spotify: Verifier und State bleiben fuer die Rueckkehr liegen');
+
+  /* Rueckkehr mit falschem State: abgelehnt, ohne Token-Anfrage. */
+  spotifyCalls = [];
+  w = makeWindow({ 'songrate:spotify': JSON.stringify(gemerkt) }, null, 'https://example.org/?code=abc&state=falsch');
+  await waitFor(() => !w.document.querySelector('#app').hidden);
+  await waitFor(() => /passt nicht/.test(w.document.querySelector('#spNote').textContent), 3000);
+  assert(!spotifyCalls.length && /passt nicht/.test(w.document.querySelector('#spNote').textContent),
+    'Spotify: eine fremde Rueckmeldung wird nicht eingeloest');
+
+  /* Die echte Rueckkehr. */
+  spotifyCalls = [];
+  w = makeWindow({ 'songrate:spotify': JSON.stringify(gemerkt) }, null,
+    'https://example.org/?code=abc&state=' + gemerkt.state);
+  await waitFor(() => !w.document.querySelector('#app').hidden);
+  const S = s2 => w.__ev(s2), s$ = q => w.document.querySelector(q);
+  await waitFor(() => s$('#spLists').children.length > 0, 3000);
+  assert(spotifyCalls[0] === 'token:authorization_code', 'Spotify: der Code wird gegen ein Token getauscht');
+  assert(w.location.search === '', 'Spotify: die Adresse ist danach wieder sauber');
+  assert(s$('#plPanel').open && s$('#spBox').open, 'Spotify: nach der Rueckkehr steht die Liste offen da');
+  assert(s$('#spSetup').hidden && s$('#spLogin').hidden && !s$('#spLogout').hidden, 'Spotify: angemeldet');
+  const zeilen = [...s$('#spLists').querySelectorAll('.arhit')];
+  assert(zeilen.length === 4 && zeilen[0].textContent.includes('Lieblingssongs'),
+    'Spotify: Lieblingssongs und die drei Playlists');
+  const fremd = zeilen.find(z => z.textContent.includes('Discover Weekly'));
+  assert(fremd.disabled && /nicht lesbar/.test(fremd.textContent) && !zeilen.find(z => z.textContent.includes('Gemeinsam')).disabled,
+    'Spotify: fremde Playlists stehen ausgegraut da, gemeinsame nicht');
+  zeilen.find(z => z.textContent.includes('Meine Klassiker')).click();
+  await waitFor(() => S('plJob') && S('plJob.name') === 'Meine Klassiker' && !S('plBusy'), 8000);
+  assert(S('plJob.tracks.length') === 3, 'Spotify: zwei Seiten geholt, die Episode faellt raus');
+  assert(S("plJob.tracks.find(t => t.title === 'September').lead") === 'Earth, Wind & Fire',
+    'Spotify: der erste Kuenstler bleibt ein Name, auch mit Komma');
+  assert(S("plJob.tracks.find(t => t.title.startsWith('Levitating')).artist") === 'Dua Lipa;DaBaby',
+    'Spotify: mehrere Kuenstler wie bei Exportify');
+  assert(S("[...plJob.found.values()].filter(f => f.via === 'local').length") === 3,
+    'Spotify: alle drei stehen in songs.json und kosten keine Anfrage, auch „Earth, Wind & Fire"');
+
+  /* Ein abgelaufenes Token wird still erneuert. */
+  const st = JSON.parse(w.localStorage.getItem('songrate:spotify'));
+  st.exp = 0;
+  w.localStorage.setItem('songrate:spotify', JSON.stringify(st));
+  spotifyCalls = [];
+  w.__ev('spLists = null; loadSpotifyLists()');
+  await waitFor(() => w.__ev('spLists'), 3000);
+  assert(spotifyCalls[0] === 'token:refresh_token' && w.__ev('spLists.length') === 3,
+    'Spotify: ein abgelaufenes Token wird mit dem Refresh-Token erneuert');
+
+  s$('#spLogout').click();
+  assert(!w.__ev('Spotify.loggedIn()') && !s$('#spLogin').hidden
+    && JSON.parse(w.localStorage.getItem('songrate:spotify')).clientId === 'test-client',
+    'Spotify: abmelden vergisst die Tokens, die Client ID bleibt');
+
+  }
 
   console.log(failed ? `\n${failed} Fehler` : '\nAlles durchgespielt');
   process.exit(failed ? 1 : 0);
