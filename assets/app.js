@@ -97,7 +97,11 @@ function whyOf(e) {
   } else if (e.net) {
     z.push(`Die Anfrage an ${wo} ist nicht angekommen oder blieb ohne Antwort – der Browser hat sie abgebrochen, bevor eine Antwort da war. Typische Gründe: kein Netz oder Flugmodus, ein Werbe- oder Inhaltsblocker (im Browser, als App oder im WLAN), ein VPN oder Jugendschutzfilter, eine Verbindung, die mittendrin abgerissen ist`
       + (/^http:/.test(e.url || '') ? ', oder Mixed Content: die Seite läuft über https und darf nichts von http laden' : '')
-      + (e.network ? ', oder der Server erlaubt keine fremde Herkunft (CORS)' : '') + '.');
+      + (e.network ? ', oder der Server erlaubt keine fremde Herkunft (CORS)' : '') + '.'
+      + (/apple\.com/.test(e.url || '')
+        ? ' Apple selbst tut das auch: bei zu vielen Anfragen von derselben Adresse bricht es Verbindungen ab, statt zu antworten – im Mobilfunk teilen sich viele Nutzer eine Adresse, da kann das Limit schon verbraucht sein. Probe: diese Adresse direkt in Safari öffnen; kommt dort JSON, liegt es nicht am Netz. Oft hilft WLAN statt Mobilfunk oder ein paar Minuten warten.'
+        : '')
+      + (/Load failed/i.test(String(e.cause || '')) ? ' („Load failed“ ist Safaris Wort dafür, mehr sagt es nicht.)' : ''));
   } else if (e.status) {
     z.push(`${wo} hat mit HTTP ${e.status} geantwortet – ${HTTP_TEXT[e.status] || 'ein Fehler auf der anderen Seite'}.`);
   } else if (e.auth) {

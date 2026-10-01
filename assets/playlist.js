@@ -640,7 +640,7 @@ const Playlist = (() => {
     if (prefill(j, opts.local, cache) && opts.onFound) opts.onFound(null);
     tell();
 
-    let waits = 0, throttled = false, fehler = null;
+    let waits = 0, throttled = false, fehler = null, netStreak = 0;
     while (j.pending.length && !stop()) {
       const t = j.pending[0];
       if (misses.has(t.key)) { hit(t, null); continue; }
@@ -727,6 +727,7 @@ const Playlist = (() => {
         if (c) { const song = toSong(c); cache[t.key] = song; hit(t, song, via); }
         else { misses.add(t.key); t.why = { kind: 'none', log: t.log || [] }; hit(t, null); }
         waits = 0;
+        netStreak = 0;
       } catch (e) {
         fehler = e;
         if (!e.throttled) {
@@ -735,6 +736,19 @@ const Playlist = (() => {
           if ((e.net || e.status >= 500) && t.netTries <= NET_RETRY.length) {
             note(t, `${e.net ? 'Verbindungsfehler' : 'HTTP ' + e.status} – neuer Versuch in ${NET_RETRY[t.netTries - 1] / 1000} s`);
             await sleep(NET_RETRY[t.netTries - 1]);
+            continue;
+          }
+          /* Scheitert schon der zweite Titel hintereinander an der
+             Verbindung, liegt es nicht am Titel: Apple bricht bei zu vielen
+             Anfragen auch einfach die Verbindung ab, statt 403 zu schicken.
+             Dann wie bei einer Sperre warten, der Titel bleibt offen. */
+          if ((e.net || e.status >= 500) && ++netStreak >= 2) {
+            t.netTries = 0;
+            note(t, 'Verbindung bricht bei jedem Titel ab – Pause wie bei einer Sperre');
+            saveCache(cache);
+            paceThrottled();
+            if (waits >= BACKOFF.length) { throttled = true; break; }
+            if (!await waitOut(BACKOFF[waits++], opts)) break;
             continue;
           }
           /* Kein Urteil von Apple, sondern keine Antwort: `misses` bleibt

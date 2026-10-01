@@ -62,8 +62,12 @@ Aufwecker, der so lange erneut versucht, bis der Context wirklich läuft.
    Sperrbildschirm). `ensure()` hat lange nur `suspended` mit `resume()`
    geweckt – ein unterbrochener Context blieb auf dem iPhone stumm, und
    nichts sagte es. Jetzt wird alles geweckt, was nicht `running` ist, auch
-   beim Zurückkehren in den Vordergrund (`visibilitychange`), und ein
-   geschlossener Context wird neu angelegt. **Gemeldet vom Besitzer am 1.
+   beim Zurückkehren in den Vordergrund (`visibilitychange`). **Und weil
+   `resume()` einem `interrupted` Context auf iOS oft nicht mehr hilft**
+   (zweite Meldung des Besitzers: still nach App-Wechsel und zurück),
+   wirft `unlock()` ihn in der Geste weg und legt ihn neu an (`rebuild()`,
+   auch nach drei vergeblichen Gesten bei `suspended`); die dekodierten
+   Puffer hängen nicht am Context. **Gemeldet vom Besitzer am 1.
    Oktober** („am iPhone höre ich nichts", in Spiel, Songliste und
    Titelliste); im Code war für den Ton nichts umgebaut worden, deshalb die
    Vermutung auf diesen Zustand – belegen kann es erst das ? unter dem
@@ -481,7 +485,14 @@ Offen / Fehlt), je Zeile:
   **Ein Netzfehler ist kein Urteil.** Früher war ein Titel nach einem
   `TypeError` sofort „fehlt". Jetzt wird derselbe Titel nach `NET_RETRY`
   (1,5 s, 3 s) noch zweimal versucht, erst dann steht er unter *Fehlt* –
-  und nicht in `misses`, „Weiter suchen" nimmt ihn wieder mit.
+  und nicht in `misses`, „Weiter suchen" nimmt ihn wieder mit. Scheitert
+  schon der **zweite Titel hintereinander** so (`netStreak`), liegt es nicht
+  am Titel: Apple bricht bei zu vielen Anfragen von einer Adresse auch
+  einfach die Verbindung ab, statt 403 zu schicken (im Mobilfunk teilen
+  sich viele eine Adresse). Dann die `BACKOFF`-Pause wie bei einer Sperre,
+  der Titel bleibt offen. Safari nennt jeden solchen Abbruch „Load failed"
+  – `whyOf()` sagt das dazu und schlägt die Probe vor: die Adresse direkt
+  in Safari öffnen.
 - **Gefunden**: ▶, Lupe (anderen Song zuordnen), ✕ falscher Treffer
   (`Playlist.assign(j, key, null)`: Cache-Eintrag weg, Titel nach *Fehlt*).
   Weicht der Grundtitel ab, steht das Original gelb darunter.

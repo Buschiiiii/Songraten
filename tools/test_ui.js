@@ -114,8 +114,11 @@ function makeWindow(store, patchDb, url) {
   w.URL.createObjectURL = () => { const u = 'blob:test/' + (++urlNr); w.__urls.add(u); return u; };
   w.URL.revokeObjectURL = u => w.__urls.delete(u);
 
+  w.__ctxCount = 0;
   w.AudioContext = class {
-    constructor() { this.state = 'running'; this.currentTime = 0; this.destination = {}; }
+    /* `__ctxState` laesst den Test einen haengenden Context nachstellen -
+       auch einen frisch angelegten, sonst heilt rebuild() ihn sofort. */
+    constructor() { w.__ctxCount++; this.state = w.__ctxState || 'running'; this.currentTime = 0; this.destination = {}; }
     createGain() { return { gain: { value: 1, setValueAtTime() {}, linearRampToValueAtTime() {} }, connect() {} }; }
     createBufferSource() { const s = { buffer: null, connect() {}, start() {}, stop() {}, onended: null }; setTimeout(() => s.onended && s.onended(), 0); return s; }
     /* Previews kommen als Acht-Byte-Attrappe herein, lokale Dateien sind
@@ -427,17 +430,24 @@ const dummy = n => ({ t: 'Song ' + n, a: 'Kuenstler ' + n, al: 'Album', y: 2020,
   await tick(600);
   assert($('#audioNote').textContent === '', 'Abspielen: laeuft der Ton, bleibt die Zeile darunter leer');
 
-  /* Kein Ton: der Context haengt (iOS 'interrupted') - die Zeile sagt es. */
-  G("Audio2.ensure().state = 'interrupted'");
-  await G('playCurrent()');
-  await tick(650);
-  assert(/Kein Ton/.test($('#audioNote').textContent) && $('#audioNote .why')
-    && /unterbrochen/.test($('#audioNote .why').title) && /AudioContext interrupted/.test($('#audioNote .why').title),
-    'Abspielen: haengt der Tonkanal, steht es unter dem Knopf, mit Erklaerung (' + $('#audioNote').textContent + ')');
-  G("Audio2.ensure().state = 'running'");
-  await G('playCurrent()');
-  await tick(650);
-  assert($('#audioNote').textContent === '', 'Abspielen: laeuft er wieder, verschwindet die Zeile');
+  /* Kein Ton: der Context haengt (iOS 'interrupted'). Ein Tipp wirft ihn
+     weg und legt ihn neu an; bleibt auch der neue haengen, sagt es die Zeile. */
+  {
+    const vorher = w.__ctxCount;
+    w.__ctxState = 'interrupted';
+    G("Audio2.ensure().state = 'interrupted'");
+    await G('playCurrent()');
+    await tick(650);
+    assert(w.__ctxCount === vorher + 1, 'Abspielen: ein unterbrochener Context wird in der Geste neu angelegt');
+    assert(/Kein Ton/.test($('#audioNote').textContent) && $('#audioNote .why')
+      && /unterbrochen/.test($('#audioNote .why').title) && /AudioContext interrupted/.test($('#audioNote .why').title),
+      'Abspielen: haengt der Tonkanal, steht es unter dem Knopf, mit Erklaerung (' + $('#audioNote').textContent + ')');
+    w.__ctxState = null;
+    await G('playCurrent()');
+    await tick(650);
+    assert(w.__ctxCount === vorher + 2 && G('Audio2.state()') === 'running' && $('#audioNote').textContent === '',
+      'Abspielen: der naechste Tipp bringt einen laufenden Context, die Zeile verschwindet');
+  }
 
   /* Die Hoerprobe kommt nicht: Fehler mit Adresse, die Zeile bleibt bis zur naechsten Runde. */
   {

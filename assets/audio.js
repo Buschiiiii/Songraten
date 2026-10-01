@@ -39,8 +39,22 @@ const Audio2 = (() => {
      aufgeweckt und einmal etwas abgespielt wurde - deshalb der stumme
      Ein-Sample-Puffer. Ohne audioSession.type = 'playback' schaltet Safari
      den Ton ausserdem mit dem Klingelschalter stumm. */
+  /* Wie oft eine Geste den Context nicht zum Laufen gebracht hat. */
+  let stuck = 0;
+
+  /* Auf dem iPhone hilft resume() einem 'interrupted' Context oft nicht
+     mehr - der bekannte Ausweg ist, ihn in der Geste wegzuwerfen und neu
+     anzulegen. Die dekodierten Puffer sind davon unabhaengig. */
+  function rebuild() {
+    try { if (ctx && ctx.close) ctx.close().catch(() => {}); } catch (e) {}
+    ctx = null; gain = null; stuck = 0;
+    return ensure();
+  }
+
   function unlock() {
-    const c = ensure();
+    let c = ensure();
+    if (c.state === 'interrupted' || (c.state !== 'running' && ++stuck > 3)) c = rebuild();
+    if (c.state === 'running') stuck = 0;
     try {
       if (navigator.audioSession) navigator.audioSession.type = 'playback';
     } catch (e) {}
