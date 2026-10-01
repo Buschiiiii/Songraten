@@ -370,6 +370,24 @@ const Playlist = (() => {
               .replace('itunes.apple.com/lookup?', 'itunes.apple.com/WebObjects/MZStoreServices.woa/ws/wsLookup?')
       + '&_=' + Date.now();
   }
+  /* Dritter Weg: XMLHttpRequest. Anderer Pfad durch den Browser als fetch -
+     wo fetch an einer bestimmten Antwort scheitert (WebKit-Eigenheit), kommt
+     XHR oft noch durch. Gleiche Fehlerform wie oben. */
+  function xhr(url) {
+    return new Promise((res, rej) => {
+      const x = new XMLHttpRequest();
+      x.open('GET', url);
+      x.onload = () => {
+        if (x.status === 403 || x.status === 429) return rej(Object.assign(new Error('throttled'), { throttled: true, url, status: x.status }));
+        if (x.status < 200 || x.status >= 300) return rej(Object.assign(new Error('HTTP ' + x.status), { url, status: x.status }));
+        try { res(JSON.parse(x.responseText)); }
+        catch (e) { rej(Object.assign(new Error('Antwort ist kein JSON'), { url, cause: String(e && e.message || e) })); }
+      };
+      x.onerror = x.ontimeout = x.onabort = () => rej(Object.assign(new Error('Netzfehler'), { url, net: true, cause: 'XMLHttpRequest: Fehler' }));
+      x.send();
+    });
+  }
+
   async function holen(url, nochmal) {
     let res;
     try { res = await fetch(url, nochmal ? { cache: 'no-store' } : undefined); }
@@ -377,7 +395,11 @@ const Playlist = (() => {
       const alt = !nochmal && /itunes\.apple\.com\/(search|lookup)\?/.test(url) ? ausweich(url) : '';
       if (alt) {
         try { return await holen(alt, true); }
-        catch (e2) { throw Object.assign(e2, { url, alt: true }); }
+        catch (e2) {
+          if (e2.throttled || e2.status) throw Object.assign(e2, { url });
+          try { return await xhr(url); }
+          catch (e3) { throw Object.assign(e3, { url, alt: true, cause: String(e && e.message || e) + ' · ' + (e3.cause || e3.message) }); }
+        }
       }
       throw Object.assign(new Error('Netzfehler'), { url, net: true, cause: String(e && e.message || e) });
     }
@@ -399,8 +421,22 @@ const Playlist = (() => {
      trifft, entscheidet die alte Punktwertung ueber alles Gesammelte. */
   async function searchOne(t) {
     const alle = [];
+    let panne = null, antworten = 0;
     for (const q of queries(t)) {
-      const cands = await lookup(q);
+      let cands;
+      /* Bricht eine Anfrage ab, probieren die anderen Begriffe trotzdem -
+         am iPhone scheiterte ein bestimmter Begriff jedes Mal, der
+         naechste ging. Erst wenn keine einzige Antwort kam, ist es ein
+         Verbindungsfehler; eine Sperre bricht sofort ab. */
+      try { cands = await lookup(q); }
+      catch (e) {
+        if (e.throttled) throw e;
+        panne = e;
+        note(t, `Suche „${q.term}“ (${q.country}): Anfrage abgebrochen (${e.message})`);
+        await sleep(pace.delay);
+        continue;
+      }
+      antworten++;
       const c = pick(cands, t);
       paceOk();
       if (c) return c;
@@ -408,6 +444,7 @@ const Playlist = (() => {
       alle.push(...cands);
       await sleep(pace.delay);
     }
+    if (panne && !antworten) throw panne;
     let best = null, bestScore = 0;
     for (const c of alle) {
       const sc = score(c, t);

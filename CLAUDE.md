@@ -524,6 +524,17 @@ Offen / Fehlt), je Zeile:
   um, also sollte es. Die Probe „Adresse direkt in Safari öffnen" taugt
   auf dem iPhone übrigens nicht: iOS öffnet `itunes.apple.com` als
   Universal Link in der Musik-App.
+
+  **Nachtrag (18:46, iOS 27.0, WLAN):** auch der Ausweichweg scheiterte
+  für „Lemon Tree Fools Garden" und „Cut the Bridge Linkin Park", während
+  „And We Danced Macklemore" von Hand ging – es hängt also am
+  **Suchbegriff bzw. an Apples Antwort darauf**, nicht am Netz oder Cache
+  (Verdacht: WebKit-Eigenheit beim Lesen bestimmter Antworten). Zwei
+  Folgen: `searchOne()` bricht bei einem abgebrochenen Begriff nicht mehr
+  ab, sondern probiert die übrigen (Titel allein, US-Store) – erst wenn
+  **keine** Antwort kam, ist es ein Verbindungsfehler; und `holen()` hat
+  als dritten Weg `XMLHttpRequest` (`xhr()`), ein anderer Pfad durch den
+  Browser als `fetch`.
 - **Gefunden**: ▶, Lupe (anderen Song zuordnen), ✕ falscher Treffer
   (`Playlist.assign(j, key, null)`: Cache-Eintrag weg, Titel nach *Fehlt*).
   Weicht der Grundtitel ab, steht das Original gelb darunter.

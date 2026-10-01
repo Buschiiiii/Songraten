@@ -57,6 +57,9 @@ const EXTRA = [
      nicht zu finden, ueber die ISRC schon. */
   { trackName: 'Dieses Lied (Original Mix)', artistName: 'Anderer Name', collectionName: 'X', releaseDate: '2012-01-01',
     primaryGenreName: 'Pop', previewUrl: 'https://audio/m3.m4a', artworkUrl100: 'https://art/m3/100x100bb.jpg', trackId: 33, isrc: 'DEMOC1200003' },
+  /* Die Suche „Zweitweg Kaputtband" bricht ab (kaputt), „Zweitweg" allein geht. */
+  { trackName: 'Zweitweg', artistName: 'Kaputtband', collectionName: 'Y', releaseDate: '2020-01-01',
+    primaryGenreName: 'Pop', previewUrl: 'https://audio/m4.m4a', artworkUrl100: 'https://art/m4/100x100bb.jpg', trackId: 34 },
 ];
 let isrcBatchBroken = false;   /* Apple nimmt angeblich keine Liste */
 let isrcCalls = [];
@@ -76,6 +79,7 @@ let itunesCalls = 0;
 let srvCalls = [];
 let odesliCalls = [];
 let altCalls = [];
+let xhrCalls = [];
 
 /* Ein Puffer, wie ihn decodeAudioData liefern wuerde. Niedrige Abtastrate,
    damit drei Minuten Testton nicht 60 MB belegen. */
@@ -135,6 +139,18 @@ function makeWindow(store, patchDb, url) {
     createBuffer(ch, len, rate) { return fakeBuffer(len / rate, 0, ch, rate, true); }
     resume() {}
   };
+  /* XMLHttpRequest, der dritte Weg: laeuft ueber denselben fetch-Mock,
+     nur mit Marke - fuer „xhrweg" ist er der einzige, der durchkommt. */
+  w.XMLHttpRequest = class {
+    open(m, url) { this.url = url; }
+    send() {
+      xhrCalls.push(this.url);
+      w.fetch(this.url, { xhr: true }).then(async r => {
+        this.status = r.status; this.responseText = JSON.stringify(await r.json());
+        if (this.onload) this.onload();
+      }).catch(() => { if (this.onerror) this.onerror(); });
+    }
+  };
   /* Dekodiert wird offline - der echte Context entsteht erst in der Geste. */
   w.OfflineAudioContext = class extends w.AudioContext {
     constructor() { super(); w.__ctxCount--; w.__offCount = (w.__offCount || 0) + 1; }
@@ -151,6 +167,7 @@ function makeWindow(store, patchDb, url) {
       url = url.replace(/WebObjects\/MZStoreServices\.woa\/ws\/wsSearch\?/, 'search?')
                .replace(/WebObjects\/MZStoreServices\.woa\/ws\/wsLookup\?/, 'lookup?').replace(/&_=\d+$/, '');
     } else if (/itunes\.apple\.com\/search\?.*umleitung/i.test(url)) throw new TypeError('Load failed');
+    if (/xhrweg/i.test(url) && !(opts && opts.xhr)) throw new TypeError('Load failed');
     /* Der Browser bricht http-Anfragen aus einer https-Seite ab, ohne zu
        fragen - hier genauso. */
     if (url.startsWith('http://')) { srvCalls.push(url); throw new TypeError('Failed to fetch'); }
@@ -917,7 +934,8 @@ const dummy = n => ({ t: 'Song ' + n, a: 'Kuenstler ' + n, al: 'Album', y: 2020,
     + 'spotify:track:8,DEMOC1200003,"Dieses Lied","X","Ganz Anders"\n'
     + 'spotify:track:9,,"Vier","Stapel","Stapelband"\n'
     + 'https://open.spotify.com/track/expl1,,"Explizites Lied","Vol.1","Mockband"\n'
-    + 'spotify:track:11,,"Kaputt Lied","Nirgends","Kaputtband"\n';
+    + 'spotify:track:11,,"Kaputt Lied","Nirgends","Kaputtband"\n'
+    + 'spotify:track:12,,"Zweitweg","Y","Kaputtband"\n';
   assert(G(`Playlist.parse(${JSON.stringify(exportify)}).tracks[0].isrc`) === 'DEMOC8300001'
     && G(`Playlist.parse(${JSON.stringify(exportify)}).tracks[1].isrc`) == null,
     'Export: die ISRC-Spalte wird gelesen, leere Zellen bleiben leer');
@@ -953,8 +971,12 @@ const dummy = n => ({ t: 'Song ' + n, a: 'Kuenstler ' + n, al: 'Album', y: 2020,
     'Export: der Grund fuehrt Protokoll - ISRC, Suche, Album (' + whyVon('Gibts').log.join(' | ') + ')');
   assert(whyVon('Kaputt').kind === 'error' && whyVon('Kaputt').error.net
     && whyVon('Kaputt').log.filter(l => /neuer Versuch/.test(l)).length === 2
-    && searchTerms.filter(x => /^Kaputt Lied Kaputtband$/.test(x)).length === 6 && altCalls.some(u => /Kaputt/.test(u)),
+    && searchTerms.filter(x => /^Kaputt Lied Kaputtband$/.test(x)).length >= 6 && altCalls.some(u => /Kaputt/.test(u))
+    && xhrCalls.some(u => /Kaputt/.test(u)),
     'Export: ein Netzfehler wird zweimal wiederholt, dann steht er als Grund da (' + whyVon('Kaputt').log.join(' | ') + ')');
+  assert(via('Zweitweg') === 'search:Zweitweg' && whyVon('Zweitweg') == null
+    && G("plJob.tracks.find(x => x.title === 'Zweitweg').log").some(l => /^Suche „Zweitweg Kaputtband“ \(DE\): Anfrage abgebrochen/.test(l)),
+    'Export: bricht ein Suchbegriff ab, geht es mit dem naechsten weiter (' + via('Zweitweg') + ')');
   assert(via('Explizites') === 'album:Explizites Lied',
     'Export: was Apples Suche verschweigt, kommt ueber das Album (' + via('Explizites') + ')');
   /* „Explizites Lied": Album in DE gefunden, eine Suche. „Gibts nicht":
@@ -972,7 +994,7 @@ const dummy = n => ({ t: 'Song ' + n, a: 'Kuenstler ' + n, al: 'Album', y: 2020,
   /* ------------------------ Titelliste: sehen, was fehlt, selbst nachhelfen */
   $('#plView').click(); await tick(10);
   assert(!$('#imp').hidden && G('impTab') === 'missed', 'Titelliste: oeffnet bei dem, was fehlt');
-  assert($('#impTab [data-v="found"]').textContent === 'Gefunden (9)',
+  assert($('#impTab [data-v="found"]').textContent === 'Gefunden (10)',
     'Titelliste: die Reiter zaehlen mit (' + $('#impTab [data-v="found"]').textContent + ')');
   const missRow = $('#impList .brow');
   {
@@ -1840,6 +1862,12 @@ const dummy = n => ({ t: 'Song ' + n, a: 'Kuenstler ' + n, al: 'Album', y: 2020,
     && altCalls.length === 1 && /wsSearch\?.*umleitung.*&_=\d+$/.test(altCalls[0]),
     'Fehler: bricht die Weiche ab, geht es direkt zum Dienst, am Cache vorbei (' + altCalls.length + ')');
   assert(/zweite Weg/.test(why.title), 'Fehler: scheitert auch der Ausweichweg, steht es in der Erklaerung');
+  xhrCalls = [];
+  p$('#plFind').value = 'xhrweg lied';
+  p$('#plFind').dispatchEvent(new w9.KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+  await waitFor(() => /Nichts gefunden/.test(p$('#plFindNote').textContent), 5000);
+  assert(/Nichts gefunden/.test(p$('#plFindNote').textContent) && xhrCalls.length === 1,
+    'Fehler: scheitern fetch und Ausweichweg, kommt XMLHttpRequest noch durch (' + xhrCalls.length + ')');
   why = await fehlSuche('fuenfhundert lied');
   assert(/HTTP 500/.test(why.title) && /Fehler auf dem Server/.test(why.title),
     'Fehler: ein HTTP-Status wird genannt und uebersetzt (' + why.title.split('\n')[0].slice(0, 60) + ')');
