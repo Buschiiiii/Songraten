@@ -73,10 +73,27 @@ Aufwecker, der so lange erneut versucht, bis der Context wirklich läuft.
    Vermutung auf diesen Zustand – belegen kann es erst das ? unter dem
    Knopf.
 
+5. **Die Uhr kann stehen, obwohl der Context `running` meldet.** Dritte
+   Meldung des Besitzers (Screenshots, 18:17): Stummschalter an, Dynamic
+   Island zeigt einen Audiokanal, kein Ton, und das Viereck auf dem Knopf
+   blieb stehen – `onended` kam nie, also kam `currentTime` nicht voran.
+   Genau so verhält sich iOS, wenn der Context **vor** `audioSession.type
+   = 'playback'` entstanden ist: er wurde beim Start der Seite angelegt,
+   weil `preload()` zum Dekodieren `ensure()` rief, die Art kam erst in
+   der ersten Geste – zu spät. Deshalb jetzt: `session()` beim Laden, in
+   `ensure()` und `unlock()`; dekodiert und geschnitten wird mit einem
+   `OfflineAudioContext` (`decoder()`), der echte Context entsteht erst in
+   der Geste (Test: nach dem Boot `Audio2.state() === 'none'`). Und
+   `alive()` prüft nach dem Start, ob die Uhr läuft (`mark`): steht sie,
+   wirft `audioCheck()` den Context weg (`rebuild()`), die Zeile sagt es,
+   und `unlock()` legt beim nächsten Tipp einen frischen an. Das Viereck
+   fällt über einen Timer auch ohne `onended` (`playEndTimer`,
+   `previewSong()` ruft `done` genau einmal).
+
 **Wenn nichts zu hören ist, sagt die Seite es.** `audioCheck()` schaut
-500 ms nach dem Start, ob der Context `running` ist; sonst steht unter dem
-Knopf „Kein Ton – nochmal auf Abspielen tippen" mit dem ? (Zustand,
-Abtastrate, `audioSession`, Lautstärke, mögliche Gründe). Eine Hörprobe,
+500 ms nach dem Start, ob der Context `running` ist und seine Uhr läuft;
+sonst steht unter dem Knopf „Kein Ton – nochmal auf Abspielen tippen" mit
+dem ? (Zustand, Abtastrate, `audioSession`, Lautstärke, mögliche Gründe). Eine Hörprobe,
 die nicht lädt oder sich nicht dekodieren lässt, steht ebenfalls dort
 (`r.loadError`, `Audio2.diag()`); in Songliste und Titelliste hängt der
 Fehler an der Zeile oben (`browErr`, `impErr`), `previewSong()` gibt ihn im

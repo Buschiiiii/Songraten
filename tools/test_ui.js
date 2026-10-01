@@ -117,8 +117,11 @@ function makeWindow(store, patchDb, url) {
   w.__ctxCount = 0;
   w.AudioContext = class {
     /* `__ctxState` laesst den Test einen haengenden Context nachstellen -
-       auch einen frisch angelegten, sonst heilt rebuild() ihn sofort. */
-    constructor() { w.__ctxCount++; this.state = w.__ctxState || 'running'; this.currentTime = 0; this.destination = {}; }
+       auch einen frisch angelegten, sonst heilt rebuild() ihn sofort.
+       `__clockDead`: 'running', aber die Uhr steht (iOS mit Stummschalter). */
+    constructor() { w.__ctxCount++; this.state = w.__ctxState || 'running'; this.t0 = Date.now(); this.destination = {}; }
+    get currentTime() { return this.state === 'running' && !w.__clockDead ? (Date.now() - this.t0) / 1000 : 0; }
+    close() { this.state = 'closed'; return Promise.resolve(); }
     createGain() { return { gain: { value: 1, setValueAtTime() {}, linearRampToValueAtTime() {} }, connect() {} }; }
     createBufferSource() { const s = { buffer: null, connect() {}, start() {}, stop() {}, onended: null }; setTimeout(() => s.onended && s.onended(), 0); return s; }
     /* Previews kommen als Acht-Byte-Attrappe herein, lokale Dateien sind
@@ -130,6 +133,10 @@ function makeWindow(store, patchDb, url) {
     }
     createBuffer(ch, len, rate) { return fakeBuffer(len / rate, 0, ch, rate, true); }
     resume() {}
+  };
+  /* Dekodiert wird offline - der echte Context entsteht erst in der Geste. */
+  w.OfflineAudioContext = class extends w.AudioContext {
+    constructor() { super(); w.__ctxCount--; w.__offCount = (w.__offCount || 0) + 1; }
   };
 
   Object.entries(store || {}).forEach(([k, v]) => w.localStorage.setItem(k, v));
@@ -421,6 +428,8 @@ const dummy = n => ({ t: 'Song ' + n, a: 'Kuenstler ' + n, al: 'Album', y: 2020,
   await waitFor(() => !w.document.querySelector('#app').hidden);
 
   assert(!$('#app').hidden, 'Boot: App sichtbar');
+  assert(w.__ctxCount === 0 && G('Audio2.state()') === 'none',
+    'Boot: kein AudioContext vor der ersten Geste - dekodiert wird offline (' + w.__ctxCount + ')');
   assert(/^v\d{4}-\d{2}-\d{2}\.\d+ · Songs vom \d{1,2}\.\d{1,2}\.\d{4}$/.test($('#ver').textContent),
     'Boot: unten steht die Versionsnummer (' + $('#ver').textContent + ')');
   assert($('#tabs').children.length === 5, 'Boot: fuenf Reiter');
@@ -431,6 +440,25 @@ const dummy = n => ({ t: 'Song ' + n, a: 'Kuenstler ' + n, al: 'Album', y: 2020,
   assert(G('round[0].buffer') != null, 'Abspielen: Puffer geladen');
   await tick(600);
   assert($('#audioNote').textContent === '', 'Abspielen: laeuft der Ton, bleibt die Zeile darunter leer');
+  assert(w.__ctxCount === 1 && G('Audio2.state()') === 'running', 'Abspielen: der Context entsteht beim Abspielen');
+
+  /* Stehende Uhr: 'running', aber currentTime kommt nicht voran - iOS mit
+     Stummschalter. Die Zeile sagt es, der Context wird neu angelegt. */
+  {
+    const vorher = w.__ctxCount;
+    w.__clockDead = true;
+    await G('playCurrent()');
+    await tick(700);
+    assert(/Kein Ton/.test($('#audioNote').textContent) && /Uhr steht still/.test($('#audioNote .why').title)
+      && /Stummschalter/.test($('#audioNote .why').title) && w.__ctxCount >= vorher + 1,
+      'Abspielen: steht die Uhr, sagt es die Zeile, und der Context wird neu angelegt (' + $('#audioNote').textContent + ')');
+    assert(!$('#playBtn').classList.contains('playing'), 'Abspielen: das Viereck faellt auch ohne onended');
+    w.__clockDead = false;
+    await G('playCurrent()');
+    await tick(700);
+    assert($('#audioNote').textContent === '' && G('Audio2.diag().clock') === true,
+      'Abspielen: mit laufender Uhr verschwindet die Zeile wieder');
+  }
 
   /* Kein Ton: der Context haengt (iOS 'interrupted'). Ein Tipp wirft ihn
      weg und legt ihn neu an; bleibt auch der neue haengen, sagt es die Zeile. */

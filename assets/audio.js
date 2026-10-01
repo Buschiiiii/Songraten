@@ -17,13 +17,38 @@ const Audio2 = (() => {
   let lastError = null;
   const merk = e => { lastError = e; return e; };
 
+  /* iOS: ohne audioSession.type = 'playback' schaltet der Stummschalter die
+     Seite stumm - und zwar so, dass der Context zwar „laeuft", seine Uhr
+     aber stehen bleibt (kein onended, kein Ton). Die Art muss gesetzt sein,
+     BEVOR der Context entsteht; spaeter umstellen hilft ihm nicht mehr.
+     Deshalb hier beim Laden, in ensure() und in unlock(). */
+  function session() {
+    try {
+      if (navigator.audioSession && navigator.audioSession.type !== 'playback') navigator.audioSession.type = 'playback';
+    } catch (e) {}
+  }
+  session();
+
+  /* Zum Dekodieren und Schneiden reicht ein OfflineAudioContext - der
+     braucht keine Tonausgabe und darf schon beim Laden entstehen. Der
+     echte Context kommt erst in der ersten Geste (unlock), wie iOS es will.
+     Puffer haengen nicht am Context, der sie dekodiert hat. */
+  let off = null;
+  function decoder() {
+    if (typeof OfflineAudioContext === 'undefined') return ensure();
+    if (!off) off = new OfflineAudioContext(1, 1, 44100);
+    return off;
+  }
+
   function ensure() {
     if (ctx && ctx.state === 'closed') { ctx = null; gain = null; }
     if (!ctx) {
+      session();
       ctx = new (window.AudioContext || window.webkitAudioContext)();
       gain = ctx.createGain();
       gain.gain.value = volume;
       gain.connect(ctx.destination);
+      mark = null;
     }
     /* 'suspended' vor der ersten Geste - und 'interrupted' (nur WebKit):
        nach Anruf, App-Wechsel oder Sperrbildschirm bleibt der Context auf
@@ -51,13 +76,20 @@ const Audio2 = (() => {
     return ensure();
   }
 
+  /* Steht die Uhr? Nach dem Start merkt sich playNow() Zeit und Stand;
+     ist der Context 'running', aber currentTime kommt nicht voran, rendert
+     iOS nicht - das ist der stumme Fall ohne jede Fehlermeldung. */
+  let mark = null;
+  function alive() {
+    if (!ctx || !mark || Date.now() - mark.at < 300) return true;
+    return ctx.currentTime > mark.t + 0.05;
+  }
+
   function unlock() {
+    session();
     let c = ensure();
-    if (c.state === 'interrupted' || (c.state !== 'running' && ++stuck > 3)) c = rebuild();
+    if (c.state === 'interrupted' || !alive() || (c.state !== 'running' && ++stuck > 3)) c = rebuild();
     if (c.state === 'running') stuck = 0;
-    try {
-      if (navigator.audioSession) navigator.audioSession.type = 'playback';
-    } catch (e) {}
     try {
       const src = c.createBufferSource();
       src.buffer = c.createBuffer(1, 1, 22050);
@@ -98,7 +130,7 @@ const Audio2 = (() => {
       catch (e) { throw merk(Object.assign(new Error('Netzfehler'), { url, net: true, cause: String(e && e.message || e) })); }
       if (!res.ok) throw merk(Object.assign(new Error('HTTP ' + res.status), { url, status: res.status }));
       const buf = await res.arrayBuffer();
-      try { return await decode(ensure(), buf); }
+      try { return await decode(decoder(), buf); }
       catch (e) {
         throw merk(Object.assign(new Error('Die Hörprobe ließ sich nicht dekodieren.'),
                                  { url, cause: 'decodeAudioData: ' + String(e && (e.message || e.name) || e) }));
@@ -124,7 +156,7 @@ const Audio2 = (() => {
     const start = Math.max(0, Math.min(from, Math.max(0, full.duration - 0.05)));
     const at = Math.floor(start * rate);
     const len = Math.max(1, Math.min(Math.ceil(seconds * rate), full.length - at));
-    const out = ensure().createBuffer(full.numberOfChannels, len, rate);
+    const out = decoder().createBuffer(full.numberOfChannels, len, rate);
     for (let ch = 0; ch < full.numberOfChannels; ch++) {
       out.getChannelData(ch).set(full.getChannelData(ch).subarray(at, at + len));
     }
@@ -161,7 +193,7 @@ const Audio2 = (() => {
     const buf = typeof src === 'string'
       ? await (await fetch(src, { mode: 'cors' })).arrayBuffer()
       : await src.arrayBuffer();
-    const full = await decode(ensure(), buf);
+    const full = await decode(decoder(), buf);
     const start = opts.start === 'random' ? randomStart(full, seconds) : firstSound(full);
     return { buffer: excerpt(full, start, seconds), start, duration: full.duration || 0 };
   }
@@ -200,6 +232,7 @@ const Audio2 = (() => {
     env.connect(gain);
     src.start(t0, offset, dur);
     src.stop(t0 + dur + 0.01);
+    mark = { t: ctx.currentTime, at: Date.now() };
     current = src;
     src.onended = () => { if (current === src) current = null; if (onEnd) onEnd(); };
     return dur;
@@ -217,8 +250,8 @@ const Audio2 = (() => {
     + (ctx && ctx.sampleRate ? `, ${ctx.sampleRate} Hz` : '')
     + (navigator.audioSession ? `, audioSession ${navigator.audioSession.type}` : '')
     + `, Lautstärke ${Math.round(volume * 100)} %`;
-  const diag = () => ({ state: ctx ? ctx.state : 'none', text: describe(), error: lastError, cached: cache.size });
+  const diag = () => ({ state: ctx ? ctx.state : 'none', clock: alive(), text: describe(), error: lastError, cached: cache.size });
 
-  return { load, loadFile, excerpt, firstSound, play, stop, setVolume, warm, ensure, unlock, diag,
+  return { load, loadFile, excerpt, firstSound, play, stop, setVolume, warm, ensure, unlock, rebuild, diag,
            state: () => (ctx ? ctx.state : 'none'), cached: () => cache.size };
 })();

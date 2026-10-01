@@ -1155,7 +1155,18 @@ function audioCheck() {
   clearTimeout(audioCheckTimer);
   audioCheckTimer = setTimeout(() => {
     const d = Audio2.diag();
-    if (d.state === 'running') return audioNote('');
+    if (d.state === 'running' && d.clock) return audioNote('');
+    if (d.state === 'running') {
+      /* Laeuft angeblich, aber die Uhr steht: iOS rendert nicht. Weg damit,
+         der naechste Tipp bekommt einen frischen Context. */
+      Audio2.rebuild();
+      return audioNote('Kein Ton – nochmal auf Abspielen tippen.', Object.assign(new Error(
+        'Der Tonkanal meldet „läuft“, aber seine Uhr steht still – iOS hat die Ausgabe nicht gestartet. '
+        + 'So verhält sich das iPhone mit dem Stummschalter, wenn der Kanal vor der Freigabe entstanden ist, '
+        + 'und manchmal nach einer Unterbrechung (Anruf, andere App mit Ton). Der Kanal wurde neu angelegt; '
+        + 'der nächste Tipp spielt. Bleibt es still: Stummschalter aus, oder ein verbundenes Bluetooth-Gerät?'),
+        { cause: d.text }));
+    }
     const grund = d.state === 'interrupted'
       ? 'iOS hat die Tonausgabe unterbrochen (Anruf, App-Wechsel, Sperrbildschirm) und gibt sie erst bei einem neuen Tippen direkt auf den Knopf wieder frei.'
       : d.state === 'suspended'
@@ -1187,8 +1198,12 @@ async function playCurrent() {
   catch (e) { btn.classList.remove('playing'); return audioNote('Abspielen ist fehlgeschlagen.', e); }
   sweepBar(secs);
   audioCheck();
-  if (dur < 0.25) setTimeout(() => btn.classList.remove('playing'), 260);
+  /* Das Viereck faellt auch dann, wenn onended nie kommt - bei stehender
+     Uhr bleibt der Knopf sonst fuer immer „laeuft". */
+  clearTimeout(playEndTimer);
+  playEndTimer = setTimeout(() => btn.classList.remove('playing'), Math.max(260, (dur + 0.6) * 1000));
 }
+let playEndTimer = null;
 
 /* Zeigt in der Leiste mit, wie weit der Ausschnitt laeuft: der helle Balken
    waechst von der Null bis ans Ende des aktuellen Abschnitts.
@@ -1821,14 +1836,19 @@ function renderBrowsePlaying() {
 /* Kurz reinhoeren: zehn Sekunden reichen, um zu wissen, was das ist. */
 async function previewSong(s, done) {
   Audio2.unlock();
+  /* `done` genau einmal - auch wenn onended nie kommt (stehende Uhr). */
+  let fertig = false;
+  const ende = e => { if (fertig) return; fertig = true; if (done) done(e); };
   try {
     let buf;
     if (s.file || s.full) {
       const cut = await Audio2.loadFile(s.file || s.full, { start: settings.start, seconds: 12 });
       buf = cut.buffer;
     } else buf = await Audio2.load(s.p);
-    Audio2.play(buf, 0, Math.min(10, buf.duration), () => done && done());
-  } catch (e) { if (done) done(e || new Error('Die Hörprobe ließ sich nicht laden.')); }
+    const dur = Audio2.play(buf, 0, Math.min(10, buf.duration), () => ende());
+    setTimeout(() => ende(), (dur + 0.6) * 1000);
+    audioCheck();
+  } catch (e) { ende(e || new Error('Die Hörprobe ließ sich nicht laden.')); }
 }
 
 /* ------------------------------------------- Titelliste eines Imports */
