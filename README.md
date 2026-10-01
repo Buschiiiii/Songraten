@@ -349,6 +349,13 @@ zuerst:
 4. **Einzeln bei Apple**, und zwar so, dass Apple es auch findet: ohne
    „- 2005 Remaster", nur mit dem ersten Künstler, „JAŸ-Z" und schräge
    Apostrophe geglättet. Klappt das nicht, sucht die Seite lockerer weiter.
+5. **Umweg über song.link** für den Rest: Apples Suche verschweigt seit
+   Herbst 2025 explizite Titel, und auch die ISRC findet sie dann nicht.
+   Steht die Spotify-ID in der Datei (Exportify: *Track URI*) oder kommt
+   die Liste aus der Spotify-Anmeldung, fragt die Seite song.link nach der
+   passenden Apple-Aufnahme und holt die Hörprobe über deren Nummer. Das
+   kostet eine Anfrage je Titel und passiert nur für Titel, die sonst
+   nirgends zu finden waren.
 
 Apple erlaubt nur rund zwanzig Anfragen pro Minute. Die Seite hält sich
 daran, statt in die Sperre zu laufen: nach einer Sperre langsam, nach vierzig
@@ -533,8 +540,9 @@ die Anzahl Songs pro Stufe, alles frei änderbar.
 
 Nichts, was nicht sein muss. Titel und Künstler einer Playlist gehen an
 Apples Suche, damit es eine Hörprobe gibt; Apples Track-IDs gehen an
-song.link, wenn *Genau diese Aufnahme* an ist; nach der Spotify-Anmeldung
-holt die Seite deine Playlists direkt bei Spotify. Eigene Musikdateien
+song.link, wenn *Genau diese Aufnahme* an ist, und beim Import die
+Spotify-IDs der Titel, die Apple sonst nicht herausrückt; nach der
+Spotify-Anmeldung holt die Seite deine Playlists direkt bei Spotify. Eigene Musikdateien
 bleiben auf dem Gerät. Alles Gespeicherte – Einstellungen, Statistik,
 Playlist, Spotify-Anmeldung, Zugang zum Mediathek-Server – liegt im Browser,
 unverschlüsselt; *Zugang vergessen* und *Bei Spotify abmelden* räumen auf.

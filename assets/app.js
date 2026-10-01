@@ -1738,7 +1738,8 @@ const LUPE = '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke
 const NACH_VORN = '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" '
   + 'stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 4h14M12 20V9M7 13l5-5 5 5"/></svg>';
 const IMP_VIA = { cache: 'schon bekannt', local: 'aus der Songliste', stored: '', isrc: 'über die ISRC',
-                  artist: 'über den Künstlerkatalog', search: 'über die Suche', manual: 'von Hand' };
+                  artist: 'über den Künstlerkatalog', search: 'über die Suche', songlink: 'über song.link',
+                  manual: 'von Hand' };
 
 function buildImportUI() {
   $('#impClose').onclick = closeImport;

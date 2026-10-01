@@ -215,8 +215,8 @@ const Spotify = (() => {
 
   /* Die Titel einer Playlist, `'liked'` fuer die Lieblingssongs. Kuenstler
      mit Semikolon getrennt wie bei Exportify, der erste zusaetzlich als
-     `lead` - so bleibt „Earth, Wind & Fire" beim Suchen ein Name. Episoden
-     fliegen raus. */
+     `lead` - so bleibt „Earth, Wind & Fire" beim Suchen ein Name. Dazu die
+     Spotify-ID. Episoden fliegen raus. */
   async function tracks(id, opts) {
     opts = opts || {};
     const max = opts.max || 300;
@@ -232,6 +232,9 @@ const Spotify = (() => {
           artist: (t.artists || []).map(a => a && a.name).filter(Boolean).join(';'),
           lead: ((t.artists || [])[0] || {}).name || '',
           album: (t.album && t.album.name) || '',
+          /* Die Track-ID: der Schluessel fuer den Umweg ueber song.link,
+             wenn Apple einen Titel verschweigt (playlist.js). */
+          sp: t.id || undefined,
         });
       });
       if (opts.onProgress) opts.onProgress(out.length, page.total || out.length);

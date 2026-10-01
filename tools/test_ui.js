@@ -238,7 +238,7 @@ function makeWindow(store, patchDb, url) {
           ] });
         }
         return json({ total: 4, next: null, items: [
-          { item: { type: 'track', name: 'September', artists: [{ name: 'Earth, Wind & Fire' }], album: { name: 'X' } } },
+          { item: { type: 'track', id: '5bcTCxgc7xVfSaMV3RuVke', name: 'September', artists: [{ name: 'Earth, Wind & Fire' }], album: { name: 'X' } } },
           { item: { type: 'track', name: 'Levitating (feat. DaBaby)', artists: [{ name: 'Dua Lipa' }, { name: 'DaBaby' }], album: { name: 'FN' } } },
         ] });
       }
@@ -253,6 +253,23 @@ function makeWindow(store, patchDb, url) {
     /* ---- song.link: die genauen Adressen je Dienst ---- */
     if (url.includes('api.song.link')) {
       odesliCalls.push(url);
+      /* Der Umweg: eine Spotify-ID, dazu nennt song.link Apples Track-ID.
+         `expl1` ist der explizite Titel, den Apples Suche verschweigt;
+         fuer `7` kennt song.link nichts bei Apple. */
+      if (url.includes('platform=spotify')) {
+        const sp = (/id=([^&]+)/.exec(url) || [0, ''])[1];
+        if (sp === 'expl1') return { ok: true, status: 200, json: async () => ({
+          pageUrl: 'https://song.link/s/expl1',
+          entitiesByUniqueId: {
+            'SPOTIFY_SONG::expl1': { id: 'expl1', type: 'song', apiProvider: 'spotify' },
+            'ITUNES_SONG::9001': { id: '9001', type: 'song', apiProvider: 'itunes' },
+          },
+          linksByPlatform: { appleMusic: { url: 'https://music.apple.com/de/album/vol-1/9000?i=9001' } },
+        }) };
+        return { ok: true, status: 200, json: async () => ({ pageUrl: 'https://song.link/s/' + sp,
+          entitiesByUniqueId: { ['SPOTIFY_SONG::' + sp]: { id: sp, type: 'song', apiProvider: 'spotify' } },
+          linksByPlatform: { spotify: { url: 'https://open.spotify.com/track/' + sp } } }) };
+      }
       if (/id=666/.test(url)) return { ok: false, status: 429, json: async () => ({}) };
       /* Eine boeswillige Antwort: javascript: statt https. */
       if (/id=777/.test(url)) return { ok: true, status: 200, json: async () => ({
@@ -356,6 +373,13 @@ function makeWindow(store, patchDb, url) {
           { wrapperType: 'artist', artistId: 3 },
           { wrapperType: 'track', trackName: 'Vier', artistName: 'Stapelband', artistId: 3, collectionName: 'Stapel',
             releaseDate: '2012-01-01', primaryGenreName: 'Rock', trackId: 46, previewUrl: 'https://audio/st46', artworkUrl100: 'https://art/st/100x100bb.jpg' },
+        ] }) };
+      }
+      if (id === 9001 && !url.includes('entity=')) {
+        return { ok: true, status: 200, json: async () => ({ results: [
+          { wrapperType: 'track', trackName: 'Explizites Lied', artistName: 'Mockband', collectionName: 'Vol.1',
+            releaseDate: '2017-06-30', primaryGenreName: 'Pop', trackId: 9001, trackExplicitness: 'explicit',
+            previewUrl: 'https://audio/expl1', artworkUrl100: 'https://art/expl/100x100bb.jpg' },
         ] }) };
       }
       if (id !== 77) return { ok: true, status: 200, json: async () => ({ results: [] }) };
@@ -817,10 +841,15 @@ const dummy = n => ({ t: 'Song ' + n, a: 'Kuenstler ' + n, al: 'Album', y: 2020,
     + 'spotify:track:6,,"Unstoppable","This Is Acting","Sia"\n'
     + 'spotify:track:7,DEMOC9900099,"Gibts nicht","Nirgends","Niemand"\n'
     + 'spotify:track:8,DEMOC1200003,"Dieses Lied","X","Ganz Anders"\n'
-    + 'spotify:track:9,,"Vier","Stapel","Stapelband"\n';
+    + 'spotify:track:9,,"Vier","Stapel","Stapelband"\n'
+    + 'https://open.spotify.com/track/expl1,,"Explizites Lied","Vol.1","Mockband"\n';
   assert(G(`Playlist.parse(${JSON.stringify(exportify)}).tracks[0].isrc`) === 'DEMOC8300001'
     && G(`Playlist.parse(${JSON.stringify(exportify)}).tracks[1].isrc`) == null,
     'Export: die ISRC-Spalte wird gelesen, leere Zellen bleiben leer');
+  assert(G(`Playlist.parse(${JSON.stringify(exportify)}).tracks[0].sp`) === '1'
+    && G(`Playlist.parse(${JSON.stringify(exportify)}).tracks[9].sp`) === 'expl1',
+    'Export: die Spotify-ID kommt aus der Track URI, auch als Link');
+  odesliCalls = [];
   await G(`loadPlaylistText(${JSON.stringify(exportify)}, 'Export')`);
   await waitFor(() => G('plBusy') === false, 20000);
   const via = k => G(`(() => { const t = plJob.tracks.find(x => x.title.startsWith(${JSON.stringify(k)}));
@@ -843,6 +872,15 @@ const dummy = n => ({ t: 'Song ' + n, a: 'Kuenstler ' + n, al: 'Album', y: 2020,
     && !searchTerms.some(x => /^(Eins|Zwei|Drei)\b/.test(x)), 'Export: dafuer genuegt eine Anfrage');
   assert(via('Unstoppable') === 'local:Unstoppable', 'Export: was in songs.json steht, kostet nichts');
   assert(G('plJob.missed.size') === 1 && via('Gibts') === 'fehlt', 'Export: der unbekannte Titel bleibt als fehlend stehen');
+  assert(via('Explizites') === 'songlink:Explizites Lied',
+    'Export: was Apples Suche verschweigt, kommt ueber song.link und die Spotify-ID (' + via('Explizites') + ')');
+  const spCalls = odesliCalls.filter(u => /platform=spotify/.test(u));
+  assert(spCalls.length === 2 && spCalls.every(u => /type=song&id=(expl1|7)&userCountry=DE/.test(u)),
+    'Export: song.link wird nur fuer die zwei gefragt, die sonst nirgends zu finden waren (' + spCalls.length + ')');
+  assert(JSON.parse(w.localStorage.getItem('songrate:links'))['spotify:expl1'].itunes === '9001',
+    'Export: die Antwort von song.link bleibt im Speicher');
+  assert(G("PL.songs.find(s => s.t === 'Explizites Lied').k") === 9001,
+    'Export: der Umweg bringt Apples Track-ID mit');
 
   assert(!searchTerms.some(x => /Remaster|Eins Gast|;/.test(x)),
     'Export: kein Suchbegriff traegt Zusatz oder Semikolon (' + searchTerms.join(' | ') + ')');
@@ -851,7 +889,7 @@ const dummy = n => ({ t: 'Song ' + n, a: 'Kuenstler ' + n, al: 'Album', y: 2020,
   /* ------------------------ Titelliste: sehen, was fehlt, selbst nachhelfen */
   $('#plView').click(); await tick(10);
   assert(!$('#imp').hidden && G('impTab') === 'missed', 'Titelliste: oeffnet bei dem, was fehlt');
-  assert($('#impTab [data-v="found"]').textContent === 'Gefunden (8)',
+  assert($('#impTab [data-v="found"]').textContent === 'Gefunden (9)',
     'Titelliste: die Reiter zaehlen mit (' + $('#impTab [data-v="found"]').textContent + ')');
   const missRow = $('#impList .brow');
   assert(missRow && missRow.textContent.includes('Gibts nicht'), 'Titelliste: der fehlende Titel steht da');
@@ -2180,6 +2218,8 @@ const dummy = n => ({ t: 'Song ' + n, a: 'Kuenstler ' + n, al: 'Album', y: 2020,
   assert(S('plJob.tracks.length') === 3, 'Spotify: zwei Seiten geholt, die Episode faellt raus');
   assert(S("plJob.tracks.find(t => t.title === 'September').lead") === 'Earth, Wind & Fire',
     'Spotify: der erste Kuenstler bleibt ein Name, auch mit Komma');
+  assert(S("plJob.tracks.find(t => t.title === 'September').sp") === '5bcTCxgc7xVfSaMV3RuVke',
+    'Spotify: die Track-ID kommt mit, fuer den Umweg ueber song.link');
   assert(S("plJob.tracks.find(t => t.title.startsWith('Levitating')).artist") === 'Dua Lipa;DaBaby',
     'Spotify: mehrere Kuenstler wie bei Exportify');
   assert(S("[...plJob.found.values()].filter(f => f.via === 'local').length") === 3,

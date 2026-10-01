@@ -374,13 +374,30 @@ Vorziehen nicht. Aufgelöst wird in vier Stufen:
    der Suchkatalog einen Titel nicht hatte): `entity=musicArtist` findet
    den Künstler, `lookup?id=<artistId>&entity=song&limit=200` seine Songs –
    ohne den Suchindex. Hintergrund: laut [Apple-Forum](https://developer.apple.com/forums/thread/802700)
-   verschweigt die Such-API seit September 2025 explizite Titel, Lookups
-   nicht. Ob das die zwei fehlenden Titel der Classics-Liste („Feels",
-   „L.A.LOVE") erklärt, ist **offen**: 23 von 25 expliziten Titeln außerhalb
-   der Songliste wurden gefunden – vielleicht über die ISRC, vielleicht
-   über die Suche; das ließ sich von hier nicht prüfen. Der Lookup-Weg
-   kostet nichts, solange der Suchkatalog reicht, und schadet nie.
-   Gespeichert wie der Suchkatalog (`catd:`-Schlüssel in IndexedDB).
+   verschweigt die Such-API seit September 2025 explizite Titel. **Vom
+   Besitzer am 1. Oktober bestätigt:** `search?term=feels+calvin+harris`
+   liefert 25 Treffer, alle `notExplicit`, „Feels" fehlt – und
+   `lookup?isrc=` gibt für „Feels" (GBARL1700772) wie für „L.A.LOVE"
+   (USUM71414575) `resultCount: 0`. Die ISRC rettet explizite Titel also
+   **nicht**. Der Lookup-Weg kostet nichts, solange der Suchkatalog reicht,
+   und schadet nie. Gespeichert wie der Suchkatalog (`catd:`-Schlüssel in
+   IndexedDB).
+2c. **Umweg über song.link** (`viaSonglink()`, `Links.appleIdFor()`), als
+   Letztes, erst wenn auch die Suche nichts fand: Exportify schreibt die
+   Spotify-ID als `Track URI` (`SP_KEYS`, `spOf()`; Links und nackte IDs in
+   Spotify-Spalten gehen auch, JSON über `uri`/`external_urls`), die
+   Anmeldung liefert sie als `sp`. `api.song.link/…/links?platform=spotify&
+   type=song&id=<sp>` nennt in `entitiesByUniqueId` Apples Track-ID
+   (`apiProvider: 'itunes'`), zur Not steckt sie im Apple-Link (`?i=`);
+   `lookup?id=<id>` (DE, dann US) holt die Preview. Dieselbe Bremse wie bei
+   der Auflösung (`platz()`, acht je Minute), nur wartet der Import, statt
+   aufzugeben; Treffer liegen unter `spotify:<id>` in `songrate:links`,
+   Fehlschläge nicht – ein ↻ in der Titelliste fragt wirklich noch einmal
+   (`retry()` löscht `spTried`). In der Titelliste steht „über song.link".
+   **Ungeprüft gegen echte Antworten** (kein Netz hier): ob song.link die
+   beiden kennt und ob `lookup?id=` explizite Titel herausgibt, zeigt der
+   erste ↻ auf „Feels" – fällt beides aus, bleibt der Titel wie bisher
+   unter *Fehlt*, mehr passiert nicht.
 3. **Einzelsuche in Stufen** (`searchOne()` → `queries()`). Apples Suche
    findet nur, was **jedes** Wort trägt – „Sweet Dreams (Are Made of This) -
    2005 Remaster Eurythmics;Annie Lennox;Dave Stewart" liefert nichts. Genau
@@ -868,8 +885,9 @@ daraus wurde:
   hat die Schleife vorher **30 Sekunden** festgehalten, jetzt bricht sie ab.
   Alle anderen Parser haben Längenprüfungen und Schleifenwächter (`guard`).
 - **Was an Dritte geht:** Titel und Künstler der eigenen Playlist an Apples
-  Suche, Apples Track-IDs an song.link, nichts an sonst wen. Das steht so
-  auch in der README.
+  Suche, Apples Track-IDs an song.link – und beim Import die Spotify-IDs
+  der Titel, die sonst nirgends zu finden waren, ebenfalls an song.link.
+  Nichts an sonst wen. Das steht so auch in der README.
 
 ### Was die Prüfung sonst gefunden hat
 
