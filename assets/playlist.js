@@ -344,7 +344,7 @@ const Playlist = (() => {
     const titel = titleOf(t.title), wer = glatt(leadName(t));
     const out = [];
     if (titel && wer) out.push({ term: titel + ' ' + wer, country: 'DE', limit: 15 });
-    if (titel) out.push({ term: titel, country: 'DE', limit: 25 });
+    if (titel) out.push({ term: titel, country: 'DE', limit: 50 });
     if (titel && wer) out.push({ term: titel + ' ' + wer, country: 'US', limit: 15 });
     if (!out.length) out.push({ term: glatt(termOf(t)), country: 'DE', limit: 15 });
     return out;
@@ -469,7 +469,7 @@ const Playlist = (() => {
       list.push(x);
     });
     return { name, tracks: list, pending: list.slice(), found: new Map(), missed: new Map(),
-             tried: new Set(), isrcTried: new Set(), current: null, extra: [] };
+             tried: new Set(), deepTried: new Set(), isrcTried: new Set(), current: null, extra: [] };
   }
 
   const take = (j, t) => { const i = j.pending.indexOf(t); if (i >= 0) j.pending.splice(i, 1); };
@@ -535,6 +535,36 @@ const Playlist = (() => {
     const list = res.filter(r => r.previewUrl).map(trim);
     catalogs.set(k, list);
     if (kv) kv.kvPut('cat:' + k, { at: Date.now(), list });
+    return list;
+  }
+
+  /* Zweite Katalogquelle, ueber Lookup statt Suche: Apples Such-API
+     liefert seit September 2025 keine expliziten Titel mehr (auch nicht mit
+     `explicit=Yes`, Apple antwortet nicht) - der artistTerm-Katalog hat
+     also Luecken. Der Kuenstler selbst ist ueber `entity=musicArtist` noch
+     zu finden, und `lookup?id=<artistId>&entity=song` holt seine Songs ohne
+     den Suchindex. Zwei Anfragen, deshalb erst, wenn der Katalog nicht
+     reicht. */
+  async function catalogDeep(name) {
+    const k = norm(name);
+    const kv = typeof Local !== 'undefined' && Local.kvGet ? Local : null;
+    if (catalogs.has('deep:' + k)) return catalogs.get('deep:' + k);
+    if (kv) {
+      const alt = await kv.kvGet('catd:' + k);
+      if (alt && alt.list && Date.now() - alt.at < CATALOG_DAYS * 864e5) {
+        catalogs.set('deep:' + k, alt.list);
+        return alt.list;
+      }
+    }
+    const artists = await get('search', { entity: 'musicArtist', limit: 5, country: 'DE', term: glatt(name) });
+    const treffer = artists.find(a => norm(a.artistName) === k) || artists[0];
+    let list = [];
+    if (treffer && treffer.artistId) {
+      const res = await get('lookup', { id: treffer.artistId, entity: 'song', limit: 200, country: 'DE' });
+      list = res.filter(r => r.wrapperType === 'track' && r.previewUrl).map(trim);
+    }
+    catalogs.set('deep:' + k, list);
+    if (kv) kv.kvPut('catd:' + k, { at: Date.now(), list });
     return list;
   }
 
@@ -618,6 +648,22 @@ const Playlist = (() => {
           waits = 0;
           await sleep(pace.delay);
           continue;          /* der vorderste ist jetzt gefunden oder geht einzeln */
+        }
+        /* Stufe 3b: der Katalog ueber Lookup, fuer alles, was die Suche
+           verschweigt. Einmal je Kuenstler, fuer alle seine offenen Titel. */
+        if (wer && !j.deepTried.has(wer)) {
+          j.deepTried.add(wer);
+          let kat = [];
+          try { kat = await catalogDeep(leadName(t)); }
+          catch (e) { if (e.throttled) throw e; }
+          paceOk();
+          j.pending.filter(x => leadKey(x) === wer).forEach(x => {
+            const c = pick(kat, x);
+            if (c) { const song = toSong(c); cache[x.key] = song; hit(x, song, 'artist'); }
+          });
+          waits = 0;
+          await sleep(pace.delay);
+          continue;
         }
         const c = await searchOne(t);
         /* Wer waehrend der Suche selbst zugeordnet hat, behaelt seine Wahl. */

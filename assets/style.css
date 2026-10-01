@@ -463,6 +463,8 @@ body.dragging::after{
 .brow.imp .orig{color:var(--yellow);opacity:.85}
 .brow.imp.now{background:var(--panel-2)}
 .imp-find{flex:0 0 100%;order:9;padding:2px 0 6px}
+.imp-find .imp-kind{margin-bottom:6px}
+.imp-find .imp-kind button{font-size:12px;padding:5px 4px}
 .imp-find input{
   width:100%;padding:7px 10px;border-radius:9px;background:var(--panel);
   border:1px solid var(--line);color:var(--text);font:inherit;font-size:12.5px;outline:none;

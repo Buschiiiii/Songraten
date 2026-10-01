@@ -281,6 +281,9 @@ Streamlisten geschafft haben. `assets/artist.js` fragt stattdessen Apple:
    „Gastsong (feat. …)" mit, der unter fremdem Künstlernamen läuft. Fällt diese
    zweite Anfrage aus, wird trotzdem gespielt, der Katalog allein reicht.
 
+Dazu seit der Such-Lücke bei Apple (siehe *Auflösen*) als **dritte Quelle**
+`lookup?id=<artistId>&entity=song&limit=200` – deshalb `CACHE_VER` 3.
+
 `tidy()` räumt auf: ohne `previewUrl` fliegt raus, ebenso alles, was nach
 Remix, Live, Karaoke, Remaster, Sped Up, Cover oder Medley klingt (`BAD`) —
 sonst besteht die halbe Runde aus Fassungen desselben Songs. Von Dubletten
@@ -367,6 +370,17 @@ Vorziehen nicht. Aufgelöst wird in vier Stufen:
    Datenbank-Version 2) für `CATALOG_DAYS` (45) – im localStorage passten
    davon nur eine Handvoll. In der Classics-Liste decken 43 Künstler 199 der
    233 Titel.
+2b. **Katalog über Lookup** (`catalogDeep()`, einmal je Künstler, erst wenn
+   der Suchkatalog einen Titel nicht hatte): `entity=musicArtist` findet
+   den Künstler, `lookup?id=<artistId>&entity=song&limit=200` seine Songs –
+   ohne den Suchindex. Hintergrund: laut [Apple-Forum](https://developer.apple.com/forums/thread/802700)
+   verschweigt die Such-API seit September 2025 explizite Titel, Lookups
+   nicht. Ob das die zwei fehlenden Titel der Classics-Liste („Feels",
+   „L.A.LOVE") erklärt, ist **offen**: 23 von 25 expliziten Titeln außerhalb
+   der Songliste wurden gefunden – vielleicht über die ISRC, vielleicht
+   über die Suche; das ließ sich von hier nicht prüfen. Der Lookup-Weg
+   kostet nichts, solange der Suchkatalog reicht, und schadet nie.
+   Gespeichert wie der Suchkatalog (`catd:`-Schlüssel in IndexedDB).
 3. **Einzelsuche in Stufen** (`searchOne()` → `queries()`). Apples Suche
    findet nur, was **jedes** Wort trägt – „Sweet Dreams (Are Made of This) -
    2005 Remaster Eurythmics;Annie Lennox;Dave Stewart" liefert nichts. Genau
@@ -422,7 +436,9 @@ Offen / Fehlt), je Zeile:
 
 Die Lupe klappt eine Suche unter der Zeile auf (`impFinder()`), vorbelegt mit
 `Playlist.hintOf()` – Grundtitel und erster Künstler, also genau das, was die
-Automatik zuerst probiert. Ein Klick ordnet zu (`assign`, landet im Cache,
+Automatik zuerst probiert. Umschaltbar auf **Alben** (`impKind`): Album
+antippen, dann den Titel aus `Playlist.albumTracks()` – ein Lookup, also auch
+für das, was die Suche verschweigt. Ein Klick ordnet zu (`assign`, landet im Cache,
 überlebt also das Neuladen). Während eines Laufs wird die Liste laufend
 nachgezeichnet, **aber nicht, solange eine Suche offen ist** – sonst
 verschwände das Feld beim Tippen. Ordnet man einen Titel zu, der gerade
@@ -731,6 +747,22 @@ Zehntelsekundenbereich liegen. Apples MusicKit will einen signierten
 Developer-Token, also einen Server. Wer direkt abspielen will, nimmt die
 eigene Musik oder den eigenen Mediathek-Server — dort läuft der Ton wirklich
 aus der Seite heraus.
+
+## Vorschläge beim Raten (`settings.suggest`)
+
+`'all'` (Voreinstellung): `suggestSource()` vereinigt alles, was die Seite
+kennt – `songs.json`, Playlist, eigene Musik, Künstlerkatalog –, über
+`songKey()` entdoppelt und gemerkt, bis sich eine Quelle ändert. Im
+2010er-Modus steht damit auch der Song von 1955 in der Liste, der aufs
+Stichwort passt; die Vorschläge verraten nicht, was im Pool ist. `'pool'`:
+nur `activePool()`. Schalter im Panel *Spielweise*.
+
+**Folge für den Treffervergleich:** ein Vorschlag kann aus einer anderen
+Quelle stammen als der Song im Platz, und dort zählen die Nummern (`i`, `ar`)
+anders. `submit()` vergleicht deshalb über `songKey()` und über die
+normalisierten Künstlernamen (`s.anl`, in `boot()` und `buildPlaylist()`
+gesetzt) – nie über Nummern. Früher stand da `guess.i === target.i`; mit
+gemischten Quellen wäre Song 5 der Playlist gleich Song 5 der Charts gewesen.
 
 ## Spielregeln
 

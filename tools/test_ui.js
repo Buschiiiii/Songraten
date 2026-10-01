@@ -146,7 +146,8 @@ function makeWindow(store, patchDb, url) {
       itunesCalls++;
       const term = decodeURIComponent(url.split('term=')[1].split('&')[0]).toLowerCase();
       const alle = [{ artistId: 1, artistName: 'Testband', primaryGenreName: 'Rock' },
-                    { artistId: 2, artistName: 'Testband Zwei', primaryGenreName: 'Pop' }];
+                    { artistId: 2, artistName: 'Testband Zwei', primaryGenreName: 'Pop' },
+                    { artistId: 3, artistName: 'Stapelband', primaryGenreName: 'Rock' }];
       const treffer = alle.filter(a => a.artistName.toLowerCase().includes(term.replace(/\+/g, ' ')));
       return { ok: true, status: 200, json: async () => ({ results: treffer }) };
     }
@@ -340,6 +341,23 @@ function makeWindow(store, patchDb, url) {
     if (url.includes('itunes.apple.com/lookup')) {
       itunesCalls++;
       const id = +(/id=(\d+)/.exec(url) || [0, 0])[1];
+      /* Lookup ueber die Kuenstler-ID: kennt auch, was die Suche verschweigt. */
+      if (id === 1 && url.includes('entity=song')) {
+        return { ok: true, status: 200, json: async () => ({ results: [
+          { wrapperType: 'artist', artistId: 1 },
+          { wrapperType: 'track', trackName: 'Katalogsong 1', artistName: 'Testband', artistId: 1, collectionName: 'Album',
+            releaseDate: '2015-01-01', primaryGenreName: 'Rock', trackId: 101, previewUrl: 'https://audio/k1', artworkUrl100: 'https://art/k/100x100bb.jpg' },
+          { wrapperType: 'track', trackName: 'Verschwiegener Song', artistName: 'Testband', artistId: 1, collectionName: 'Album',
+            releaseDate: '2017-01-01', primaryGenreName: 'Rock', trackId: 150, previewUrl: 'https://audio/k150', artworkUrl100: 'https://art/k/100x100bb.jpg' },
+        ] }) };
+      }
+      if (id === 3 && url.includes('entity=song')) {
+        return { ok: true, status: 200, json: async () => ({ results: [
+          { wrapperType: 'artist', artistId: 3 },
+          { wrapperType: 'track', trackName: 'Vier', artistName: 'Stapelband', artistId: 3, collectionName: 'Stapel',
+            releaseDate: '2012-01-01', primaryGenreName: 'Rock', trackId: 46, previewUrl: 'https://audio/st46', artworkUrl100: 'https://art/st/100x100bb.jpg' },
+        ] }) };
+      }
       if (id !== 77) return { ok: true, status: 200, json: async () => ({ results: [] }) };
       const t = i => ({ wrapperType: 'track', trackName: 'Loudsong ' + i, artistName: 'Rihanna',
                         collectionName: 'Loud', releaseDate: '2010-11-12', primaryGenreName: 'Pop',
@@ -754,9 +772,12 @@ const dummy = n => ({ t: 'Song ' + n, a: 'Kuenstler ' + n, al: 'Album', y: 2020,
   assert(new Set(G('round').map(r => r.song.t)).size === 5, 'Playlist: fuenf verschiedene Songs');
   assert(G('round').every(r => r.tier.mult === 1), 'Playlist: keine Stufenfaktoren');
 
-  G("suggest('bl')");
+  G("settings.suggest = 'pool'; suggest('bl')");
   assert(G('sugItems').length > 0 && G('sugItems').every(s => G('PL.songs').some(x => x.t === s.t)),
-    'Playlist: Vorschlaege kommen nur aus der Playlist');
+    'Playlist: mit „nur Auswahl" kommen die Vorschlaege nur aus der Playlist');
+  G("settings.suggest = 'all'; suggest('bl')");
+  assert(G('sugAll').length > G('PL.songs').filter(s => /^bl/i.test(s.t)).length,
+    'Playlist: mit „alle" kommen auch die Songs der Songliste dazu');
   assert(G("PL.songs.find(s => s.t.startsWith('Levitating')).ar").length >= 2
     && G('PL.artists').includes('DaBaby'),
     'Playlist: Kollaboration bekommt mehrere Kuenstler-IDs, auch die aus songs.json');
@@ -795,7 +816,8 @@ const dummy = n => ({ t: 'Song ' + n, a: 'Kuenstler ' + n, al: 'Album', y: 2020,
     + 'spotify:track:5,,"Drei","Stapel","Stapelband;Gast"\n'
     + 'spotify:track:6,,"Unstoppable","This Is Acting","Sia"\n'
     + 'spotify:track:7,DEMOC9900099,"Gibts nicht","Nirgends","Niemand"\n'
-    + 'spotify:track:8,DEMOC1200003,"Dieses Lied","X","Ganz Anders"\n';
+    + 'spotify:track:8,DEMOC1200003,"Dieses Lied","X","Ganz Anders"\n'
+    + 'spotify:track:9,,"Vier","Stapel","Stapelband"\n';
   assert(G(`Playlist.parse(${JSON.stringify(exportify)}).tracks[0].isrc`) === 'DEMOC8300001'
     && G(`Playlist.parse(${JSON.stringify(exportify)}).tracks[1].isrc`) == null,
     'Export: die ISRC-Spalte wird gelesen, leere Zellen bleiben leer');
@@ -811,6 +833,8 @@ const dummy = n => ({ t: 'Song ' + n, a: 'Kuenstler ' + n, al: 'Album', y: 2020,
     'Export: ein Nachschlag fuer alle drei Codes, keine Suche nach ihnen (' + isrcCalls.join('/') + ')');
   assert(via('Gibts') === 'fehlt' && searchTerms.some(x => /Gibts nicht/.test(x)),
     'Export: ein unbekannter Code faellt auf die Suche zurueck');
+  assert(via('Vier') === 'artist:Vier' && !searchTerms.some(x => /^Vier/.test(x)),
+    'Export: was die Suche verschweigt, holt der Lookup ueber die Kuenstler-ID (' + via('Vier') + ')');
   assert(/^search:Gänsehaut/.test(via('Gänsehaut')),
     'Export: JAŸ und typografischer Apostroph werden geglaettet (' + via('Gänsehaut') + ')');
   assert(['Eins', 'Zwei', 'Drei'].every(t => via(t) === 'artist:' + t),
@@ -827,7 +851,7 @@ const dummy = n => ({ t: 'Song ' + n, a: 'Kuenstler ' + n, al: 'Album', y: 2020,
   /* ------------------------ Titelliste: sehen, was fehlt, selbst nachhelfen */
   $('#plView').click(); await tick(10);
   assert(!$('#imp').hidden && G('impTab') === 'missed', 'Titelliste: oeffnet bei dem, was fehlt');
-  assert($('#impTab [data-v="found"]').textContent === 'Gefunden (7)',
+  assert($('#impTab [data-v="found"]').textContent === 'Gefunden (8)',
     'Titelliste: die Reiter zaehlen mit (' + $('#impTab [data-v="found"]').textContent + ')');
   const missRow = $('#impList .brow');
   assert(missRow && missRow.textContent.includes('Gibts nicht'), 'Titelliste: der fehlende Titel steht da');
@@ -847,6 +871,26 @@ const dummy = n => ({ t: 'Song ' + n, a: 'Kuenstler ' + n, al: 'Album', y: 2020,
     'Titelliste: die Zuordnung ueberlebt das Neuladen');
   assert(G('plJob.missed.size') === 0 && $('#impList').textContent.includes('Alles gefunden'),
     'Titelliste: nichts fehlt mehr');
+
+  /* Handsuche ueber Alben: Album antippen, Titel waehlen. */
+  {
+    $('#impTab [data-v="found"]').click(); await tick(10);
+    const zeile = [...$('#impList').querySelectorAll('.brow')].find(r => r.textContent.includes('Gibts nicht'));
+    zeile.querySelector('button[title="Anderen Song zuordnen"]').click(); await tick(20);
+    const fin = $('#impList .imp-find');
+    fin.querySelector('.imp-kind [data-v="album"]').click();
+    fin.querySelector('input').value = 'Loud Rihanna';
+    fin.querySelector('input').dispatchEvent(new w.Event('input'));
+    await waitFor(() => fin.querySelector('.fopts .arhit'), 3000);
+    const alb = [...fin.querySelectorAll('.fopts .arhit')].find(b => b.textContent.includes('Loud'));
+    assert(alb && /3 Titel/.test(alb.textContent), 'Handsuche: Alben lassen sich suchen (' + (alb && alb.textContent) + ')');
+    alb.click();
+    await waitFor(() => fin.querySelector('.imp-hit .arhit'), 3000);
+    assert([...fin.querySelectorAll('.imp-hit .arhit')].length === 2, 'Handsuche: das Album klappt seine Titel auf');
+    fin.querySelector('.imp-hit .arhit').click(); await tick(300);
+    assert(via('Gibts') === 'manual:Loudsong 1', 'Handsuche: ein Albumtitel laesst sich zuordnen (' + via('Gibts') + ')');
+    G("impKind = 'song'");
+  }
 
   $('#impTab [data-v="found"]').click(); await tick(10);
   const testRow = [...$('#impList').querySelectorAll('.brow')].find(r => r.textContent.includes('Testlied'));
@@ -890,6 +934,29 @@ const dummy = n => ({ t: 'Song ' + n, a: 'Kuenstler ' + n, al: 'Album', y: 2020,
   assert(via('Noch ein Lied') === "isrc:Gänsehaut's Lied" && !G('Playlist.pace().isrcBatch'),
     'ISRC: der einzelne Treffer beweist es, Listen bleiben aus (' + via('Noch ein Lied') + ')');
   isrcBatchBroken = false;
+
+  /* Vorschlaege: alles Bekannte oder nur die Auswahl. */
+  G("suggest('loudsong')");
+  assert(G('sugAll').length >= 1, 'Vorschlaege: in der Playlist stehen auch Songs aus der Songliste bereit');
+  G("suggest('unstoppable')");
+  assert(G('sugAll').some(s => s.t === 'Unstoppable'), 'Vorschlaege: „alle" findet den Hit auch im Playlist-Modus');
+  $('#sugMode [data-v="pool"]').click();
+  G("suggest('blinding')");
+  assert(G('settings.suggest') === 'pool' && G('sugAll').every(s => G('activePool()').includes(s)),
+    'Vorschlaege: „nur Auswahl" bleibt im Pool');
+  assert(/Vorschläge nur Auswahl/.test(G("panelSum('play')[0]")), 'Vorschlaege: die Panelzeile sagt es');
+  $('#sugMode [data-v="all"]').click();
+  /* Ein Vorschlag aus einer anderen Quelle zaehlt - ueber Titel und Kuenstler, nicht ueber die Nummer. */
+  /* Der Song im Platz stammt aus einer anderen Quelle (andere Nummer), der
+     Vorschlag aus der Songliste. */
+  G("round[active].song = { ...DB.songs.find(s => s.t === 'Blinding Lights'), i: 99999 }; round[active].status = 'playing'; round[active].guesses = []");
+  G("pick = DB.songs.find(s => s.t === 'Blinding Lights'); submit()"); await tick(10);
+  assert(G('round[active].status') === 'won', 'Raten: derselbe Song aus einer anderen Quelle gilt als Treffer');
+  G('closeReveal()'); await tick(10);
+  G("round[active].song = { ...DB.songs.find(s => s.t === 'Hello' && s.a === 'Adele'), i: 99998 }; round[active].status = 'playing'; round[active].guesses = []");
+  G("pick = { t: 'Someone Like You', a: 'Adele', anl: ['adele'] }; submit()"); await tick(10);
+  assert(G('round[active].guesses').some(g => g.kind === 'artist'), 'Raten: gleicher Kuenstler aus fremder Quelle wird gelb');
+  G("round.forEach(r => { r.status = 'playing'; r.guesses = []; r.stage = 0; })");
 
   G("setMode('charts')"); await tick(30);
   assert(G('mode') === 'charts' && G('round')[0].tier.id === 'easy', 'Rueckschaltung in den Chartsmodus');
@@ -1197,9 +1264,11 @@ const dummy = n => ({ t: 'Song ' + n, a: 'Kuenstler ' + n, al: 'Album', y: 2020,
   k$('#arHits').querySelector('.arhit').click();
   await waitFor(() => w4.__ev('mode') === 'artist', 8000);
   assert(K('mode') === 'artist', 'Kuenstler: ein Klick laedt den Katalog und startet den Modus');
-  assert(K('AR.songs').length === 10,
-    'Kuenstler: Katalog und Gastauftritt zusammen, ohne Dubletten (' + K('AR.songs').length + ')');
+  assert(K('AR.songs').length === 11,
+    'Kuenstler: Katalog, Gastauftritt und Lookup zusammen, ohne Dubletten (' + K('AR.songs').length + ')');
   assert(K("AR.songs.some(s => /Gastsong/.test(s.t))"), 'Kuenstler: der Gastauftritt ist dabei');
+  assert(K("AR.songs.some(s => s.t === 'Verschwiegener Song')") && K("AR.songs.filter(s => s.t === 'Katalogsong 1').length") === 1,
+    'Kuenstler: der Lookup ueber die ID bringt mit, was die Suche verschweigt - ohne Doppel');
   assert(K("AR.songs.every(s => !/\\(Live\\)/.test(s.t))"), 'Kuenstler: Livefassungen fliegen raus');
   assert(K("AR.songs.every(s => s.t !== 'Testband & Wer Anders')"),
     'Kuenstler: ein fremder Song, der ihn nur im Titel nennt, bleibt draussen');
@@ -1684,9 +1753,10 @@ const dummy = n => ({ t: 'Song ' + n, a: 'Kuenstler ' + n, al: 'Album', y: 2020,
   assert(new Set(L('round').map(r => r.song.i)).size === 5, 'Eigene Musik: fuenf verschiedene Songs');
   assert(L("round.every(r => loFiltered.some(x => x.i === r.song.i))"), 'Eigene Musik: alle aus dem eigenen Bestand');
 
-  L("suggest('song')");
+  L("settings.suggest = 'pool'; suggest('song')");
   assert(L('sugAll').length > 0 && L("sugAll.every(s => LO.songs.some(x => x.t === s.t))"),
-    'Eigene Musik: die Vorschlaege kommen nur aus der eigenen Musik');
+    'Eigene Musik: mit „nur Auswahl" kommen die Vorschlaege nur aus der eigenen Musik');
+  L("settings.suggest = 'all'");
 
   /* Abgespielt wird ein Ausschnitt, nicht der ganze Song im Speicher. */
   await waitFor(() => w5.__ev('round[0].buffer') != null, 8000);

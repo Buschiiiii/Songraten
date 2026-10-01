@@ -106,6 +106,7 @@ let settings = load('settings', {
   loFilters: Filters.DEFAULT.map(r => ({ ...r })),
   hard: false,
   hits: false,            /* Nur Hits: nur die grossen Hits, in jedem Modus */
+  suggest: 'all',         /* Vorschlaege beim Raten: 'all' = alles Bekannte, 'pool' = nur die Auswahl */
   hitShare: 20,           /* ... und zwar die obersten n Prozent */
   ladder: null,           /* eigene Stufenlaengen, null = Standard */
   tiers: { global: TIER_PRESETS.normal.slice(), scopes: {} },
@@ -394,10 +395,34 @@ function barStops(segs) {
 }
 
 const slots = () => (usesTiers() ? TIERS : settings.hits ? HIT_SLOTS : FLAT_SLOTS);
-/* Vorschlaege im Suchfeld: aus der eigenen Liste, wo es eine gibt. */
+/* Die Quelle des aktuellen Modus - fuer Filterlisten und Vorschlaege. */
 const pool = () => (mode === 'playlist' && PL ? PL
   : mode === 'local' && LO ? LO
   : mode === 'artist' && AR ? AR : DB);
+
+/* Woraus die Vorschlaege beim Raten kommen (settings.suggest):
+   'all'  alles, was die Seite kennt - Songliste, Playlist, eigene Musik,
+          Kuenstlerkataloge. Im 2010er-Modus taucht dann auch der Song von
+          1955 auf, der auf dasselbe Stichwort passt; die Liste verraet
+          nicht, was gerade im Pool ist.
+   'pool' nur, was gerade gezogen werden kann - kuerzer, aber bei kleinen
+          Pools ist die Liste dann die Loesung. */
+let sugSrc = { key: '', list: [] };
+function suggestSource() {
+  if (settings.suggest === 'pool') return activePool();
+  const quellen = [DB, PL, LO, AR].filter(Boolean);
+  const key = quellen.map(q => q.songs.length).join('/') + ':' + quellen.length;
+  if (sugSrc.key === key) return sugSrc.list;
+  const seen = new Set(), out = [];
+  quellen.forEach(q => q.songs.forEach(s => {
+    const k = songKey(s);
+    if (seen.has(k)) return;
+    seen.add(k);
+    out.push(s);
+  }));
+  sugSrc = { key, list: out };
+  return out;
+}
 
 /* ---------------------------------------------------------------- Start */
 
@@ -420,7 +445,8 @@ async function boot() {
     s.i = i;
     s.n = norm(s.t);
     s.ar = s.ar || [];        /* aeltere Datenlaeufe kannten das Feld nicht */
-    s.na = s.ar.map(a => norm(DB.artists[a])).join(' ');
+    s.anl = s.ar.map(a => norm(DB.artists[a]));
+    s.na = s.anl.join(' ');
   });
   addPop();
   const gespeichert = Playlist.restore();
@@ -500,6 +526,17 @@ function buildChrome() {
     save('settings', settings);
     renderPanelSums();
   };
+
+  $('#sugMode').querySelectorAll('button').forEach(b => {
+    b.onclick = () => {
+      settings.suggest = b.dataset.v;
+      save('settings', settings);
+      $('#sugMode').querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b));
+      renderPanelSums();
+      focusSearch();
+    };
+    b.classList.toggle('on', b.dataset.v === (settings.suggest || 'all'));
+  });
 
   const hard = $('#hardMode');
   hard.checked = !!settings.hard;
@@ -1096,7 +1133,7 @@ function suggest(q) {
   const n = norm(q);
   if (n.length < 2) return hideSuggest();
   const out = [], seen = new Set();
-  for (const s of pool().songs) {
+  for (const s of suggestSource()) {
     let sc = 0;
     if (s.n.startsWith(n)) sc = 3;
     else if (s.n.includes(n)) sc = 2;
@@ -1221,10 +1258,14 @@ function submit() {
   const guess = pick;
 
   if (guess) {
-    const ga = guess.ar || [], ta = target.ar || [];
-    const correct = guess.i === target.i ||
-      (norm(guess.t) === norm(target.t) && ga.some(a => ta.includes(a)));
-    const artist = !correct && ga.some(a => ta.includes(a));
+    /* Ueber Namen, nicht ueber Nummern: die Vorschlaege koennen aus einer
+       anderen Quelle kommen als der Song, und dort zaehlen die Nummern
+       anders. */
+    const ga = guess.anl || [], ta = new Set(target.anl || []);
+    const sameArtist = ga.some(a => ta.has(a));
+    const correct = guess === target || songKey(guess) === songKey(target)
+      || (norm(guess.t) === norm(target.t) && sameArtist);
+    const artist = !correct && sameArtist;
     r.guesses.push({ t: guess.t, a: guess.a, kind: correct ? 'ok' : artist ? 'artist' : 'no' });
     if (correct) return win(r);
   } else {
@@ -1876,8 +1917,19 @@ function impPreview(key, song) {
 /* Die Suche unter einer Zeile. Vorbelegt mit Grundtitel und erstem
    Kuenstler - genau das, was auch die automatische Suche zuerst probiert;
    meist reicht es, ein Wort zu aendern. */
+let impKind = 'song';        /* Handsuche: Songs oder Alben */
+
 function impFinder(t) {
   const box = el('div', 'imp-find');
+  /* Songs oder Alben: Apples Suche verschweigt explizite Titel - ueber das
+     Album kommt man trotzdem hin, denn die Albumtitel liefert ein Lookup. */
+  const seg = el('div', 'seg seg-row imp-kind');
+  ['song', 'album'].forEach(k => {
+    const b = el('button', k === impKind ? 'on' : '', k === 'song' ? 'Songs' : 'Alben');
+    b.dataset.v = k;
+    b.onclick = () => { impKind = k; seg.querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b)); go(); };
+    seg.appendChild(b);
+  });
   const inp = el('input');
   inp.type = 'text';
   inp.value = Playlist.hintOf(t);
@@ -1888,38 +1940,63 @@ function impFinder(t) {
   const note = el('p', 'note');
   let timer = null, lauf = 0;
 
+  const nehmen = h => {
+    Playlist.assign(plJob, t.key, h);
+    impOpen = '';
+    plSync();
+    renderPlaylist();
+    renderImport(true);
+  };
+  const songZeile = h => {
+    const zeile = el('div', 'imp-hit');
+    const wahl = el('button', 'arhit');
+    wahl.appendChild(el('span', 'nm', h.t + (h.a ? ' – ' + h.a : '')));
+    wahl.appendChild(el('span', 'sub', String(h.y || '')));
+    wahl.onclick = () => nehmen(h);
+    const hoer = el('button', 'bplay', '▶');
+    hoer.title = 'Kurz reinhören';
+    hoer.onclick = () => {
+      Audio2.stop();
+      hoer.textContent = '■';
+      previewSong(h, () => { hoer.textContent = '▶'; });
+    };
+    zeile.append(wahl, hoer);
+    return zeile;
+  };
+  const albumZeile = a => {
+    const wahl = el('button', 'arhit');
+    wahl.appendChild(el('span', 'nm', a.t + (a.a ? ' – ' + a.a : '')));
+    wahl.appendChild(el('span', 'sub', `${a.n || '?'} Titel`));
+    wahl.onclick = async () => {
+      const meins = ++lauf;
+      note.textContent = `${a.t}: Titel werden geholt …`;
+      try {
+        const songs = await Playlist.albumTracks(a.id);
+        if (meins !== lauf) return;
+        hits.innerHTML = '';
+        note.textContent = songs.length ? `${a.t} – antippen ordnet zu.` : 'Von dem Album gibt es keine Hörproben.';
+        songs.forEach(h => hits.appendChild(songZeile(h)));
+      } catch (e) {
+        if (meins !== lauf) return;
+        note.textContent = e && e.throttled ? 'Apple bremst gerade – gleich nochmal.' : 'Das Album kam nicht durch.';
+      }
+    };
+    return wahl;
+  };
+
   const go = async () => {
     const q = inp.value.trim();
     if (q.length < 2) return;
     const meins = ++lauf;
     note.textContent = 'Wird gesucht …';
     try {
-      const res = await Playlist.find(q, 'song');
+      const res = await Playlist.find(q, impKind);
       if (meins !== lauf) return;
       hits.innerHTML = '';
-      note.textContent = res.length ? 'Antippen ordnet zu.' : 'Nichts gefunden – anders schreiben?';
-      res.slice(0, 15).forEach(h => {
-        const zeile = el('div', 'imp-hit');
-        const wahl = el('button', 'arhit');
-        wahl.appendChild(el('span', 'nm', h.t + (h.a ? ' – ' + h.a : '')));
-        wahl.appendChild(el('span', 'sub', String(h.y || '')));
-        wahl.onclick = () => {
-          Playlist.assign(plJob, t.key, h);
-          impOpen = '';
-          plSync();
-          renderPlaylist();
-          renderImport(true);
-        };
-        const hoer = el('button', 'bplay', '▶');
-        hoer.title = 'Kurz reinhören';
-        hoer.onclick = () => {
-          Audio2.stop();
-          hoer.textContent = '■';
-          previewSong(h, () => { hoer.textContent = '▶'; });
-        };
-        zeile.append(wahl, hoer);
-        hits.appendChild(zeile);
-      });
+      note.textContent = res.length ? (impKind === 'album' ? 'Album antippen, dann den Titel.' : 'Antippen ordnet zu.')
+        : impKind === 'album' ? 'Kein Album gefunden – Albumname und Künstler?'
+        : 'Nichts gefunden – anders schreiben? Explizite Titel verschweigt Apples Suche, dann über „Alben“.';
+      res.slice(0, 15).forEach(h => hits.appendChild(impKind === 'album' ? albumZeile(h) : songZeile(h)));
     } catch (e) {
       if (meins !== lauf) return;
       note.textContent = e && e.throttled ? 'Apple bremst gerade – gleich nochmal.' : 'Die Suche kam nicht durch.';
@@ -1930,7 +2007,7 @@ function impFinder(t) {
     if (e.key === 'Enter') { e.preventDefault(); clearTimeout(timer); go(); }
     if (e.key === 'Escape') { e.stopPropagation(); impOpen = ''; renderImport(true); }
   };
-  box.append(inp, hits, note);
+  box.append(seg, inp, hits, note);
   setTimeout(() => { if (inp.isConnected) inp.focus(); go(); }, 0);
   return box;
 }
@@ -1988,7 +2065,7 @@ function panelSum(k) {
   if (k === 'service') return [Links.name(settings.service), false];
   if (k === 'play') {
     return [`${settings.hits ? 'Nur Hits' : settings.draw === 'random' ? '5 zufällige' : 'gestuft'}`
-      + `${settings.hard ? ' · Hardmode' : ''} · `
+      + `${settings.hard ? ' · Hardmode' : ''}${settings.suggest === 'pool' ? ' · Vorschläge nur Auswahl' : ''} · `
       + `${settings.start === 'random' ? 'zufällige Stelle' : 'Anfang'} · `
       + `${Math.round(settings.volume * 100)} %`, false];
   }
@@ -3044,7 +3121,8 @@ function buildPlaylist(pl, kind) {
     (String(s.t || '').match(/\((?:feat|ft|with)\.?\s+([^)]+)\)/i) || [])[1]?.split(SPLIT_ARTIST).forEach(add);
     s.ar = [...ids];
     s.n = norm(s.t);
-    s.na = s.ar.map(a => norm(artists[a])).join(' ');
+    s.anl = s.ar.map(a => norm(artists[a]));
+    s.na = s.anl.join(' ');
     return s;
   });
   return { name: pl.name || (kind === 'local' ? 'Eigene Musik' : 'Playlist'),

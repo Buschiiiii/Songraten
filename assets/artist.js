@@ -13,7 +13,7 @@ const Artist = (() => {
 
   const CACHE_KEY = 'songrate:artists';
   /* Hochzaehlen, sobald tidy() anders aussortiert - siehe all(). */
-  const CACHE_VER = 2;
+  const CACHE_VER = 3;
   const KEEP = 12;             /* so viele Kuenstler bleiben gespeichert */
   const MIN_SONGS = 5;         /* darunter laesst sich keine Runde bauen */
   const LIMIT = 200;
@@ -149,8 +149,23 @@ const Artist = (() => {
       if (e.throttled) throw e;      /* der Katalog allein taugt auch */
     }
 
+    /* Die Such-API verschweigt seit September 2025 explizite Titel. Der
+       Lookup ueber die Kuenstler-ID kennt sie noch - also beide vereinigen;
+       tidy() wirft Doppeltes weg. */
+    let direkt = [];
+    if (artist.id != null) {
+      if (opts.onProgress) opts.onProgress('Nachschlag …');
+      try {
+        const url = 'https://itunes.apple.com/lookup?' + new URLSearchParams({ id: artist.id, entity: 'song', limit: LIMIT, country: 'DE' });
+        const res = await fetch(url);
+        if (res.status === 403 || res.status === 429) { const e = new Error('throttled'); e.throttled = true; throw e; }
+        if (res.ok) direkt = ((await res.json()).results || []).filter(r => r.wrapperType === 'track');
+      } catch (e) {
+        if (e.throttled) throw e;
+      }
+    }
     const entry = { id: artist.id, name: artist.name, v: CACHE_VER,
-                    songs: tidy([...katalog, ...gaeste], artist) };
+                    songs: tidy([...katalog, ...gaeste, ...direkt], artist) };
     if (entry.songs.length >= MIN_SONGS) store(entry);
     return entry;
   }

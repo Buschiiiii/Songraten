@@ -376,7 +376,9 @@ suchen** setzt genau dort wieder an – auch nach dem Schließen der Seite.
 | Fehlt | ↻ nochmal automatisch · Lupe: **selbst suchen** |
 
 Die Lupe klappt unter der Zeile eine Suche auf, schon mit Titel und Künstler
-ausgefüllt; meist reicht es, ein Wort zu ändern. Ein Tipp auf einen Treffer
+ausgefüllt; meist reicht es, ein Wort zu ändern. Findet die Suche den Titel
+partout nicht, auf *Alben* umschalten, das Album antippen und den Titel aus
+der Albumliste nehmen – die kommt auf einem anderen Weg von Apple. Ein Tipp auf einen Treffer
 ordnet ihn zu, ▶ daneben spielt ihn vorher an. Die Zuordnung bleibt
 gespeichert. Mit dem Suchfeld oben lassen sich auch viele auf einmal
 vorziehen („Rihanna" eintippen → *Diese 12 vorziehen*).
@@ -441,6 +443,11 @@ Rückmeldung zu jedem Versuch:
 
 Bei Songs mit mehreren Künstlern zählt jeder einzeln. Rätst du bei einem Song von
 Charli xcx und Billie Eilish irgendeinen Song von einer der beiden, wird es gelb.
+
+**Vorschläge beim Raten:** Unter *Spielweise* wählst du, woraus die Liste
+beim Tippen kommt – *alle bekannten Songs* (Songliste, Playlist, eigene
+Musik, Künstler; die Liste verrät dann nicht, was gerade im Pool ist) oder
+*nur aus der Auswahl* (kürzer, bei kleinen Pools aber fast die Lösung).
 
 **Tasten:** Der Cursor steht immer im Suchfeld, damit du sofort tippen kannst.
 Die Kürzel sind deshalb keine Schriftzeichen.
