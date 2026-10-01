@@ -396,6 +396,8 @@ function makeWindow(store, patchDb, url) {
       return { ok: true, status: 200, json: async () => ({
         results: appleSearch(term, [...Object.values(CATALOG), ...EXTRA]) }) };
     }
+    /* Eine Hoerprobe, die nicht kommt - fuer die Meldung unter dem Knopf. */
+    if (url.includes('audio/kaputt')) throw new TypeError('Failed to fetch');
     return { ok: true, status: 200, arrayBuffer: async () => new ArrayBuffer(8) };  /* Preview */
   };
 
@@ -422,6 +424,34 @@ const dummy = n => ({ t: 'Song ' + n, a: 'Kuenstler ' + n, al: 'Album', y: 2020,
   await G('playCurrent()');
   await waitFor(() => G('round[0].buffer') != null);
   assert(G('round[0].buffer') != null, 'Abspielen: Puffer geladen');
+  await tick(600);
+  assert($('#audioNote').textContent === '', 'Abspielen: laeuft der Ton, bleibt die Zeile darunter leer');
+
+  /* Kein Ton: der Context haengt (iOS 'interrupted') - die Zeile sagt es. */
+  G("Audio2.ensure().state = 'interrupted'");
+  await G('playCurrent()');
+  await tick(650);
+  assert(/Kein Ton/.test($('#audioNote').textContent) && $('#audioNote .why')
+    && /unterbrochen/.test($('#audioNote .why').title) && /AudioContext interrupted/.test($('#audioNote .why').title),
+    'Abspielen: haengt der Tonkanal, steht es unter dem Knopf, mit Erklaerung (' + $('#audioNote').textContent + ')');
+  G("Audio2.ensure().state = 'running'");
+  await G('playCurrent()');
+  await tick(650);
+  assert($('#audioNote').textContent === '', 'Abspielen: laeuft er wieder, verschwindet die Zeile');
+
+  /* Die Hoerprobe kommt nicht: Fehler mit Adresse, die Zeile bleibt bis zur naechsten Runde. */
+  {
+    const echt = G('round[0].song.p');
+    G("round[0].buffer = null; round[0].swapped = true; round[0].song.p = 'https://audio/kaputt'");
+    await G('playCurrent()');
+    await waitFor(() => $('#audioNote .why'), 3000);
+    assert(/nicht laden/.test($('#audioNote').textContent) && /audio\/kaputt/.test($('#audioNote .why').title)
+      && /nicht angekommen/.test($('#audioNote .why').title),
+      'Abspielen: eine fehlende Hoerprobe wird gemeldet und erklaert');
+    G("round[0].song.p = " + JSON.stringify(echt) + "; round[0].error = false; round[0].swapped = false");
+    G('newRound()'); await tick(30);
+    assert($('#audioNote').textContent === '', 'Abspielen: die neue Runde raeumt die Zeile weg');
+  }
 
   /* Zeit -> Pixel: jede Stufenlaenge landet genau auf ihrer Segmentkante,
      dazwischen wird interpoliert. jsdom kennt keine Breiten, deshalb feste. */
@@ -547,6 +577,17 @@ const dummy = n => ({ t: 'Song ' + n, a: 'Kuenstler ' + n, al: 'Album', y: 2020,
   erste.querySelector('.bplay').click();
   assert(G('browPlaying') === '' && erste.querySelector('.bplay').textContent === '▶',
     'Songliste: nochmal druecken hoert auf');
+  /* Kommt die Hoerprobe nicht, sagt die Zeile es - mit dem ? dran. */
+  {
+    const echt = G("browAll.find(s => songKey(s) === " + JSON.stringify(erste.dataset.key) + ").p");
+    G("browAll.find(s => songKey(s) === " + JSON.stringify(erste.dataset.key) + ").p = 'https://audio/kaputt'");
+    erste.querySelector('.bplay').click();
+    await waitFor(() => $('#browseNote .why'), 3000);
+    assert($('#browseNote .why') && /Reinhören fehlgeschlagen/.test($('#browseNote').textContent)
+      && /audio\/kaputt/.test($('#browseNote .why').title) && G('browPlaying') === '',
+      'Songliste: eine Hoerprobe, die nicht kommt, wird gemeldet und erklaert');
+    G("browAll.find(s => songKey(s) === " + JSON.stringify(erste.dataset.key) + ").p = " + JSON.stringify(echt));
+  }
 
   /* Dienste aufklappen */
   erste.querySelector('.bact button:nth-child(2)').click();

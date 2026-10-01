@@ -13,15 +13,25 @@ const Audio2 = (() => {
   const CACHE_MAX = 12;
   const cache = new Map();
   let volume = 0.8;
+  /* Der letzte Fehler, fuer die Erklaerung hinter dem ?-Knopf (app.js). */
+  let lastError = null;
+  const merk = e => { lastError = e; return e; };
 
   function ensure() {
+    if (ctx && ctx.state === 'closed') { ctx = null; gain = null; }
     if (!ctx) {
       ctx = new (window.AudioContext || window.webkitAudioContext)();
       gain = ctx.createGain();
       gain.gain.value = volume;
       gain.connect(ctx.destination);
     }
-    if (ctx.state === 'suspended') ctx.resume();
+    /* 'suspended' vor der ersten Geste - und 'interrupted' (nur WebKit):
+       nach Anruf, App-Wechsel oder Sperrbildschirm bleibt der Context auf
+       dem iPhone darin haengen, und resume() gab es dafuer bisher nicht.
+       Alles, was nicht laeuft, wird geweckt; was nicht geht, ist egal. */
+    if (ctx.state !== 'running') {
+      try { const p = ctx.resume(); if (p && p.catch) p.catch(() => {}); } catch (e) {}
+    }
     return ctx;
   }
 
@@ -44,8 +54,13 @@ const Audio2 = (() => {
   }
 
   /* Solange der Context nicht laeuft, wird bei jeder Geste neu versucht. */
-  ['pointerdown', 'touchend', 'keydown'].forEach(ev =>
+  ['pointerdown', 'touchend', 'keydown', 'click'].forEach(ev =>
     document.addEventListener(ev, () => { if (!ctx || ctx.state !== 'running') unlock(); }, { capture: true, passive: true }));
+  /* Zurueck aus dem Hintergrund: wenigstens versuchen; braucht es eine
+     Geste, holt sie der naechste Tipp nach. */
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden && ctx && ctx.state !== 'running') ensure();
+  });
 
   /* Safari kennt decodeAudioData lange nur mit Rueckruf. */
   function decode(c, buf) {
@@ -64,10 +79,16 @@ const Audio2 = (() => {
       return p;
     }
     const p = (async () => {
-      const res = await fetch(url, { mode: 'cors' });
-      if (!res.ok) throw new Error('HTTP ' + res.status);
+      let res;
+      try { res = await fetch(url, { mode: 'cors' }); }
+      catch (e) { throw merk(Object.assign(new Error('Netzfehler'), { url, net: true, cause: String(e && e.message || e) })); }
+      if (!res.ok) throw merk(Object.assign(new Error('HTTP ' + res.status), { url, status: res.status }));
       const buf = await res.arrayBuffer();
-      return await decode(ensure(), buf);
+      try { return await decode(ensure(), buf); }
+      catch (e) {
+        throw merk(Object.assign(new Error('Die Hörprobe ließ sich nicht dekodieren.'),
+                                 { url, cause: 'decodeAudioData: ' + String(e && (e.message || e.name) || e) }));
+      }
     })();
     cache.set(url, p);
     p.catch(() => cache.delete(url));
@@ -141,6 +162,14 @@ const Audio2 = (() => {
   /* Spielt ab Sekunde `offset` genau `seconds` lang.
      Winzige Rampen an den Kanten, sonst knackt es bei harten Schnitten. */
   function play(buffer, offset, seconds, onEnd) {
+    try { return playNow(buffer, offset, seconds, onEnd); }
+    catch (e) {
+      throw merk(Object.assign(new Error('Abspielen ist fehlgeschlagen.'),
+                               { cause: String(e && (e.message || e.name) || e) + ' · ' + describe() }));
+    }
+  }
+
+  function playNow(buffer, offset, seconds, onEnd) {
     ensure();
     stop();
     const dur = Math.min(seconds, Math.max(0, buffer.duration - offset));
@@ -169,6 +198,13 @@ const Audio2 = (() => {
 
   function warm(url) { load(url).catch(() => {}); }
 
-  return { load, loadFile, excerpt, firstSound, play, stop, setVolume, warm, ensure, unlock,
+  /* Was der Ton gerade macht - fuer die Meldung, wenn nichts zu hoeren ist. */
+  const describe = () => `AudioContext ${ctx ? ctx.state : 'none'}`
+    + (ctx && ctx.sampleRate ? `, ${ctx.sampleRate} Hz` : '')
+    + (navigator.audioSession ? `, audioSession ${navigator.audioSession.type}` : '')
+    + `, Lautstärke ${Math.round(volume * 100)} %`;
+  const diag = () => ({ state: ctx ? ctx.state : 'none', text: describe(), error: lastError, cached: cache.size });
+
+  return { load, loadFile, excerpt, firstSound, play, stop, setVolume, warm, ensure, unlock, diag,
            state: () => (ctx ? ctx.state : 'none'), cached: () => cache.size };
 })();

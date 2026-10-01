@@ -55,8 +55,28 @@ beide sind WebKit, der Fehler ist derselbe:
 3. Ohne `navigator.audioSession.type = 'playback'` (Safari 16.4+) schaltet iOS
    die Wiedergabe mit dem Klingelschalter stumm.
 
-Zusätzlich hängt an `pointerdown`, `touchend` und `keydown` ein Aufwecker, der
-so lange erneut versucht, bis der Context wirklich läuft.
+Zusätzlich hängt an `pointerdown`, `touchend`, `keydown` und `click` ein
+Aufwecker, der so lange erneut versucht, bis der Context wirklich läuft.
+
+4. **WebKit kennt den Zustand `interrupted`** (Anruf, App-Wechsel,
+   Sperrbildschirm). `ensure()` hat lange nur `suspended` mit `resume()`
+   geweckt – ein unterbrochener Context blieb auf dem iPhone stumm, und
+   nichts sagte es. Jetzt wird alles geweckt, was nicht `running` ist, auch
+   beim Zurückkehren in den Vordergrund (`visibilitychange`), und ein
+   geschlossener Context wird neu angelegt. **Gemeldet vom Besitzer am 1.
+   Oktober** („am iPhone höre ich nichts", in Spiel, Songliste und
+   Titelliste); im Code war für den Ton nichts umgebaut worden, deshalb die
+   Vermutung auf diesen Zustand – belegen kann es erst das ? unter dem
+   Knopf.
+
+**Wenn nichts zu hören ist, sagt die Seite es.** `audioCheck()` schaut
+500 ms nach dem Start, ob der Context `running` ist; sonst steht unter dem
+Knopf „Kein Ton – nochmal auf Abspielen tippen" mit dem ? (Zustand,
+Abtastrate, `audioSession`, Lautstärke, mögliche Gründe). Eine Hörprobe,
+die nicht lädt oder sich nicht dekodieren lässt, steht ebenfalls dort
+(`r.loadError`, `Audio2.diag()`); in Songliste und Titelliste hängt der
+Fehler an der Zeile oben (`browErr`, `impErr`), `previewSong()` gibt ihn im
+Rückruf weiter.
 
 ## Datenpipeline — läuft nur beim Bauen, nie zur Laufzeit
 

@@ -1016,6 +1016,7 @@ function shuffled(list) {
 
 function newRound() {
   Audio2.stop();
+  audioNote('');
   clearTimeout(sweepTimer);
   cancelAnimationFrame(sweepRaf);
   /* Ohne Stufen: gemischt, zuletzt Gespieltes nach hinten - gerade bei
@@ -1094,6 +1095,7 @@ async function preload(i) {
       }
     }
     r.error = true;
+    r.loadError = e;
   }
   if (i === active) render();
 }
@@ -1105,6 +1107,7 @@ const locked = i => settings.hard && round.slice(0, i).some(r => r.status === 'p
 function switchTo(i) {
   if (i === active || locked(i)) return;
   Audio2.stop();
+  audioNote('');
   resetBar();
   active = i;
   pick = null;
@@ -1116,6 +1119,31 @@ function switchTo(i) {
 }
 
 /* -------------------------------------------------------------- Abspielen */
+
+/* Die Zeile unter dem Abspielknopf: leer, solange alles gut ist. Steckt ein
+   Fehler dahinter, haengt das ? daran (putNote). */
+function audioNote(msg, e) { putNote($('#audioNote'), msg, e); }
+
+/* Ist nach dem Start wirklich Ton da? Auf dem iPhone bleibt der Context
+   nach Anruf, App-Wechsel oder Sperrbildschirm auf 'interrupted' stehen,
+   und ohne Geste wacht er nicht auf - dann sieht alles aus, als liefe es,
+   und man hoert nichts. Statt stumm zu bleiben, sagt die Zeile es. */
+let audioCheckTimer = null;
+function audioCheck() {
+  clearTimeout(audioCheckTimer);
+  audioCheckTimer = setTimeout(() => {
+    const d = Audio2.diag();
+    if (d.state === 'running') return audioNote('');
+    const grund = d.state === 'interrupted'
+      ? 'iOS hat die Tonausgabe unterbrochen (Anruf, App-Wechsel, Sperrbildschirm) und gibt sie erst bei einem neuen Tippen direkt auf den Knopf wieder frei.'
+      : d.state === 'suspended'
+        ? 'Der Browser hat den Ton noch nicht freigegeben – das passiert erst bei einem Tippen direkt auf die Seite, nicht beim Laden.'
+        : 'Der Browser hat keinen laufenden Tonkanal.';
+    audioNote('Kein Ton – nochmal auf Abspielen tippen.', Object.assign(new Error(
+      `${grund} Falls es danach noch still ist: Stummschalter am iPhone, Lautstärke, Fokus-Modus, verbundenes Bluetooth-Gerät?`),
+      { cause: d.text }));
+  }, 500);
+}
 
 async function playCurrent() {
   const r = round[active];
@@ -1132,8 +1160,11 @@ async function playCurrent() {
   }
   const secs = enabledStages()[r.stage];
   btn.classList.add('playing');
-  const dur = Audio2.play(r.buffer, r.offset, secs, () => btn.classList.remove('playing'));
+  let dur = 0;
+  try { dur = Audio2.play(r.buffer, r.offset, secs, () => btn.classList.remove('playing')); }
+  catch (e) { btn.classList.remove('playing'); return audioNote('Abspielen ist fehlgeschlagen.', e); }
   sweepBar(secs);
+  audioCheck();
   if (dur < 0.25) setTimeout(() => btn.classList.remove('playing'), 260);
 }
 
@@ -1584,6 +1615,7 @@ let browTab = 'pool';
 let browAll = [];
 let browShown = 0;
 let browPlaying = '';        /* Schluessel des Songs, der gerade laeuft */
+let browErr = null;          /* letzter Fehler beim Reinhoeren, fuer das ? */
 
 function buildBrowseUI() {
   document.querySelectorAll('.js-browse').forEach(b => { b.onclick = openBrowse; });
@@ -1607,6 +1639,7 @@ function buildBrowseUI() {
 
 function openBrowse() {
   Audio2.stop();
+  browErr = null;
   browTab = 'pool';
   $('#browseSearch').value = '';
   $('#browse').hidden = false;
@@ -1650,10 +1683,11 @@ function renderBrowse() {
 function browseNote() {
   const weg = browTab === 'blocked';
   const gesucht = !!norm($('#browseSearch').value);
-  $('#browseNote').textContent = weg
+  putNote($('#browseNote'), (weg
     ? (settings.blocked.length ? 'Zurückholen mit dem Pfeil.' : 'Nichts entfernt.')
     : `${browAll.length} Songs` + (gesucht ? ' gefunden' : ' in der Auswahl')
-      + (settings.blocked.length ? ` · ${settings.blocked.length} entfernt` : '');
+      + (settings.blocked.length ? ` · ${settings.blocked.length} entfernt` : ''))
+    + (browErr ? ' · Reinhören fehlgeschlagen' : ''), browErr);
   $('#browseTab [data-v="blocked"]').textContent = `Entfernt (${settings.blocked.length})`;
   $('#browseReset').hidden = !settings.blocked.length;
 }
@@ -1696,8 +1730,13 @@ function browRow(s) {
     play.onclick = () => {
       if (browPlaying === key) { Audio2.stop(); browPlaying = ''; return renderBrowsePlaying(); }
       browPlaying = key;
+      browErr = null;
       renderBrowsePlaying();
-      previewSong(s, () => { if (browPlaying === key) { browPlaying = ''; renderBrowsePlaying(); } });
+      previewSong(s, e => {
+        if (e) browErr = e;
+        if (browPlaying === key) { browPlaying = ''; renderBrowsePlaying(); }
+        if (e) browseNote();
+      });
     };
     act.appendChild(play);
   }
@@ -1766,8 +1805,8 @@ async function previewSong(s, done) {
       const cut = await Audio2.loadFile(s.file || s.full, { start: settings.start, seconds: 12 });
       buf = cut.buffer;
     } else buf = await Audio2.load(s.p);
-    Audio2.play(buf, 0, Math.min(10, buf.duration), done);
-  } catch (e) { if (done) done(); }
+    Audio2.play(buf, 0, Math.min(10, buf.duration), () => done && done());
+  } catch (e) { if (done) done(e || new Error('Die Hörprobe ließ sich nicht laden.')); }
 }
 
 /* ------------------------------------------- Titelliste eines Imports */
@@ -1819,6 +1858,7 @@ function openImport(tab) {
   impTab = tab || (plBusy ? 'pending' : plJob.missed.size ? 'missed' : 'found');
   impOpen = '';
   impPlaying = '';
+  impErr = null;
   $('#impSearch').value = '';
   $('#imp').hidden = false;
   renderImport(true);
@@ -1870,10 +1910,11 @@ function renderImport(voll) {
   });
   fillBar($('#impBar'), f, m, total);
   const eta = plBusy ? plEta() : null;
-  $('#impNote').textContent = plBusy
+  putNote($('#impNote'), (plBusy
     ? `${f + m} von ${total} durchsucht · ${f} gefunden` + (plWait ? ` · Apple bremst – weiter in ${plWait} s` : '')
       + (eta != null ? ` · noch ${fmtEta(eta)}` : '')
-    : `${f} gefunden · ${m} nicht gefunden` + (o ? ` · ${o} offen` : '');
+    : `${f} gefunden · ${m} nicht gefunden` + (o ? ` · ${o} offen` : ''))
+    + (impErr ? ' · Reinhören fehlgeschlagen' : ''), impErr);
 
   const rows = impRows();
   const gesucht = !!norm($('#impSearch').value);
@@ -1958,11 +1999,13 @@ function impRow(t) {
   return row;
 }
 
+let impErr = null;           /* letzter Fehler beim Reinhoeren, fuer das ? */
 function impPreview(key, song) {
   if (impPlaying === key) { Audio2.stop(); impPlaying = ''; return renderImport(true); }
   impPlaying = key;
+  impErr = null;
   renderImport(true);
-  previewSong(song, () => { if (impPlaying === key) { impPlaying = ''; renderImport(true); } });
+  previewSong(song, e => { if (e) impErr = e; if (impPlaying === key || e) { impPlaying = ''; renderImport(true); } });
 }
 
 /* Die Suche unter einer Zeile. Vorbelegt mit Grundtitel und erstem
@@ -2204,6 +2247,7 @@ function render() {
   $('#search').disabled = over;
   $('#actionBtn').disabled = over;
   $('#playBtn').classList.toggle('loading', !!r && !r.buffer && !r.error);
+  if (r && r.error) audioNote('Die Hörprobe ließ sich nicht laden – Cmd+Enter würfelt neu.', r.loadError);
   $('#search').placeholder = r && !r.song ? 'Kein Song passt zu den Filtern'
     : r && r.error ? 'Song nicht ladbar – Cmd+Enter würfelt neu'
     : mode === 'playlist' ? 'Song aus der Playlist suchen …'
