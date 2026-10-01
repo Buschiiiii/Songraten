@@ -75,6 +75,7 @@ let failSongs = false;       /* songs.json absichtlich scheitern lassen */
 let itunesCalls = 0;
 let srvCalls = [];
 let odesliCalls = [];
+let altCalls = [];
 
 /* Ein Puffer, wie ihn decodeAudioData liefern wuerde. Niedrige Abtastrate,
    damit drei Minuten Testton nicht 60 MB belegen. */
@@ -143,6 +144,13 @@ function makeWindow(store, patchDb, url) {
 
   w.fetch = async (url, opts) => {
     url = String(url);
+    /* Der Ausweichweg direkt zum Dienst: hier dieselbe Antwort wie die
+       Weiche, nur gezaehlt - und fuer „umleitung" der einzige, der geht. */
+    if (/MZStoreServices\.woa\/ws\/ws(Search|Lookup)\?/.test(url)) {
+      altCalls.push(url);
+      url = url.replace(/WebObjects\/MZStoreServices\.woa\/ws\/wsSearch\?/, 'search?')
+               .replace(/WebObjects\/MZStoreServices\.woa\/ws\/wsLookup\?/, 'lookup?').replace(/&_=\d+$/, '');
+    } else if (/itunes\.apple\.com\/search\?.*umleitung/i.test(url)) throw new TypeError('Load failed');
     /* Der Browser bricht http-Anfragen aus einer https-Seite ab, ohne zu
        fragen - hier genauso. */
     if (url.startsWith('http://')) { srvCalls.push(url); throw new TypeError('Failed to fetch'); }
@@ -945,7 +953,7 @@ const dummy = n => ({ t: 'Song ' + n, a: 'Kuenstler ' + n, al: 'Album', y: 2020,
     'Export: der Grund fuehrt Protokoll - ISRC, Suche, Album (' + whyVon('Gibts').log.join(' | ') + ')');
   assert(whyVon('Kaputt').kind === 'error' && whyVon('Kaputt').error.net
     && whyVon('Kaputt').log.filter(l => /neuer Versuch/.test(l)).length === 2
-    && searchTerms.filter(x => /^Kaputt Lied Kaputtband$/.test(x)).length === 3,
+    && searchTerms.filter(x => /^Kaputt Lied Kaputtband$/.test(x)).length === 6 && altCalls.some(u => /Kaputt/.test(u)),
     'Export: ein Netzfehler wird zweimal wiederholt, dann steht er als Grund da (' + whyVon('Kaputt').log.join(' | ') + ')');
   assert(via('Explizites') === 'album:Explizites Lied',
     'Export: was Apples Suche verschweigt, kommt ueber das Album (' + via('Explizites') + ')');
@@ -1824,6 +1832,14 @@ const dummy = n => ({ t: 'Song ' + n, a: 'Kuenstler ' + n, al: 'Album', y: 2020,
   why.click();
   w9.document.body.click();
   assert(!p$('#plFindNote .whybox'), 'Fehler: ein Klick daneben schliesst sie');
+  altCalls = [];
+  p$('#plFind').value = 'umleitung lied';
+  p$('#plFind').dispatchEvent(new w9.KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+  await waitFor(() => /Nichts gefunden/.test(p$('#plFindNote').textContent), 5000);
+  assert(/Nichts gefunden/.test(p$('#plFindNote').textContent) && !p$('#plFindNote .why')
+    && altCalls.length === 1 && /wsSearch\?.*umleitung.*&_=\d+$/.test(altCalls[0]),
+    'Fehler: bricht die Weiche ab, geht es direkt zum Dienst, am Cache vorbei (' + altCalls.length + ')');
+  assert(/zweite Weg/.test(why.title), 'Fehler: scheitert auch der Ausweichweg, steht es in der Erklaerung');
   why = await fehlSuche('fuenfhundert lied');
   assert(/HTTP 500/.test(why.title) && /Fehler auf dem Server/.test(why.title),
     'Fehler: ein HTTP-Status wird genannt und uebersetzt (' + why.title.split('\n')[0].slice(0, 60) + ')');

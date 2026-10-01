@@ -508,8 +508,22 @@ Offen / Fehlt), je Zeile:
   einfach die Verbindung ab, statt 403 zu schicken (im Mobilfunk teilen
   sich viele eine Adresse). Dann die `BACKOFF`-Pause wie bei einer Sperre,
   der Titel bleibt offen. Safari nennt jeden solchen Abbruch „Load failed"
-  – `whyOf()` sagt das dazu und schlägt die Probe vor: die Adresse direkt
-  in Safari öffnen.
+  – `whyOf()` sagt das dazu.
+
+  **Hartnäckig für genau eine Adresse** (Besitzer, 1. Oktober: „Cut the
+  Bridge Linkin Park" scheiterte am iPhone bei jedem Versuch mit „Load
+  failed", 18 andere Suchen gingen, am Mac kam sauberes JSON): das sieht
+  nach Safaris Cache aus, der eine kaputte Weiterleitung festhält –
+  `itunes.apple.com/search` und `/lookup` sind nur Weichen vor
+  `WebObjects/MZStoreServices.woa/ws/wsSearch` bzw. `wsLookup`. `holen()`
+  (playlist.js, artist.js) geht nach einem Abbruch deshalb einmal
+  **direkt an den Dienst, am Cache vorbei** (`ausweich()`: Pfad getauscht,
+  `cache: 'no-store'`, `&_=<Zeit>`); scheitert auch das, trägt der Fehler
+  `alt: true`, und die Erklärung sagt es. **Ungeprüft, ob `wsSearch`
+  CORS erlaubt** (kein Netz hier) – die Weiche leitet alle Browser dorthin
+  um, also sollte es. Die Probe „Adresse direkt in Safari öffnen" taugt
+  auf dem iPhone übrigens nicht: iOS öffnet `itunes.apple.com` als
+  Universal Link in der Musik-App.
 - **Gefunden**: ▶, Lupe (anderen Song zuordnen), ✕ falscher Treffer
   (`Playlist.assign(j, key, null)`: Cache-Eintrag weg, Titel nach *Fehlt*).
   Weicht der Grundtitel ab, steht das Original gelb darunter.

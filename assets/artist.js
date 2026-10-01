@@ -32,10 +32,28 @@ const Artist = (() => {
 
   /* Fehler tragen Adresse, Status und Ursache mit - fuer die Erklaerung
      hinter dem ?-Knopf (`whyOf()` in app.js). */
-  async function holen(url) {
+  /* itunes.apple.com/search und /lookup sind nur Weichen vor dem eigentlichen
+     Dienst (MZStoreServices …/wsSearch, …/wsLookup) - und Safari auf dem
+     iPhone haelt eine kaputte Weiterleitung auch noch im Cache, dann
+     scheitert genau diese Adresse bei jedem Versuch mit „Load failed",
+     waehrend alle anderen gehen. Bricht die Anfrage ab, geht sie einmal
+     direkt an den Dienst, am Cache vorbei. */
+  function ausweich(url) {
+    return url.replace('itunes.apple.com/search?', 'itunes.apple.com/WebObjects/MZStoreServices.woa/ws/wsSearch?')
+              .replace('itunes.apple.com/lookup?', 'itunes.apple.com/WebObjects/MZStoreServices.woa/ws/wsLookup?')
+      + '&_=' + Date.now();
+  }
+  async function holen(url, nochmal) {
     let res;
-    try { res = await fetch(url); }
-    catch (e) { throw Object.assign(new Error('Netzfehler'), { url, net: true, cause: String(e && e.message || e) }); }
+    try { res = await fetch(url, nochmal ? { cache: 'no-store' } : undefined); }
+    catch (e) {
+      const alt = !nochmal && /itunes\.apple\.com\/(search|lookup)\?/.test(url) ? ausweich(url) : '';
+      if (alt) {
+        try { return await holen(alt, true); }
+        catch (e2) { throw Object.assign(e2, { url, alt: true }); }
+      }
+      throw Object.assign(new Error('Netzfehler'), { url, net: true, cause: String(e && e.message || e) });
+    }
     if (res.status === 403 || res.status === 429) {
       throw Object.assign(new Error('throttled'), { throttled: true, url, status: res.status });
     }

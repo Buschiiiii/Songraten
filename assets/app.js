@@ -101,7 +101,8 @@ function whyOf(e) {
       + (/apple\.com/.test(e.url || '')
         ? ' Apple selbst tut das auch: bei zu vielen Anfragen von derselben Adresse bricht es Verbindungen ab, statt zu antworten – im Mobilfunk teilen sich viele Nutzer eine Adresse, da kann das Limit schon verbraucht sein. Probe: diese Adresse direkt in Safari öffnen; kommt dort JSON, liegt es nicht am Netz. Oft hilft WLAN statt Mobilfunk oder ein paar Minuten warten.'
         : '')
-      + (/Load failed/i.test(String(e.cause || '')) ? ' („Load failed“ ist Safaris Wort dafür, mehr sagt es nicht.)' : ''));
+      + (/Load failed/i.test(String(e.cause || '')) ? ' („Load failed“ ist Safaris Wort dafür, mehr sagt es nicht.)' : '')
+      + (e.alt ? ' Auch der zweite Weg direkt zum Dienst, am Cache vorbei, kam nicht durch.' : ''));
   } else if (e.status) {
     z.push(`${wo} hat mit HTTP ${e.status} geantwortet – ${HTTP_TEXT[e.status] || 'ein Fehler auf der anderen Seite'}.`);
   } else if (e.auth) {
