@@ -22,7 +22,7 @@ const Spotify = (() => {
   /* Eine hier eingetragene Client ID erspart jedem Besucher die eigene App -
      er muss dann nur im Dashboard freigeschaltet sein. Leer: jeder traegt
      seine eigene ein. Eine Client ID ist kein Geheimnis. */
-  const CLIENT_ID = '';
+  const CLIENT_ID = 'a26fcfca3c684360805f5e0b8112ff4c';
   const SCOPES = 'playlist-read-private playlist-read-collaborative user-library-read';
   const AUTH = 'https://accounts.spotify.com/authorize';
   const TOKEN = 'https://accounts.spotify.com/api/token';
@@ -34,7 +34,10 @@ const Spotify = (() => {
   }
   function save(st) { try { localStorage.setItem(KEY, JSON.stringify(st)); } catch (e) {} }
 
-  const clientId = () => CLIENT_ID || load().clientId || '';
+  /* Eine selbst eingetragene ID gewinnt - wer nicht in der eingebauten App
+     freigeschaltet ist, nimmt seine eigene. */
+  const ownId = () => load().clientId || '';
+  const clientId = () => ownId() || CLIENT_ID;
   function setClientId(id) {
     const st = load();
     st.clientId = String(id || '').trim();
@@ -187,6 +190,8 @@ const Spotify = (() => {
           name: p.name || '–',
           count: (p.items || p.tracks || {}).total || 0,
           owner: owner.display_name || owner.id || '',
+          /* Nur eine Vermutung aus den Metadaten - ob Spotify die Titel
+             wirklich herausgibt, zeigt erst der Versuch. */
           readable: owner.id === u.id || !!p.collaborative,
         });
       });
@@ -222,6 +227,6 @@ const Spotify = (() => {
     return out.slice(0, max);
   }
 
-  return { clientId, setClientId, redirectUri, ready, login, callback, loggedIn, logout,
+  return { clientId, ownId, setClientId, redirectUri, ready, login, callback, loggedIn, logout,
            me, user, playlists, tracks, nav, FIXED: !!CLIENT_ID };
 })();

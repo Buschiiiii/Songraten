@@ -374,7 +374,9 @@ vorziehen („Rihanna" eintippen → *Diese 12 vorziehen*).
 
 Unter **Eigene Playlist → Von Spotify** meldest du dich bei Spotify an und
 tippst eine deiner Playlists an – oder *Lieblingssongs*. Ohne Server geht das
-über das PKCE-Verfahren, aber Spotify verlangt eine eigene App:
+über das PKCE-Verfahren. Die App des Seitenbesitzers ist eingebaut; Spotify
+lässt dort aber nur eingetragene Nutzer hinein (höchstens fünf). Wer nicht
+dazugehört, klickt *eigene App verwenden* und legt sich eine an:
 
 1. [developer.spotify.com/dashboard](https://developer.spotify.com/dashboard) →
    *Create app*.
@@ -389,7 +391,9 @@ Was Spotify dabei vorgibt, nicht die Seite:
   (höchstens fünf) trägst du im Dashboard unter *User Management* ein.
 - Lesbar sind nur **eigene und gemeinsame Playlists** und die
   Lieblingssongs. Fremde – auch „Discover Weekly", die gehört Spotify –
-  stehen ausgegraut da.
+  stehen abgeblendet da, mit dem Besitzer dahinter. Antippen kostet nichts;
+  sagt Spotify nein, hilft *Zu Playlist hinzufügen* in eine eigene oder der
+  Umweg über Exportify.
 - **Spotify liefert nur die Titelliste, keinen Ton.** Hörproben gibt Spotify
   neuen Apps seit Ende 2024 nicht mehr. Gespielt wird deshalb weiter über
   Apples Hörproben, die Titel laufen durch dieselbe Suche wie ein Export.

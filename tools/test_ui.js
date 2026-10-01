@@ -1940,10 +1940,16 @@ const dummy = n => ({ t: 'Song ' + n, a: 'Kuenstler ' + n, al: 'Album', y: 2020,
   w.__ev('Spotify.nav').go = u => { ziel = u; };
   const sp$ = q => w.document.querySelector(q);
   assert(sp$('#spRedirect').textContent === 'https://example.org/', 'Spotify: die Redirect-Adresse steht zum Abschreiben da');
-  assert(!sp$('#spSetup').hidden && !sp$('#spLogin').hidden && sp$('#spLogout').hidden,
-    'Spotify: abgemeldet stehen Anleitung und Anmeldeknopf da');
-  sp$('#spLogin').click(); await tick(20);
-  assert(ziel === null && /Client ID/.test(sp$('#spNote').textContent), 'Spotify: ohne Client ID geht es nicht los');
+  assert(!sp$('#spLogin').hidden && sp$('#spLogout').hidden,
+    'Spotify: abgemeldet steht der Anmeldeknopf da');
+  assert(!sp$('#spFixedNote').hidden && sp$('#spSetup').hidden, 'Spotify: mit eingebauter App bleibt die Anleitung eingeklappt');
+  sp$('#spLogin').click();
+  await waitFor(() => ziel, 3000);
+  assert(ziel && new URL(ziel).searchParams.get('client_id') === 'a26fcfca3c684360805f5e0b8112ff4c',
+    'Spotify: ohne eigene ID geht es mit der eingebauten los');
+  ziel = null;
+  sp$('#spOwnToggle').click();
+  assert(!sp$('#spSetup').hidden, 'Spotify: „eigene App" klappt die Anleitung auf');
   sp$('#spClient').value = 'test-client';
   sp$('#spLogin').click();
   await waitFor(() => ziel, 3000);
@@ -1980,8 +1986,13 @@ const dummy = n => ({ t: 'Song ' + n, a: 'Kuenstler ' + n, al: 'Album', y: 2020,
   assert(zeilen.length === 4 && zeilen[0].textContent.includes('Lieblingssongs'),
     'Spotify: Lieblingssongs und die drei Playlists');
   const fremd = zeilen.find(z => z.textContent.includes('Discover Weekly'));
-  assert(fremd.disabled && /nicht lesbar/.test(fremd.textContent) && !zeilen.find(z => z.textContent.includes('Gemeinsam')).disabled,
-    'Spotify: fremde Playlists stehen ausgegraut da, gemeinsame nicht');
+  assert(!fremd.disabled && fremd.classList.contains('dim') && /gehört Spotify/.test(fremd.textContent)
+    && !zeilen.find(z => z.textContent.includes('Gemeinsam')).classList.contains('dim'),
+    'Spotify: fremde Playlists stehen abgeblendet da, mit Besitzer, gemeinsame nicht');
+  fremd.click();
+  await waitFor(() => /gibt Spotify nicht heraus/.test(s$('#spNote').textContent), 3000);
+  assert(/Discover Weekly gibt Spotify nicht heraus/.test(s$('#spNote').textContent) && S('plJob') == null,
+    'Spotify: antippen versucht es, und die Absage nennt den Grund (' + s$('#spNote').textContent.slice(0, 60) + ')');
   zeilen.find(z => z.textContent.includes('Meine Klassiker')).click();
   await waitFor(() => S('plJob') && S('plJob.name') === 'Meine Klassiker' && !S('plBusy'), 8000);
   assert(S('plJob.tracks.length') === 3, 'Spotify: zwei Seiten geholt, die Episode faellt raus');

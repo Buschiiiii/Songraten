@@ -2875,6 +2875,7 @@ async function loadServer(cfg, opts) {
    ein Export durch die Aufloesung. Details und Grenzen in spotify.js. */
 
 let spLists = null;          /* null = noch nicht geholt */
+let spOwn = false;           /* Anleitung fuer die eigene App aufgeklappt */
 let spBusy = false;
 const spNote = m => { $('#spNote').textContent = m; };
 
@@ -2888,9 +2889,10 @@ function buildSpotifyUI() {
     if (navigator.clipboard) navigator.clipboard.writeText(Spotify.redirectUri()).then(ok, () => {});
   };
   $('#spLogin').onclick = async () => {
-    if (!Spotify.FIXED) Spotify.setClientId($('#spClient').value);
+    if (!$('#spSetup').hidden) Spotify.setClientId($('#spClient').value);
     try { await Spotify.login(); } catch (e) { spNote(e.message); }
   };
+  $('#spOwnToggle').onclick = () => { spOwn = !spOwn; renderSpotify(); };
   $('#spLogout').onclick = () => {
     Spotify.logout();
     spLists = null;
@@ -2919,7 +2921,11 @@ function buildSpotifyUI() {
 
 function renderSpotify() {
   const drin = Spotify.loggedIn();
-  $('#spSetup').hidden = drin || Spotify.FIXED;
+  /* Mit eingebauter Client ID bleibt die Anleitung eingeklappt - wer eine
+     eigene eingetragen hat, sieht sie aber. */
+  const eigene = !Spotify.FIXED || spOwn || !!Spotify.ownId();
+  $('#spSetup').hidden = drin || !eigene;
+  $('#spFixedNote').hidden = drin || eigene;
   $('#spLogin').hidden = drin;
   $('#spLogout').hidden = !drin;
   $('#spFilter').hidden = !drin || !spLists || spLists.length < 8;
@@ -2952,13 +2958,14 @@ function renderSpotifyLists() {
   alle.filter(p => !n || norm(p.name).includes(n)).forEach(p => {
     const b = el('button', 'arhit');
     b.appendChild(el('span', 'nm', p.name));
-    b.appendChild(el('span', 'sub', !p.readable ? 'nicht lesbar'
+    b.appendChild(el('span', 'sub', !p.readable ? `gehört ${p.owner || 'jemand anderem'}`
       : p.count ? `${p.count} Titel` : ''));
-    /* Fremde Playlists stehen da, damit niemand seine sucht - antippen
-       laesst sich nur, was Spotify auch herausgibt. */
+    /* Fremde Playlists stehen leicht abgeblendet da. Antippen geht
+       trotzdem: ob Spotify die Titel herausgibt, entscheidet der Versuch,
+       nicht die Vermutung - die Meldung sagt dann, woran es lag. */
     if (!p.readable) {
-      b.disabled = true;
-      b.title = `Gehört ${p.owner || 'jemand anderem'} – Spotify gibt die Titel nur für eigene und gemeinsame Playlists heraus.`;
+      b.classList.add('dim');
+      b.title = `Gehört ${p.owner || 'jemand anderem'} – Spotify gibt Titel meist nur für eigene und gemeinsame Playlists heraus. Versuchen kostet nichts.`;
     }
     b.onclick = () => importSpotify(p);
     box.appendChild(b);
@@ -2979,7 +2986,9 @@ async function importSpotify(p) {
   } catch (e) {
     spBusy = false;
     if (e.auth) { renderSpotify(); return spNote('Die Anmeldung ist abgelaufen – bitte neu anmelden.'); }
-    return spNote(e.forbidden ? 'Diese Playlist gibt Spotify nicht heraus – nur eigene und gemeinsame.' : e.message);
+    return spNote(e.forbidden
+      ? `${p.name} gibt Spotify nicht heraus – sie gehört ${p.owner || 'jemand anderem'}, und lesbar sind nur eigene und gemeinsame. Ausweg: in Spotify „Zu Playlist hinzufügen“ in eine eigene, oder per Exportify als CSV.`
+      : e.message);
   }
   spBusy = false;
   if (!list.length) return spNote(`${p.name} ist leer.`);

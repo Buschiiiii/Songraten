@@ -529,8 +529,8 @@ body.dragging::after{
 #spLists{max-height:260px}
 #spNote:empty{display:none}
 #spLists:empty{display:none}
-#spLists .arhit:disabled{opacity:.45;cursor:default}
-#spLists .arhit:disabled:hover{background:none;color:var(--muted)}
+#spLists .arhit.dim{opacity:.6}
+#spLists .arhit.dim:hover{opacity:1}
 
 /* ---------- Nachhoeren bei ---------- */
 .svc-head{font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--grey);margin:-4px 0 8px}

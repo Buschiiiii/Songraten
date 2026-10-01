@@ -615,10 +615,18 @@ gewünscht, deshalb die Ausnahme oben.
   `callback()` (beim Start) prüft den State, tauscht den Code gegen ein Token
   und macht die Adresse wieder sauber. Refresh-Token werden genutzt und, wenn
   Spotify sie austauscht, ersetzt.
-- **Eigene App nötig**: Client ID trägt der Nutzer ein (oder fest in
-  `CLIENT_ID`), Redirect-URI ist `redirectUri()` – die Seite ohne
-  `index.html`, wird im Panel zum Abschreiben angezeigt und muss im Dashboard
-  exakt so stehen.
+- **Die App des Besitzers ist eingebaut** (`CLIENT_ID` in `spotify.js`,
+  Redirect-URI `https://buschiiii.github.io/Songraten/`). Wer dort nicht
+  unter *User Management* freigeschaltet ist, klappt über *eigene App
+  verwenden* die Anleitung auf und trägt seine eigene Client ID ein – die
+  gewinnt (`ownId()`). Redirect-URI ist `redirectUri()`, die Seite ohne
+  `index.html`, und muss im Dashboard exakt so stehen.
+- **Fremde Playlists sind antippbar**, nur abgeblendet. `readable` ist eine
+  Vermutung aus Besitzer und `collaborative`; ob Spotify die Titel herausgibt,
+  zeigt der Versuch, und bei 403 nennt die Meldung Besitzer und Ausweg (in
+  eine eigene Playlist kopieren oder Exportify). Beim ersten echten Login
+  stand die eigene „classics" als nicht lesbar da – sie gehört einem
+  anderen Konto (`Added By` im Export).
 - **Stand März 2026** (Entwicklungsmodus): Titel nur aus eigenen oder
   gemeinsamen Playlists und den Lieblingssongs (`me/tracks`); fremde stehen
   ausgegraut da. Der Endpunkt heißt `playlists/{id}/items`, der Song darin
@@ -629,9 +637,10 @@ gewünscht, deshalb die Ausnahme oben.
   `lead`) und Album; die Liste geht durch `startImport()` wie eine Datei.
 - `Spotify.nav.go` ist austauschbar, damit der Test nicht wegnavigiert.
 
-**Ungetestet gegen das echte Spotify.** Die Umgebung kommt weder an
-`accounts.spotify.com` noch an `api.spotify.com`; geprüft ist gegen
-nachgebaute Antworten im Format von 2026.
+**Die Anmeldung läuft im Echten** (Besitzer, 1. Oktober: 196 Playlists
+gelistet). Die Umgebung selbst kommt weder an `accounts.spotify.com` noch an
+`api.spotify.com`; geprüft wird gegen nachgebaute Antworten im Format von
+2026.
 
 ## Playlist: einzeln hinzufügen
 
