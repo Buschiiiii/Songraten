@@ -2152,6 +2152,7 @@ function impFinder(t) {
   const go = async () => {
     const q = inp.value.trim();
     if (q.length < 2) return;
+    if (appleWartet(m => { note.textContent = m; })) return;
     const meins = ++lauf;
     note.textContent = 'Wird gesucht …';
     try {
@@ -2167,7 +2168,7 @@ function impFinder(t) {
       putNote(note, e && e.throttled ? 'Apple bremst gerade – gleich nochmal.' : 'Die Suche kam nicht durch.', e);
     }
   };
-  inp.oninput = () => { clearTimeout(timer); timer = setTimeout(go, 400); };
+  inp.oninput = () => { clearTimeout(timer); if (inp.value.trim().length >= 3) timer = setTimeout(go, 700); };
   inp.onkeydown = e => {
     if (e.key === 'Enter') { e.preventDefault(); clearTimeout(timer); go(); }
     if (e.key === 'Escape') { e.stopPropagation(); impOpen = ''; renderImport(true); }
@@ -2915,11 +2916,15 @@ function buildPlFindUI() {
       if (inp.value.trim().length >= 2) runFind(inp.value.trim());
     };
   });
+  /* Jeder Tastendruck war eine Anfrage an Apple - bei „Cu" schon die erste.
+     Das frisst das Kontingent, das der Import braucht. Deshalb erst ab drei
+     Zeichen und mit mehr Abstand; Enter sucht sofort. */
   inp.oninput = () => {
     clearTimeout(plFindTimer);
     const q = inp.value.trim();
     if (q.length < 2) return renderFinds([]);
-    plFindTimer = setTimeout(() => runFind(q), 450);
+    if (q.length < 3) return;
+    plFindTimer = setTimeout(() => runFind(q), 700);
   };
   inp.onkeydown = e => {
     if (e.key !== 'Enter') return;
@@ -2929,8 +2934,16 @@ function buildPlFindUI() {
   };
 }
 
+/* Waehrend Apple den Import bremst, waere jede weitere Anfrage eine zu
+   viel - sie verlaengert die Sperre nur. */
+function appleWartet(fn) {
+  if (plWait > 0) { fn(`Apple bremst gerade – der Import wartet noch ${plWait} s, so lange hat eine Suche keinen Sinn.`); return true; }
+  return false;
+}
+
 async function runFind(q) {
   if (plFindBusy) return;
+  if (appleWartet(plFindNote)) return;
   plFindBusy = true;
   plFindNote('Wird gesucht …');
   try {

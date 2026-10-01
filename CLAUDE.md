@@ -535,6 +535,17 @@ Offen / Fehlt), je Zeile:
   **keine** Antwort kam, ist es ein Verbindungsfehler; und `holen()` hat
   als dritten Weg `XMLHttpRequest` (`xhr()`), ein anderer Pfad durch den
   Browser als `fetch`.
+
+  **Auflösung (18:56):** am Ende stand ein ehrlicher **HTTP 403** – Apple
+  drosselt das iPhone, der Mac im selben WLAN ging weiter. Apple zählt
+  also je Gerät oder Browser, nicht nur je Adresse, und ein stark
+  gedrosselter Client bekommt mal 403, mal einen Verbindungsabbruch
+  („Load failed"). Das Telefon hatte an dem Tag mehrere Importe,
+  Wiederholungen und Testläufe abgesetzt. Folge: die Suchfelder im Panel
+  und in der Titelliste schicken nichts mehr, solange der Import wartet
+  (`appleWartet()`, `plWait`), und die Live-Suche läuft erst ab drei
+  Zeichen mit 700 ms Abstand – jeder Tastendruck war vorher eine Anfrage
+  („Cu").
 - **Gefunden**: ▶, Lupe (anderen Song zuordnen), ✕ falscher Treffer
   (`Playlist.assign(j, key, null)`: Cache-Eintrag weg, Titel nach *Fehlt*).
   Weicht der Grundtitel ab, steht das Original gelb darunter.

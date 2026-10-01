@@ -1862,6 +1862,21 @@ const dummy = n => ({ t: 'Song ' + n, a: 'Kuenstler ' + n, al: 'Album', y: 2020,
     && altCalls.length === 1 && /wsSearch\?.*umleitung.*&_=\d+$/.test(altCalls[0]),
     'Fehler: bricht die Weiche ab, geht es direkt zum Dienst, am Cache vorbei (' + altCalls.length + ')');
   assert(/zweite Weg/.test(why.title), 'Fehler: scheitert auch der Ausweichweg, steht es in der Erklaerung');
+  /* Waehrend Apple den Import bremst, geht keine Suche raus. */
+  {
+    const vorher = itunesCalls;
+    P('plWait = 42');
+    p$('#plFind').value = 'loud rihanna';
+    p$('#plFind').dispatchEvent(new w9.KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+    await tick(50);
+    assert(itunesCalls === vorher && /wartet noch 42 s/.test(p$('#plFindNote').textContent),
+      'Fehler: waehrend Apple bremst, geht keine Suche raus (' + p$('#plFindNote').textContent + ')');
+    P('plWait = 0');
+    p$('#plFind').value = 'lo';
+    p$('#plFind').dispatchEvent(new w9.Event('input'));
+    await tick(800);
+    assert(itunesCalls === vorher, 'Fehler: zwei Zeichen loesen keine Suche aus');
+  }
   xhrCalls = [];
   p$('#plFind').value = 'xhrweg lied';
   p$('#plFind').dispatchEvent(new w9.KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
