@@ -338,11 +338,22 @@ zuerst:
 1. **Sofort, ohne Anfrage:** was schon einmal gefunden wurde, und alles, was
    in der eingebauten Songliste steht. Bei einer Liste mit bekannten Hits ist
    das der größte Teil – von 233 Klassikern kamen so 149 in null Sekunden.
-2. **Ein Katalog statt vieler Suchen:** stehen drei oder mehr Titel desselben
-   Künstlers an, holt eine Anfrage seinen ganzen Katalog.
-3. **Einzeln bei Apple**, und zwar so, dass Apple es auch findet: ohne
+2. **Über die ISRC**, die Kennung der Aufnahme: Exportify, TuneMyMusic und
+   Soundiiz schreiben sie in die Datei. Ein Nachschlag holt bis zu zwanzig
+   Aufnahmen auf einmal, exakt – auch wenn der Titel bei Apple anders heißt.
+   Das ist der schnellste Weg; Spotify selbst gibt die ISRC leider nicht mehr
+   heraus.
+3. **Ein Katalog statt vieler Suchen:** stehen zwei oder mehr Titel desselben
+   Künstlers an, holt eine Anfrage seinen ganzen Katalog – und der bleibt im
+   Browser, der nächste Import mit demselben Künstler kostet nichts.
+4. **Einzeln bei Apple**, und zwar so, dass Apple es auch findet: ohne
    „- 2005 Remaster", nur mit dem ersten Künstler, „JAŸ-Z" und schräge
    Apostrophe geglättet. Klappt das nicht, sucht die Seite lockerer weiter.
+
+Apple erlaubt nur rund zwanzig Anfragen pro Minute. Die Seite hält sich
+daran, statt in die Sperre zu laufen: nach einer Sperre langsam, nach vierzig
+sauberen Anfragen wieder schneller. Unter dem Fortschritt steht, wie lange es
+noch dauert.
 
 **Spielen kannst du, sobald fünf Songs gefunden sind** – der Rest kommt
 während des Spielens dazu. Ist in der laufenden Runde noch nichts passiert,

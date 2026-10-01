@@ -50,10 +50,16 @@ const CATALOG = {
    mit „- 2005 Remaster", mehreren Kuenstlern und typografischem Apostroph. */
 const EXTRA = [
   { trackName: 'Testlied', artistName: 'Mockband', collectionName: 'Mockalbum', releaseDate: '1983-01-01',
-    primaryGenreName: 'Pop', previewUrl: 'https://audio/m1.m4a', artworkUrl100: 'https://art/m1/100x100bb.jpg', trackId: 31 },
+    primaryGenreName: 'Pop', previewUrl: 'https://audio/m1.m4a', artworkUrl100: 'https://art/m1/100x100bb.jpg', trackId: 31, isrc: 'DEMOC8300001' },
   { trackName: "Gänsehaut's Lied", artistName: 'JAY-Band', collectionName: 'Gans', releaseDate: '2009-01-01',
-    primaryGenreName: 'Rock', previewUrl: 'https://audio/m2.m4a', artworkUrl100: 'https://art/m2/100x100bb.jpg', trackId: 32 },
+    primaryGenreName: 'Rock', previewUrl: 'https://audio/m2.m4a', artworkUrl100: 'https://art/m2/100x100bb.jpg', trackId: 32, isrc: 'DEMOC0900002' },
+  /* Bei Apple heisst der Titel anders als in der Liste - ueber die Suche
+     nicht zu finden, ueber die ISRC schon. */
+  { trackName: 'Dieses Lied (Original Mix)', artistName: 'Anderer Name', collectionName: 'X', releaseDate: '2012-01-01',
+    primaryGenreName: 'Pop', previewUrl: 'https://audio/m3.m4a', artworkUrl100: 'https://art/m3/100x100bb.jpg', trackId: 33, isrc: 'DEMOC1200003' },
 ];
+let isrcBatchBroken = false;   /* Apple nimmt angeblich keine Liste */
+let isrcCalls = [];
 /* Apples Suche findet nur, was jedes Wort des Begriffs traegt. */
 const nrm = x => String(x || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, ' ').trim();
 const appleSearch = (term, list) => {
@@ -322,6 +328,14 @@ function makeWindow(store, patchDb, url) {
           artworkUrl100: 'https://art/loud/100x100bb.jpg' },
         { collectionId: 78, collectionName: 'Ohne Hoerproben', artistName: 'Niemand', trackCount: 2 },
       ] }) };
+    }
+    if (url.includes('itunes.apple.com/lookup') && url.includes('isrc=')) {
+      itunesCalls++;
+      const codes = decodeURIComponent(url.split('isrc=')[1].split('&')[0]).split(',');
+      isrcCalls.push(codes.length);
+      if (isrcBatchBroken && codes.length > 1) return { ok: true, status: 200, json: async () => ({ results: [] }) };
+      const results = EXTRA.filter(e => codes.includes(e.isrc)).map(e => ({ ...e, wrapperType: 'track' }));
+      return { ok: true, status: 200, json: async () => ({ results }) };
     }
     if (url.includes('itunes.apple.com/lookup')) {
       itunesCalls++;
@@ -772,20 +786,31 @@ const dummy = n => ({ t: 'Song ' + n, a: 'Kuenstler ' + n, al: 'Album', y: 2020,
 
   /* ------------------------------- Ein Spotify-Export, wie er wirklich ist */
   searchTerms = [];
-  const exportify = 'Track URI,Track Name,Album Name,Artist Name(s)\n'
-    + 'spotify:track:1,"Testlied - 2005 Remaster","Mockalbum","Mockband;Gast Eins;Gast Zwei"\n'
-    + 'spotify:track:2,"Gänsehaut’s Lied","Gans","JAŸ-Band"\n'
-    + 'spotify:track:3,"Eins","Stapel","Stapelband"\n'
-    + 'spotify:track:4,"Zwei","Stapel","Stapelband"\n'
-    + 'spotify:track:5,"Drei","Stapel","Stapelband;Gast"\n'
-    + 'spotify:track:6,"Unstoppable","This Is Acting","Sia"\n'
-    + 'spotify:track:7,"Gibts nicht","Nirgends","Niemand"\n';
+  isrcCalls = [];
+  const exportify = 'Track URI,ISRC,Track Name,Album Name,Artist Name(s)\n'
+    + 'spotify:track:1,DEMOC8300001,"Testlied - 2005 Remaster","Mockalbum","Mockband;Gast Eins;Gast Zwei"\n'
+    + 'spotify:track:2,,"Gänsehaut’s Lied","Gans","JAŸ-Band"\n'
+    + 'spotify:track:3,,"Eins","Stapel","Stapelband"\n'
+    + 'spotify:track:4,,"Zwei","Stapel","Stapelband"\n'
+    + 'spotify:track:5,,"Drei","Stapel","Stapelband;Gast"\n'
+    + 'spotify:track:6,,"Unstoppable","This Is Acting","Sia"\n'
+    + 'spotify:track:7,DEMOC9900099,"Gibts nicht","Nirgends","Niemand"\n'
+    + 'spotify:track:8,DEMOC1200003,"Dieses Lied","X","Ganz Anders"\n';
+  assert(G(`Playlist.parse(${JSON.stringify(exportify)}).tracks[0].isrc`) === 'DEMOC8300001'
+    && G(`Playlist.parse(${JSON.stringify(exportify)}).tracks[1].isrc`) == null,
+    'Export: die ISRC-Spalte wird gelesen, leere Zellen bleiben leer');
   await G(`loadPlaylistText(${JSON.stringify(exportify)}, 'Export')`);
   await waitFor(() => G('plBusy') === false, 20000);
   const via = k => G(`(() => { const t = plJob.tracks.find(x => x.title.startsWith(${JSON.stringify(k)}));
     const f = t && plJob.found.get(t.key); return f ? f.via + ':' + f.song.t : 'fehlt'; })()`);
-  assert(via('Testlied') === 'search:Testlied',
-    'Export: „- 2005 Remaster" und drei Kuenstler stoeren die Suche nicht (' + via('Testlied') + ')');
+  assert(via('Testlied') === 'isrc:Testlied',
+    'Export: mit ISRC kommt der Titel ueber den Nachschlag, nicht ueber die Suche (' + via('Testlied') + ')');
+  assert(via('Dieses Lied') === 'isrc:Dieses Lied (Original Mix)',
+    'Export: die ISRC findet auch, was bei Apple anders heisst (' + via('Dieses Lied') + ')');
+  assert(isrcCalls.length >= 1 && isrcCalls[0] === 3 && !searchTerms.some(x => /Testlied|Dieses Lied/.test(x)),
+    'Export: ein Nachschlag fuer alle drei Codes, keine Suche nach ihnen (' + isrcCalls.join('/') + ')');
+  assert(via('Gibts') === 'fehlt' && searchTerms.some(x => /Gibts nicht/.test(x)),
+    'Export: ein unbekannter Code faellt auf die Suche zurueck');
   assert(/^search:Gänsehaut/.test(via('Gänsehaut')),
     'Export: JAŸ und typografischer Apostroph werden geglaettet (' + via('Gänsehaut') + ')');
   assert(['Eins', 'Zwei', 'Drei'].every(t => via(t) === 'artist:' + t),
@@ -794,6 +819,7 @@ const dummy = n => ({ t: 'Song ' + n, a: 'Kuenstler ' + n, al: 'Album', y: 2020,
     && !searchTerms.some(x => /^(Eins|Zwei|Drei)\b/.test(x)), 'Export: dafuer genuegt eine Anfrage');
   assert(via('Unstoppable') === 'local:Unstoppable', 'Export: was in songs.json steht, kostet nichts');
   assert(G('plJob.missed.size') === 1 && via('Gibts') === 'fehlt', 'Export: der unbekannte Titel bleibt als fehlend stehen');
+
   assert(!searchTerms.some(x => /Remaster|Eins Gast|;/.test(x)),
     'Export: kein Suchbegriff traegt Zusatz oder Semikolon (' + searchTerms.join(' | ') + ')');
   assert($('#plView').textContent.includes('1 fehlen'), 'Export: die Playlist-Zeile nennt, was fehlt');
@@ -801,7 +827,7 @@ const dummy = n => ({ t: 'Song ' + n, a: 'Kuenstler ' + n, al: 'Album', y: 2020,
   /* ------------------------ Titelliste: sehen, was fehlt, selbst nachhelfen */
   $('#plView').click(); await tick(10);
   assert(!$('#imp').hidden && G('impTab') === 'missed', 'Titelliste: oeffnet bei dem, was fehlt');
-  assert($('#impTab [data-v="found"]').textContent === 'Gefunden (6)',
+  assert($('#impTab [data-v="found"]').textContent === 'Gefunden (7)',
     'Titelliste: die Reiter zaehlen mit (' + $('#impTab [data-v="found"]').textContent + ')');
   const missRow = $('#impList .brow');
   assert(missRow && missRow.textContent.includes('Gibts nicht'), 'Titelliste: der fehlende Titel steht da');
@@ -824,7 +850,7 @@ const dummy = n => ({ t: 'Song ' + n, a: 'Kuenstler ' + n, al: 'Album', y: 2020,
 
   $('#impTab [data-v="found"]').click(); await tick(10);
   const testRow = [...$('#impList').querySelectorAll('.brow')].find(r => r.textContent.includes('Testlied'));
-  assert(testRow && testRow.textContent.includes('über die Suche') && testRow.textContent.includes('In der Liste: Testlied - 2005 Remaster') === false,
+  assert(testRow && testRow.textContent.includes('über die ISRC') && testRow.textContent.includes('In der Liste: Testlied - 2005 Remaster') === false,
     'Titelliste: sagt, woher der Treffer kam');
   testRow.querySelector('button[title^="Falscher Treffer"]').click(); await tick(300);
   assert(via('Testlied') === 'fehlt' && !G('PL.songs').some(s => s.t === 'Testlied'),
@@ -852,6 +878,18 @@ const dummy = n => ({ t: 'Song ' + n, a: 'Kuenstler ' + n, al: 'Album', y: 2020,
     w.fetch = echt;
     assert(via('Testlied') === 'manual:Handwahl', 'Titelliste: die Handwahl schlaegt die laufende Suche (' + via('Testlied') + ')');
   }
+
+  /* Nimmt Apple keine Liste, geht es nach dem ersten leeren Versuch einzeln. */
+  isrcBatchBroken = true; isrcCalls = [];
+  const einzelListe = 'ISRC,Track Name,Artist Name(s)\nDEMOC0900002,"Noch ein Lied","Egal"\nDEMOC8800088,"Unbekannt","Egal"\n';
+  G("Playlist.assign(plJob, 'x', null)");
+  await G(`loadPlaylistText(${JSON.stringify(einzelListe)}, 'Einzeln')`);
+  await waitFor(() => G('plBusy') === false, 20000);
+  assert(isrcCalls[0] === 2 && isrcCalls.slice(1).every(n => n === 1) && isrcCalls.length === 3,
+    'ISRC: eine leere Sammelantwort, danach einzeln (' + isrcCalls.join('/') + ')');
+  assert(via('Noch ein Lied') === "isrc:Gänsehaut's Lied" && !G('Playlist.pace().isrcBatch'),
+    'ISRC: der einzelne Treffer beweist es, Listen bleiben aus (' + via('Noch ein Lied') + ')');
+  isrcBatchBroken = false;
 
   G("setMode('charts')"); await tick(30);
   assert(G('mode') === 'charts' && G('round')[0].tier.id === 'easy', 'Rueckschaltung in den Chartsmodus');
@@ -1909,6 +1947,8 @@ const dummy = n => ({ t: 'Song ' + n, a: 'Kuenstler ' + n, al: 'Album', y: 2020,
   assert(/^6\/8 · Pause \d+ s/.test(w.__ev("panelSum('playlist')[0]")),
     'Drosselung: die zugeklappte Zeile sagt es (' + w.__ev("panelSum('playlist')[0]") + ')');
   assert(!w.document.querySelector('#plCancel').hidden, 'Drosselung: Abbrechen ist sichtbar');
+  assert(w.__ev('Playlist.pace().delay') >= 3000 && w.__ev('Playlist.pace().blocked') >= 1,
+    'Drosselung: nach der Sperre wird der Takt langsam (' + w.__ev('Playlist.pace().delay') + ' ms)');
   await waitFor(() => w.__ev('mode') === 'playlist', 3000);
   assert(w.__ev('plBusy') && w.__ev('mode') === 'playlist'
     && w.__ev('round').every(r => w.__ev('PL.songs').some(s => s.t === r.song.t)),

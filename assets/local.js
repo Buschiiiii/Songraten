@@ -25,6 +25,10 @@ const Local = (() => {
   const META_KEY = 'songrate:localmeta';
   const DB_NAME = 'songraten';
   const STORE = 'handles';
+  /* Zweiter Speicher: Kuenstlerkataloge fuer den Playlist-Import. Im
+     localStorage passten davon nur eine Handvoll (5 MB fuer alles), hier
+     hunderte - deshalb Version 2 der Datenbank. */
+  const KV = 'kv';
 
   const supported = () => typeof window !== 'undefined' && !!window.showDirectoryPicker;
 
@@ -191,12 +195,18 @@ const Local = (() => {
   function idb() {
     return new Promise((res, rej) => {
       if (typeof indexedDB === 'undefined') return rej(new Error('kein IndexedDB'));
-      const req = indexedDB.open(DB_NAME, 1);
+      const req = indexedDB.open(DB_NAME, 2);
       req.onupgradeneeded = () => {
         if (!req.result.objectStoreNames.contains(STORE)) req.result.createObjectStore(STORE);
+        if (!req.result.objectStoreNames.contains(KV)) req.result.createObjectStore(KV);
       };
       req.onsuccess = () => res(req.result);
       req.onerror = () => rej(req.error);
+      /* Haelt ein anderer Tab die Datenbank noch in Version 1 offen, wartet
+         die Erhoehung auf ihn - und ein Import, der auf den Katalogspeicher
+         wartet, stuende still. Dann lieber ohne Speicher weiter. */
+      req.onblocked = () => rej(new Error('blockiert'));
+      setTimeout(() => rej(new Error('IndexedDB antwortet nicht')), 2000);
     });
   }
 
@@ -232,6 +242,32 @@ const Local = (() => {
     } catch (e) {}
   }
 
+  /* Schluessel-Wert-Ablage fuer andere Module. Faellt still aus, wo es
+     kein IndexedDB gibt - dann wird eben neu geholt. */
+  async function kvGet(key) {
+    try {
+      const db = await idb();
+      return await new Promise((res, rej) => {
+        const rq = db.transaction(KV, 'readonly').objectStore(KV).get(key);
+        rq.onsuccess = () => res(rq.result === undefined ? null : rq.result);
+        rq.onerror = () => rej(rq.error);
+      });
+    } catch (e) { return null; }
+  }
+
+  async function kvPut(key, val) {
+    try {
+      const db = await idb();
+      await new Promise((res, rej) => {
+        const tx = db.transaction(KV, 'readwrite');
+        tx.objectStore(KV).put(val, key);
+        tx.oncomplete = res;
+        tx.onerror = () => rej(tx.error);
+      });
+      return true;
+    } catch (e) { return false; }
+  }
+
   /* 'granted' laeuft sofort durch, 'prompt' braucht einen Klick. */
   async function permission(handle, ask) {
     if (!handle || !handle.queryPermission) return 'granted';
@@ -242,5 +278,6 @@ const Local = (() => {
   }
 
   return { MIN, MAX_FILES, supported, scan, pickDirectory, filesFromHandle, fromDrop,
-           getHandle, putHandle, dropHandle, permission, lastKnown, forget, saveMeta, pathOf };
+           getHandle, putHandle, dropHandle, permission, lastKnown, forget, saveMeta, pathOf,
+           kvGet, kvPut };
 })();

@@ -1696,7 +1696,7 @@ const LUPE = '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke
   + 'stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="6.5"/><path d="M20 20l-4-4"/></svg>';
 const NACH_VORN = '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" '
   + 'stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 4h14M12 20V9M7 13l5-5 5 5"/></svg>';
-const IMP_VIA = { cache: 'schon bekannt', local: 'aus der Songliste', stored: '',
+const IMP_VIA = { cache: 'schon bekannt', local: 'aus der Songliste', stored: '', isrc: 'über die ISRC',
                   artist: 'über den Künstlerkatalog', search: 'über die Suche', manual: 'von Hand' };
 
 function buildImportUI() {
@@ -1777,8 +1777,10 @@ function renderImport(voll) {
       + ` (${zahl[b.dataset.v]})`;
   });
   fillBar($('#impBar'), f, m, total);
+  const eta = plBusy ? plEta() : null;
   $('#impNote').textContent = plBusy
     ? `${f + m} von ${total} durchsucht · ${f} gefunden` + (plWait ? ` · Apple bremst – weiter in ${plWait} s` : '')
+      + (eta != null ? ` · noch ${fmtEta(eta)}` : '')
     : `${f} gefunden · ${m} nicht gefunden` + (o ? ` · ${o} offen` : '');
 
   const rows = impRows();
@@ -3055,6 +3057,19 @@ let plBusy = false;       /* Suche laeuft gerade */
 let plStop = false;       /* Abbruch angefordert */
 let plJob = null;         /* Titelliste des letzten Imports: gefunden, offen, nicht gefunden */
 let plWait = 0;           /* so viele Sekunden laesst Apple gerade warten */
+let plT0 = 0, plN0 = 0;   /* Start des Laufs und Stand damals - fuer die Restzeit */
+
+/* Restzeit aus dem bisherigen Tempo dieses Laufs. Null, solange es nichts
+   zu schaetzen gibt. */
+function plEta() {
+  const j = plJob;
+  if (!j || !plT0) return null;
+  const done = j.found.size + j.missed.size - plN0;
+  const secs = (Date.now() - plT0) / 1000;
+  if (done < 3 || secs < 5 || !j.pending.length) return null;
+  return Math.round(j.pending.length / (done / secs));
+}
+const fmtEta = s => (s < 60 ? 'unter einer Minute' : s < 3600 ? `etwa ${Math.round(s / 60)} min` : `etwa ${(s / 3600).toFixed(1).replace('.', ',')} h`);
 let plSyncTimer = null;
 
 /* Ein Titel der Liste, gefunden in songs.json - kostet keine Anfrage. Bei
@@ -3200,6 +3215,8 @@ async function runResolve(j) {
   plStop = false;
   plWait = 0;
   plJob = j;
+  plT0 = Date.now();
+  plN0 = j.found.size + j.missed.size;
   Playlist.storeQueue(j);
   renderPlaylist();
 
@@ -3236,9 +3253,11 @@ function plShow() {
     const total = j.tracks.length, f = j.found.size, m = j.missed.size;
     fillBar($('#plBar'), f, m, total);
     plNote(`${f + m} von ${total} durchsucht · ${f} gefunden` + (m ? ` · ${m} nicht` : ''));
-    $('#plSub').textContent = plWait ? `Apple bremst – weiter in ${plWait} s`
-      : plPlayable() && j.own ? 'Schon spielbar – der Rest kommt beim Spielen dazu.'
-      : `Ab ${PL_MIN} gefundenen Songs geht es los.`;
+    const eta = plEta();
+    const rest = eta != null ? ` · noch ${fmtEta(eta)}` : '';
+    $('#plSub').textContent = plWait ? `Apple bremst – weiter in ${plWait} s${rest}`
+      : (plPlayable() && j.own ? 'Schon spielbar – der Rest kommt beim Spielen dazu.'
+        : `Ab ${PL_MIN} gefundenen Songs geht es los.`) + rest;
   }
   renderPanelSums();
 }

@@ -335,7 +335,21 @@ wird beim Bewerten **beide Reihenfolgen** geprüft (`loose`).
 Ein Import ist ein **Auftrag** (`Playlist.job()`): jeder Titel steht unter
 `found`, `missed` oder noch in `pending`. Der Lauf (`Playlist.run()`) nimmt
 immer `pending[0]` – kein `for … of` über eine feste Liste, sonst ginge
-Vorziehen nicht. Aufgelöst wird in drei Stufen:
+Vorziehen nicht. Aufgelöst wird in vier Stufen:
+
+1a. **ISRC** (`lookupIsrc`, Stufe zwischen Cache und Katalog). Exportify,
+   TuneMyMusic und Soundiiz schreiben die Kennung der Aufnahme in die CSV
+   (`ISRC_KEYS`, Format `^[A-Z]{2}[A-Z0-9]{3}\d{7}$`), Spotify liefert sie
+   seit 2026 nicht mehr. `lookup?isrc=A,B,C` holt bis zu `ISRC_BATCH` (20)
+   Aufnahmen je Anfrage, **exakt, ohne Raten** – auch Titel, die bei Apple
+   anders heißen. Die Antwort trägt den Code nicht mit, deshalb ordnet
+   `pick()` die Treffer zu; was übrig bleibt, bekommt einen einzelnen
+   Nachschlag (`x.isrcSingle`), bei dem jede Antwort der Titel ist. Ob Apple
+   mehrere Codes nimmt, ist hier nicht prüfbar (kein Netz): bleibt eine
+   Sammelantwort leer, geht die Gruppe einzeln (`isrcDoubt`), und erst ein
+   einzelner Treffer beweist, dass Listen nicht gehen (`isrcBatch = false`).
+   Bei der Classics-Liste des Besitzers haben alle 233 Zeilen eine ISRC.
+   Erst was keinen Code hat oder nicht gefunden wird, läuft weiter:
 
 1. **Ohne Anfrage** (`prefill`): Cache (`songrate:plcache`) und
    `songs.json` über `localFind()` → `dbFind()`. Verglichen wird der
@@ -345,10 +359,14 @@ Vorziehen nicht. Aufgelöst wird in drei Stufen:
    Titel, Exportify) kamen so 149 sofort. Der Treffer bringt in `an` die
    Beteiligten aus `songs.json` mit, sonst wäre „Levitating" für DaBaby nicht
    mehr gelb.
-2. **Künstlerkatalog** (`catalog()`): stehen `BATCH_MIN` (3) offene Titel
+2. **Künstlerkatalog** (`catalog()`): stehen `BATCH_MIN` (2) offene Titel
    desselben ersten Künstlers an, holt **eine** Anfrage mit
    `attribute=artistTerm&limit=200` alle; zugeordnet wird nur bei gleichem
-   Grundtitel (`pick()`), der Rest geht einzeln.
+   Grundtitel (`pick()`), der Rest geht einzeln. Kataloge liegen gekürzt
+   (`trim()`, ~40 KB) in **IndexedDB** (`Local.kvGet/kvPut`, Speicher `kv`,
+   Datenbank-Version 2) für `CATALOG_DAYS` (45) – im localStorage passten
+   davon nur eine Handvoll. In der Classics-Liste decken 43 Künstler 199 der
+   233 Titel.
 3. **Einzelsuche in Stufen** (`searchOne()` → `queries()`). Apples Suche
    findet nur, was **jedes** Wort trägt – „Sweet Dreams (Are Made of This) -
    2005 Remaster Eurythmics;Annie Lennox;Dave Stewart" liefert nichts. Genau
@@ -362,10 +380,14 @@ Der erste Künstler (`leadOf()`): steht ein Semikolon drin (Exportify,
 Spotify), trennt nur das – „Earth, Wind & Fire" bleibt ganz. Spotify liefert
 ihn zusätzlich als `lead`.
 
-Sequentiell mit 260 ms Pause; Apple lässt trotzdem nur ein paar hundert
-Anfragen durch und schickt dann für einige Minuten 403. Der Lauf bricht
-deshalb **nicht** ab, sondern wartet (30, 60, 120, 240, 300 s) und macht an
-derselben Stelle weiter; erst danach gibt er auf. **Der Fortschritt bleibt
+**Takt** (`pace`): Apple dokumentiert rund 20 Anfragen je Minute. Mit festen
+260 ms lief der Import in die Sperre, wartete 30 s, lief wieder hinein,
+wartete 60 s … – daher „Stunden für 200 Songs". Jetzt ein Regler: Start bei
+`PACE_MIN` (300 ms), nach einer Sperre `max(3 s, ×2)` bis `PACE_MAX` (10 s),
+nach `PACE_STREAK` (40) sauberen Anfragen wieder ×0,7. Die Wartestufen (30,
+60, 120, 240, 300 s) bleiben als Netz; der Lauf bricht nicht ab, sondern
+macht an derselben Stelle weiter. Der Fortschritt zeigt die **Restzeit**
+(`plEta()`, aus dem Tempo dieses Laufs). **Der Fortschritt bleibt
 dabei stehen** – früher hat „Apple bremst – weiter in 30 s" ihn ersetzt, jetzt
 steht die Wartezeit in `#plSub` darunter, der Balken (`#plBar`, grün gefunden,
 grau fehlt) bleibt, und die zugeklappte Zeile sagt „149/233 · Pause 30 s".

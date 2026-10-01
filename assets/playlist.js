@@ -3,10 +3,17 @@
    YouTube nur im eigenen Player. Die Titelliste kommt aus einem Export
    (CSV/TSV/TXT/JSON) oder, mit eigener App, direkt von Spotify (spotify.js).
 
-   Aufgeloest wird in drei Stufen, schnellste zuerst: was schon einmal
+   Aufgeloest wird in vier Stufen, schnellste zuerst: was schon einmal
    gefunden wurde (Cache) und was in songs.json steht, geht ohne Anfrage;
-   stehen mehrere Titel desselben Kuenstlers an, holt eine Anfrage dessen
-   ganzen Katalog; erst der Rest geht einzeln an die Suche. */
+   Titel mit ISRC (Exportify, TuneMyMusic, Soundiiz schreiben sie mit)
+   schlaegt eine Anfrage je Dutzend exakt nach; stehen mehrere Titel
+   desselben Kuenstlers an, holt eine Anfrage dessen ganzen Katalog; erst
+   der Rest geht einzeln an die Suche.
+
+   Apple erlaubt laut Doku rund 20 Anfragen je Minute und sperrt danach fuer
+   Minuten. Der Takt passt sich deshalb an (`pace`): nach einer Sperre
+   langsam, nach vierzig sauberen Anfragen wieder schneller - statt mit
+   260 ms in die Sperre zu rennen und dann minutenlang zu warten. */
 
 const Playlist = (() => {
 
@@ -14,12 +21,32 @@ const Playlist = (() => {
   const CACHE_KEY = 'songrate:plcache';
   const STORE_KEY = 'songrate:playlist';
   const QUEUE_KEY = 'songrate:plqueue';
-  const CACHE_MAX = 900;
-  /* Apple laesst ein paar hundert Anfragen durch und macht dann fuer eine
-     Weile mit 403 dicht. Deshalb Pause zwischen den Anfragen und, wenn es
-     doch passiert, warten statt abbrechen. */
-  const PAUSE_MS = 260;
+  const CACHE_MAX = 2500;
+  /* Apple laesst eine Weile viel durch und macht dann mit 403 dicht. Der
+     Abstand zwischen zwei Anfragen beginnt knapp, wird nach einer Sperre
+     gross und erholt sich nur langsam - ein Regler statt einer Konstante. */
+  const PACE_MIN = 300, PACE_SLOW = 3000, PACE_MAX = 10000, PACE_STREAK = 40;
+  const pace = { delay: PACE_MIN, ok: 0, blocked: 0 };
+  function paceOk() {
+    pace.ok++;
+    if (pace.ok >= PACE_STREAK && pace.delay > PACE_MIN) {
+      pace.delay = Math.max(PACE_MIN, Math.round(pace.delay * 0.7));
+      pace.ok = 0;
+    }
+  }
+  function paceThrottled() {
+    pace.blocked++;
+    pace.delay = Math.min(PACE_MAX, Math.max(PACE_SLOW, pace.delay * 2));
+    pace.ok = 0;
+  }
   const BACKOFF = [30, 60, 120, 240, 300];
+  /* So viele ISRC-Codes gehen in einen Nachschlag. Ob Apple mehrere auf
+     einmal nimmt, zeigt der erste Versuch - bleibt er leer, geht es einzeln
+     weiter (`isrcBatch`). */
+  const ISRC_BATCH = 20;
+  let isrcBatch = true, isrcDoubt = false;
+  const ISRC = /^[A-Z]{2}[A-Z0-9]{3}\d{7}$/;
+  const isrcOf = x => { const c = String(x || '').toUpperCase().replace(/[^A-Z0-9]/g, ''); return ISRC.test(c) ? c : ''; };
 
   const norm = s => (s || '').toLowerCase()
     .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
@@ -30,6 +57,7 @@ const Playlist = (() => {
   const TITLE_KEYS = ['track name', 'trackname', 'track', 'title', 'titel', 'song', 'song title', 'song name', 'name', 'track title'];
   const ARTIST_KEYS = ['artist name(s)', 'artist name', 'artist names', 'artist', 'artists', 'artist(s)', 'kunstler', 'künstler', 'interpret', 'album artist', 'albumartist'];
   const ALBUM_KEYS = ['album name', 'album', 'collection', 'release'];
+  const ISRC_KEYS = ['isrc'];
 
   /* Zeilenweiser CSV-Leser, der Anfuehrungszeichen und Zeilenumbrueche in
      Feldern aushaelt - Songtitel mit Komma sind haeufig genug. */
@@ -103,7 +131,9 @@ const Playlist = (() => {
       if (Array.isArray(t.artists)) artist = t.artists.map(a => (typeof a === 'string' ? a : a.name)).filter(Boolean).join(', ');
       else artist = t.artist || t.artistName || t.artists || t.creator || '';
       const album = (t.album && (t.album.name || t.album)) || t.albumName || t.collectionName || '';
-      return { title: String(title || '').trim(), artist: String(artist || '').trim(), album: String(album || '').trim() };
+      const isrc = isrcOf((t.external_ids && t.external_ids.isrc) || t.isrc);
+      return { title: String(title || '').trim(), artist: String(artist || '').trim(), album: String(album || '').trim(),
+               isrc: isrc || undefined };
     }).filter(x => x.title || x.artist);
   }
 
@@ -135,11 +165,12 @@ const Playlist = (() => {
         const head = rows[0];
         const ti = findCol(head, TITLE_KEYS), ai = findCol(head, ARTIST_KEYS);
         if (ti >= 0 || ai >= 0) {
-          const li = findCol(head, ALBUM_KEYS);
+          const li = findCol(head, ALBUM_KEYS), ii = findCol(head, ISRC_KEYS);
           const tracks = rows.slice(1).map(r => ({
             title: ti >= 0 ? (r[ti] || '') : '',
             artist: ai >= 0 ? (r[ai] || '') : '',
             album: li >= 0 ? (r[li] || '') : '',
+            isrc: ii >= 0 ? (isrcOf(r[ii]) || undefined) : undefined,
           })).filter(x => x.title || x.artist);
           if (tracks.length) return { tracks: cap(tracks) };
         }
@@ -336,9 +367,10 @@ const Playlist = (() => {
     for (const q of queries(t)) {
       const cands = await lookup(q);
       const c = pick(cands, t);
+      paceOk();
       if (c) return c;
       alle.push(...cands);
-      await sleep(PAUSE_MS);
+      await sleep(pace.delay);
     }
     let best = null, bestScore = 0;
     for (const c of alle) {
@@ -430,13 +462,14 @@ const Playlist = (() => {
     (tracks || []).forEach(t => {
       const x = { title: t.title || '', artist: t.artist || '', album: t.album || '', loose: !!t.loose };
       if (t.lead) x.lead = t.lead;
+      if (t.isrc) x.isrc = isrcOf(t.isrc) || undefined;
       x.key = keyOf(x);
       if (!x.key || seen.has(x.key)) return;
       seen.add(x.key);
       list.push(x);
     });
     return { name, tracks: list, pending: list.slice(), found: new Map(), missed: new Map(),
-             tried: new Set(), current: null, extra: [] };
+             tried: new Set(), isrcTried: new Set(), current: null, extra: [] };
   }
 
   const take = (j, t) => { const i = j.pending.indexOf(t); if (i >= 0) j.pending.splice(i, 1); };
@@ -474,18 +507,46 @@ const Playlist = (() => {
      dessen Katalog (200 Songs) - das ersetzt bei einer Liste mit zehn
      Rihanna-Songs zehn Einzelsuchen. Nur bei sicherer Spaltenzuordnung:
      bei Freitext ist offen, welche Haelfte der Kuenstler ist. */
-  const BATCH_MIN = 3;
+  const BATCH_MIN = 2;
   const leadKey = t => (t.loose ? '' : norm(leadName(t)));
-  const catalogs = new Map();       /* nur fuer diese Sitzung */
+  const catalogs = new Map();       /* diese Sitzung */
+  const CATALOG_DAYS = 45;          /* danach wird ein gespeicherter Katalog neu geholt */
 
+  /* Nur, was der Abgleich braucht - so passt ein Katalog in rund 40 KB. */
+  const trim = r => ({ trackName: r.trackName, artistName: r.artistName, collectionName: r.collectionName,
+                       releaseDate: r.releaseDate, primaryGenreName: r.primaryGenreName, previewUrl: r.previewUrl,
+                       artworkUrl100: r.artworkUrl100, trackId: r.trackId, artistId: r.artistId });
+
+  /* Der Katalog eines Kuenstlers: aus der Sitzung, sonst aus IndexedDB
+     (ueberlebt das Neuladen, Platz fuer hunderte), sonst von Apple. */
   async function catalog(name) {
     const k = norm(name);
     if (catalogs.has(k)) return catalogs.get(k);
+    const kv = typeof Local !== 'undefined' && Local.kvGet ? Local : null;
+    if (kv) {
+      const alt = await kv.kvGet('cat:' + k);
+      if (alt && alt.list && Date.now() - alt.at < CATALOG_DAYS * 864e5) {
+        catalogs.set(k, alt.list);
+        return alt.list;
+      }
+    }
     const res = await get('search', { media: 'music', entity: 'song', attribute: 'artistTerm',
                                       limit: 200, country: 'DE', term: glatt(name) });
-    const list = res.filter(r => r.previewUrl);
+    const list = res.filter(r => r.previewUrl).map(trim);
     catalogs.set(k, list);
+    if (kv) kv.kvPut('cat:' + k, { at: Date.now(), list });
     return list;
+  }
+
+  /* ISRC-Nachschlag: die exakte Aufnahme, kein Raten. Die Antwort traegt
+     den Code nicht mit, deshalb werden die Treffer ueber `pick` wieder den
+     Titeln zugeordnet; was dabei uebrig bleibt, holt ein einzelner
+     Nachschlag, bei dem die Zuordnung klar ist. */
+  async function lookupIsrc(codes, country) {
+    /* limit hoch: ein Code kann mehrere Ausgaben derselben Aufnahme liefern,
+       und die Voreinstellung von 50 wuerde bei zwanzig Codes abschneiden. */
+    const res = await get('lookup', { isrc: codes.join(','), country: country || 'DE', limit: 200 });
+    return res.filter(r => r.wrapperType === 'track' && r.previewUrl);
   }
 
   /* Der Lauf. Was gefunden wird, meldet `onFound` sofort - die Playlist
@@ -510,6 +571,37 @@ const Playlist = (() => {
       j.current = t.key;
       tell();
       try {
+        /* Stufe 2: ISRC. Ein Nachschlag fuer ein Dutzend Titel auf einmal;
+           was sich aus der Sammelantwort nicht zuordnen laesst, bekommt noch
+           einen eigenen (dann ist jede Antwort der Titel). Bleibt eine
+           Sammelantwort leer, koennte Apple keine Liste nehmen - die Gruppe
+           geht einzeln, und erst ein einzelner Treffer beweist das. */
+        if (t.isrc && !j.isrcTried.has(t.key)) {
+          const einzeln = !isrcBatch || !!t.isrcSingle;
+          const gruppe = einzeln ? [t]
+            : j.pending.filter(x => x.isrc && !j.isrcTried.has(x.key) && !x.isrcSingle).slice(0, ISRC_BATCH);
+          const hits = await lookupIsrc(gruppe.map(x => x.isrc));
+          paceOk();
+          if (gruppe.length > 1 && !hits.length) {
+            isrcDoubt = true;
+            gruppe.forEach(x => { x.isrcSingle = true; });
+          } else {
+            if (gruppe.length > 1) isrcDoubt = false;
+            gruppe.forEach(x => {
+              if (!j.pending.includes(x)) { j.isrcTried.add(x.key); return; }
+              const c = gruppe.length === 1 ? hits[0] : pick(hits, x);
+              if (c) {
+                if (einzeln && isrcDoubt) { isrcBatch = false; isrcDoubt = false; }
+                const song = toSong(c); cache[x.key] = song; hit(x, song, 'isrc');
+                j.isrcTried.add(x.key);
+              } else if (einzeln) j.isrcTried.add(x.key);     /* dann eben die Suche */
+              else x.isrcSingle = true;
+            });
+          }
+          waits = 0;
+          await sleep(pace.delay);
+          continue;
+        }
         const wer = leadKey(t);
         const gruppe = wer && !j.tried.has(wer) ? j.pending.filter(x => leadKey(x) === wer) : [];
         if (gruppe.length >= BATCH_MIN) {
@@ -517,13 +609,14 @@ const Playlist = (() => {
           try { kat = await catalog(leadName(t)); }
           catch (e) { if (e.throttled) throw e; }
           j.tried.add(wer);
+          paceOk();
           gruppe.forEach(x => {
             if (!j.pending.includes(x)) return;      /* inzwischen von Hand zugeordnet */
             const c = pick(kat, x);
             if (c) { const song = toSong(c); cache[x.key] = song; hit(x, song, 'artist'); }
           });
           waits = 0;
-          await sleep(PAUSE_MS);
+          await sleep(pace.delay);
           continue;          /* der vorderste ist jetzt gefunden oder geht einzeln */
         }
         const c = await searchOne(t);
@@ -535,11 +628,12 @@ const Playlist = (() => {
       } catch (e) {
         if (!e.throttled) { if (j.pending.includes(t)) hit(t, null); continue; }
         saveCache(cache);
+        paceThrottled();
         if (waits >= BACKOFF.length) { throttled = true; break; }
         if (!await waitOut(BACKOFF[waits++], opts)) break;
         continue;
       }
-      await sleep(PAUSE_MS);
+      await sleep(pace.delay);
     }
     j.current = null;
     saveCache(cache);
@@ -612,7 +706,7 @@ const Playlist = (() => {
         localStorage.setItem(QUEUE_KEY, JSON.stringify({
           name: j.name, own: !!j.own,
           tracks: j.tracks.map(t => ({ title: t.title, artist: t.artist, album: t.album,
-                                       loose: t.loose || undefined, lead: t.lead })),
+                                       loose: t.loose || undefined, lead: t.lead, isrc: t.isrc })),
           missed: [...j.missed.keys()],
         }));
       } else localStorage.removeItem(QUEUE_KEY);
@@ -658,5 +752,5 @@ const Playlist = (() => {
 
   return { parse, job, run, prefill, prio, retry, assign, hintOf, store, restore,
            storeQueue, restoreQueue, revive, find, albumTracks, dedupe, base, names, fits, keyOf,
-           MAX_TRACKS };
+           pace: () => ({ ...pace, isrcBatch, isrcDoubt }), MAX_TRACKS };
 })();
