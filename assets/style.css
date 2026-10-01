@@ -46,6 +46,9 @@ dl,dd,dt,ul,li{margin:0;padding:0;list-style:none}
 @keyframes pulse{0%,100%{transform:scale(.75);opacity:.45}50%{transform:scale(1);opacity:1}}
 
 /* ---------- Layout ---------- */
+/* Die Versionsnummer ganz unten: da, aber unauffaellig. */
+.ver{text-align:center;color:var(--grey);font-family:var(--mono);font-size:10.5px;margin:-30px 0 14px;opacity:.75;user-select:all}
+.ver:empty{display:none}
 main{
   min-height:100%;display:grid;gap:26px;
   grid-template-columns:230px minmax(0,1fr) 250px;

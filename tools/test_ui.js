@@ -404,7 +404,7 @@ function makeWindow(store, patchDb, url) {
     return { ok: true, status: 200, arrayBuffer: async () => new ArrayBuffer(8) };  /* Preview */
   };
 
-  w.eval(['assets/links.js', 'assets/tags.js', 'assets/local.js', 'assets/server.js',
+  w.eval(['assets/version.js', 'assets/links.js', 'assets/tags.js', 'assets/local.js', 'assets/server.js',
     'assets/audio.js', 'assets/playlist.js', 'assets/spotify.js', 'assets/filters.js', 'assets/artist.js',
     'assets/app.js']
     .map(read).join('\n;\n')
@@ -421,6 +421,8 @@ const dummy = n => ({ t: 'Song ' + n, a: 'Kuenstler ' + n, al: 'Album', y: 2020,
   await waitFor(() => !w.document.querySelector('#app').hidden);
 
   assert(!$('#app').hidden, 'Boot: App sichtbar');
+  assert(/^v\d{4}-\d{2}-\d{2}\.\d+ · Songs vom \d{1,2}\.\d{1,2}\.\d{4}$/.test($('#ver').textContent),
+    'Boot: unten steht die Versionsnummer (' + $('#ver').textContent + ')');
   assert($('#tabs').children.length === 5, 'Boot: fuenf Reiter');
   assert(G('round').length === 5 && G('round').every(r => r.song), 'Boot: Runde mit fuenf Songs');
 

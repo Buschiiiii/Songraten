@@ -132,6 +132,17 @@ function whyButton(why, host) {
   return b;
 }
 
+/* Ganz unten: welche Fassung der Seite laeuft, und von wann die Songliste
+   ist. Nach einem Patch sieht man so, ob der Browser ihn schon hat. */
+function renderVersion() {
+  const p = $('#ver');
+  if (!p) return;
+  const d = /^(\d{4})-(\d{2})-(\d{2})$/.exec((DB && DB.built) || '');
+  p.textContent = 'v' + (typeof VERSION === 'string' ? VERSION : '?')
+    + (d ? ` · Songs vom ${+d[3]}.${+d[2]}.${d[1]}` : '');
+  p.title = 'Fassung der Seite (Datum.Nummer) und Stand der Songliste';
+}
+
 /* Meldung setzen, mit ?-Knopf, wenn es einen Fehler zu erklaeren gibt. */
 function putNote(box, msg, e) {
   if (!box) return;
@@ -542,6 +553,7 @@ async function boot() {
   newRound();
   $('#boot').remove();
   $('#app').hidden = false;
+  renderVersion();
   /* Laeuft nebenher: der gemerkte Musikordner braucht kein Warten. */
   restoreLocal().catch(() => {});
 }

@@ -1232,6 +1232,31 @@ seine Kataloge trotzdem da, und der nächste baut darauf auf.
    Wartestufen sind geraten.
 3. **Spotify** ist nur gegen nachgebaute Antworten geprüft (siehe oben).
 
+## Versionsnummer
+
+Ganz unten auf der Seite steht `v2026-10-01.14 · Songs vom 1.10.2026`
+(`#ver`, `renderVersion()`): die Fassung der Seite als **Datum.Nummer am
+Tag** aus `assets/version.js` (`VERSION`), dazu `DB.built`. Gewünscht,
+damit man nach einem Patch sofort sieht, ob der Browser ihn schon hat –
+GitHub Pages und Safari halten `index.html` bis zu zehn Minuten im Cache.
+
+**Nicht von Hand ändern.** `tools/bump.py` zählt hoch (neuer Tag → `.1`,
+`--selftest` prüft es), und ein lokaler Git-Hook ruft es vor jedem Commit:
+
+```sh
+cat > .git/hooks/pre-commit <<'EOF2'
+#!/bin/sh
+cd "$(git rev-parse --show-toplevel)" || exit 1
+python3 tools/bump.py >/dev/null && git add assets/version.js
+EOF2
+chmod +x .git/hooks/pre-commit
+```
+
+Der Hook liegt nicht im Repo (Git erlaubt das nicht) – in einer frischen
+Umgebung **zuerst einrichten**, sonst zeigt die Seite nach dem Patch die
+alte Nummer. Die Actions-Commits (`Songs aktualisiert`) laufen ohne Hook
+und ändern die Nummer nicht; dafür ändert sich dort `Songs vom …`.
+
 ## Deployment
 
 Dateien liegen im Repo-Wurzelverzeichnis, GitHub Pages auf `main` / root,

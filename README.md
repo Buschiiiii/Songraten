@@ -356,6 +356,11 @@ zuerst:
    Titel daraus. Zwei Anfragen je Titel, nur für Titel, die sonst nirgends
    zu finden waren.
 
+Ganz unten auf der Seite steht klein die Fassung (`v2026-10-01.14`, also
+Datum und Nummer des Patches an dem Tag) und von wann die Songliste ist –
+so siehst du nach einer Änderung, ob dein Browser sie schon hat; wenn
+nicht, hilft Neuladen oder ein paar Minuten warten.
+
 Geht etwas schief, steht neben der Meldung ein kleines **?** – darüber
 fahren oder antippen sagt, was genau passiert ist: welche Adresse, welcher
 Fehler, woran es liegen kann. In der Titelliste steht bei jedem fehlenden
