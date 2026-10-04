@@ -65,7 +65,10 @@ const Filters = (() => {
        - oder er auf DE_CLASSICS steht: Hits aus der Zeit vor Spotify, fuer
          die es keine deutschen Streamzahlen gibt. */
   const KPOP_HIT = 7.5e8;
-  const DE_HIT = 5e7;
+  /* Erster echter Lauf (4. Oktober): Despacito 101 Mio., Mi Gente, Con
+     Calma, Loco Contigo 48, El Perdon 16, Dura 15, Bum Bum Tam Tam 10 -
+     darunter Sin Pijama, Bebe, Te Bote (5) und alles, was hier nie lief. */
+  const DE_HIT = 1e7;
   const DE_CLASSICS = [['macarena', 'los del rio'], ['la bamba', 'los lobos'], ['la bamba', 'ritchie valens'],
     ['livin la vida loca', 'ricky martin'], ['gasolina', 'daddy yankee'], ['danza kuduro', 'don omar'],
     ['danza kuduro', 'lucenzo'], ['vem dancar kuduro', 'lucenzo'], ['despacito', 'luis fonsi'],

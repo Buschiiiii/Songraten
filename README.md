@@ -366,7 +366,7 @@ Import oder, angemeldet, über eine Suche; Apple reicht die Songliste.
 hängt an weltweiten Streams – deshalb tauchten Bad Bunny, Arijit Singh und
 BTS weit oben auf. Charts, Jahrzehnte und Genres spielen jetzt
 standardmäßig nur englische und deutsche Songs und fremdsprachige, die man
-in Deutschland kennt: mit mindestens 50 Mio. Spotify-Streams aus
+in Deutschland kennt: mit mindestens 10 Mio. Spotify-Streams aus
 Deutschland (kworb, deutsche Wochencharts), die großen K-Pop-Hits („How You
 Like That“, „Pink Venom“) und Klassiker von vor Spotify (Macarena,
 Despacito, Gangnam Style). Die Sprache wird aus Titel, Genre und Künstler

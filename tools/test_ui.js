@@ -1686,6 +1686,8 @@ const dummy = n => ({ t: 'Song ' + n, a: 'Kuenstler ' + n, al: 'Album', y: 2020,
     const latin = de => F(`Filters.langOf({ t: 'Tití Me Preguntó', a: 'Bad Bunny', g: 'Latin Urban', s: 1.5e9${de ? ', de: ' + de : ''} })`);
     assert(latin(0) === 'es' && latin(F('Filters.DE_HIT') - 1) === 'es' && latin(F('Filters.DE_HIT')) === 'dh',
       'Sprache: ab DE_HIT Streams in Deutschland zaehlt ein spanischer Song als bekannt, darunter nicht');
+    assert(sp('Con Calma') === 'dh' && sp('Mi Gente') === 'dh' && sp('Sin Pijama') === 'es',
+      'Sprache: mit den echten deutschen Zahlen bleiben Con Calma und Mi Gente, Sin Pijama nicht');
     assert(F('listFor("genres").every(g => !/latin|spanisch|mexiko|bollywood/.test(g.value))'),
       'Sprache: die Genre-Auswahl kennt dann kein Latin oder Bollywood mehr');
     const zeile = [...$$('#gLang').querySelectorAll('.fopt')].find(r => r.querySelector('.txt').textContent === 'Spanisch');

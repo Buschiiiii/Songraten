@@ -326,16 +326,19 @@ auch okay, weil man das in DE kennt"). `langOf()` macht aus jeder fremden
 Sprache die Gruppe `dh` „Bekannte Hits (fremdsprachig)", wenn
 `knownInDe()` zutrifft:
 
-- **`de` ≥ `DE_HIT`** (50 Mio.): Spotify-Streams **aus Deutschland**,
-  Summe der deutschen Wochencharts bei kworb (`country/de_weekly_totals`).
+- **`de` ≥ `DE_HIT`** (10 Mio.): Spotify-Streams **aus Deutschland**,
+  Summe der deutschen Wochencharts bei kworb (`country/de_weekly_totals`,
+  zählt nur Wochen in den Top 200 – also Chartpräsenz hier).
   `tools/fetch_de.py` holt die Seite, ordnet über Grundtitel und Künstler zu
   (Remix und Original zählen zusammen) und schreibt `de` in `songs.json`;
   läuft im täglichen Workflow und nach *Charts neu bauen*, jeweils hinter
   `clean_songs.py`, mit `continue-on-error`. Bricht ohne Schreiben ab unter
   `MIN_ROWS` (300) Zeilen oder `MIN_MATCHED` (150) Songs. Das Log listet die
   deutschen Streams der Songs aus fremdsprachigen Genres – daran die Grenze
-  einstellen. **Die Grenze ist geschätzt**, die Seite war von hier aus nicht
-  erreichbar.
+  einstellen. Erster Lauf (4. Oktober): 12 911 Zeilen, 1540 Songs mit `de`;
+  Despacito 101 Mio., Mi Gente/Con Calma/Loco Contigo 48, El Perdón 16,
+  Bum Bum Tam Tam 10, darunter Sin Pijama, Bebé, Te Boté (5). Mit 50 Mio.
+  wäre fast nur Despacito geblieben.
 - **K-Pop mit `s` ≥ `KPOP_HIT`** (750 Mio. weltweit): K-Pop läuft in den
   deutschen Wochencharts selten lange, ist aber bekannt; DDU-DU DDU-DU liegt
   bei 890 Mio.
@@ -343,7 +346,7 @@ Sprache die Gruppe `dh` „Bekannte Hits (fremdsprachig)", wenn
   (Macarena, Lambada, Dragostea Din Tei, Gangnam Style …) und ein paar
   sicheren Fällen (Despacito, Gasolina, Bailando).
 
-Stand 4. Oktober, noch ohne `de`: 5347 en, 741 es, 31 dh, 117 hi, 85 ko.
+Stand 4. Oktober: 5347 en, 727 es, 47 dh, 117 hi, 85 ko.
 Ohne Streamzahl (Playlist, eigene Musik) greifen nur die Klassiker.
 
 Regeltyp `lang` wie Genre: Klappliste *Sprachen* (`#gLang`) mit Songzahl,
