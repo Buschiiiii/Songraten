@@ -155,7 +155,8 @@ function putNote(box, msg, e) {
 
 let DB = null;            /* { artists:[], songs:[] } */
 let PL = null;            /* aufgeloeste Playlist, gleiche Form wie DB */
-let mode = 'charts';      /* 'charts' | 'decades' | 'genres' | 'artist' | 'playlist' */
+let mode = 'charts';      /* 'charts' | 'regions' | 'decades' | 'genres' | 'artist' | 'playlist' | 'local' */
+let popRegion = null;     /* im Modus „Laender-Charts": das Land, nach dessen Streams sortiert wird */
 let AR = null;            /* geladener Kuenstlerkatalog, Form wie DB */
 let LO = null;            /* eigene Musik vom Geraet, Form wie DB */
 let pickFiltered = [];    /* Songs des gewaehlten Jahrzehnts bzw. Genres */
@@ -187,6 +188,7 @@ let settings = load('settings', {
   plFilters: Filters.DEFAULT.map(r => ({ ...r })),
   decade: 2010,
   genre: 'pop',
+  region: 'de',
   artist: null,           /* zuletzt gespielter Kuenstler (Apple-ID) */
   service: Links.DEFAULT, /* Lieblingsdienst zum Nachhoeren */
   svcAll: false,          /* alle Dienste in der Aufloesung zeigen */
@@ -373,6 +375,9 @@ function addPop() {
    Hit und bleibt ohne Wert. */
 const popMemo = new Map();
 function popOf(s) {
+  /* Laender-Charts: bekannt ist, was in diesem Land gestreamt wurde - die
+     Weltzahl spielt dort keine Rolle. */
+  if (popRegion) return Filters.regionStreams(s, popRegion) || null;
   if (s.pop != null) return s.pop;
   if (s.d !== 'playlist' && s.d !== 'local') return null;
   const k = songKey(s);
@@ -397,7 +402,7 @@ function ranked(list) {
    die globale Einstellung - so laesst sich 2010 anders schneiden als 1950. */
 function tierScope() {
   if (mode === 'charts') return 'charts';
-  if (mode === 'decades' || mode === 'genres') {
+  if (mode === 'decades' || mode === 'genres' || mode === 'regions') {
     const now = currentPick();
     return now ? mode.slice(0, 3) + '-' + now.value : null;
   }
@@ -435,7 +440,7 @@ function applyTiers(list) {
     byTier[t.id].forEach(s => tierMap.set(s, t.id));
     from = to;
   });
-  tierInfo = { total: all.length, played: from, known, est: all.some(s => s.est) };
+  tierInfo = { total: all.length, played: from, known, est: !popRegion && all.some(s => s.est) };
 }
 const tierOf = s => tierMap.get(s) || '';
 
@@ -558,6 +563,7 @@ async function boot() {
     s.na = s.anl.join(' ');
   });
   addPop();
+  Filters.setKnown(DB.known);
   const gespeichert = Playlist.restore();
   PL = buildPlaylist(gespeichert);
   const liste = Playlist.restoreQueue();
@@ -585,6 +591,7 @@ async function boot() {
    grauem Kleingedrucktem. */
 const INFO = {
   mode: 'Charts & Stufen: der Pool sind die rund 3000 Songs mit Streamzahlen, nach Bekanntheit in Easy bis Impossible geteilt (Grenzen unter Schwierigkeit).\n'
+    + 'Länder-Charts: nur Songs, die in einem Land in den Spotify-Wochencharts liefen – Deutschland, Österreich, Schweiz, USA, Großbritannien, Frankreich, Spanien, Italien, Niederlande, mit den Pfeilen oben. Die Stufen gehen nach den Streams in diesem Land, und „bekannte Hits“ im Sprachfilter heißt: bekannt dort. Die Zahlen kommen täglich von kworb; was nur in einem Land groß war (deutscher Rap, Schlager), sucht die Seite nach und nach bei Apple dazu.\n'
     + 'Jahrzehnte und Genres: oben in der Mitte wählst du mit den Pfeilen aus; die Stufen gelten dann innerhalb der Auswahl – Easy sind die bekanntesten 80er, nicht die bekanntesten Songs überhaupt. Unter 50 Songs fallen die Stufen weg, dann sind es fünf zufällige.\n'
     + 'Künstler, Eigene Playlist, Eigene Musik: fünf zufällige Songs ohne Stufen aus dem, was du geladen hast. Was noch nichts geladen hat, ist ausgegraut – die Quelle steht in den Panels darunter.',
   hits: 'Für Erfolgserlebnisse, in jedem Modus: fünf Songs nur aus den bekanntesten des aktuellen Pools, ohne Stufen, Plätze „Hit 1“ bis „Hit 5“. Wie viele das sind, stellst du unter Schwierigkeit → Nur Hits ein (voreingestellt die obersten 20 %, mindestens 10 Songs). Bekanntheit heißt Streamzahl; Songs aus den Jahrescharts ohne Streams werden eingeschätzt. Gilt ab der nächsten Runde – „Alle neu würfeln“ startet sie sofort. Die Statistik zählt Hit-Runden getrennt.',
@@ -606,7 +613,7 @@ const INFO = {
   start: 'Apples Hörproben sind 30 Sekunden, meist aus der Songmitte – „ab Songanfang“ wie im Original geht damit nicht. Anfang des Ausschnitts: jeder Platz beginnt am Anfang der Hörprobe. Zufällige Stelle: irgendwo darin, so dass die längste Stufe noch hineinpasst. Eigene Musik spielt immer ab dem ersten hörbaren Ton.',
   speech: 'Apple liefert keine Sprache, deshalb wird sie geschätzt – aus Titelwörtern („el“, „que“ gegen „the“, „you“), Schrift und Zeichen (Hangul, ñ, ã), dem Genre (Latin, K-Pop, Bollywood …) und dem, was der Künstler sonst singt. Jeder Song bekommt so einen Anteil „fremd“: 0 % ist sicher eine deiner Zielsprachen, 100 % sicher keine.\n'
     + 'Die Strenge sagt, ab wann ein Song rausfliegt: bei 0 % nie, bei 50 % wenn er eher fremd als vertraut wirkt, bei 100 % beim kleinsten fremden Hinweis – dann trifft es auch „Viva La Vida“ oder „Te Amo“, die nur so klingen. Die Zeile darunter zählt beim Ziehen mit.\n'
-    + 'Bekannte Hits behalten: fremdsprachige Songs, die man in Deutschland trotzdem kennt, bleiben bei jeder Strenge – mindestens 10 Mio. Spotify-Streams in Deutschland (deutsche Wochencharts, täglich von kworb), K-Pop ab 750 Mio. Streams weltweit („Pink Venom“, „DDU-DU DDU-DU“) und ein paar alte Hits ohne Streamdaten (Macarena, La Bamba, Gasolina). Für 100 % nur Englisch: ausschalten.\n'
+    + 'Bekannte Hits behalten: fremdsprachige Songs, die man in Deutschland trotzdem kennt, bleiben bei jeder Strenge – mindestens 10 Mio. Spotify-Streams in Deutschland (deutsche Wochencharts, täglich von kworb; in den Länder-Charts gilt das Land, mit einer Grenze gleich tief in dessen Liste), K-Pop ab 750 Mio. Streams weltweit („Pink Venom“, „DDU-DU DDU-DU“) und ein paar alte Hits ohne Streamdaten (Macarena, La Bamba, Gasolina). Für 100 % nur Englisch: ausschalten.\n'
     + 'Unter „Sprachen“ steht die geschätzte Sprache als Liste – zum gezielten „ohne K-Pop“ oder „dazu Französisch“.',
   filter: 'Regeln für den Pool: „nur“ schränkt ein (mehrere Genres: oder; Genre und Jahrzehnt: und), „ohne“ wirft raus, „dazu“ holt dazu und schlägt beides – „nur 2010er, ohne Rap, dazu Billie Eilish“ ergibt die 2010er ohne Rap plus alle Billie-Eilish-Songs. Jeder Modus hat seine eigenen Regeln. Instrumentals (auch Schlaflied- und Klavierfassungen) werden an Titel, Album und Genre erkannt.\n'
     + 'Sprache: siehe das i am Sprachfilter.\n'
@@ -1017,7 +1024,8 @@ function writeCuts(arr) {
 }
 
 const fmtStreams = n => (n >= 1e9 ? (n / 1e9).toFixed(1).replace('.', ',') + ' Mrd.'
-  : Math.round(n / 1e6) + ' Mio.');
+  : n >= 1e6 ? Math.round(n / 1e6) + ' Mio.'
+  : (n / 1e6).toFixed(1).replace('.', ',') + ' Mio.');
 const presetName = cuts => Object.keys(TIER_PRESETS).find(k => TIER_PRESETS[k].join() === cuts.join()) || '';
 const PRESET_LABEL = { leicht: 'Leicht', normal: 'Normal', schwer: 'Schwer', '': 'Eigene' };
 
@@ -1088,7 +1096,7 @@ function renderTierPanel() {
 /* Der Bereich ohne den Zusatz „Nur Hits" - fuer die Schalterbeschriftung. */
 function filterScopeName() {
   if (mode === 'charts') return 'Charts';
-  if (mode === 'decades' || mode === 'genres') { const now = currentPick(); return now ? now.text : '–'; }
+  if (mode === 'decades' || mode === 'genres' || mode === 'regions') { const now = currentPick(); return now ? now.text : '–'; }
   return filterScope();
 }
 
@@ -1595,8 +1603,10 @@ function showReveal(r, won) {
   }
   $('#revealTitle').textContent = s.t;
   $('#revealArtist').textContent = s.a;
+  const imLand = popRegion ? Filters.regionStreams(s, popRegion) : 0;
   $('#revealMeta').textContent = [s.al, s.y || null,
-    s.s ? (s.s / 1e9 >= 1 ? (s.s / 1e9).toFixed(2) + ' Mrd. Streams' : Math.round(s.s / 1e6) + ' Mio. Streams')
+    imLand ? `${fmtStreams(imLand)} Streams in ${Filters.REGION_NAME[popRegion]}`
+    : s.s ? (s.s / 1e9 >= 1 ? (s.s / 1e9).toFixed(2) + ' Mrd. Streams' : Math.round(s.s / 1e6) + ' Mio. Streams')
       : s.r ? `Platz ${s.r} der Jahrescharts ${s.y}` : (s.g || null),
   ].filter(Boolean).join(' · ');
   const badge = $('#revealBadge');
@@ -2516,6 +2526,7 @@ function statGroups() {
   const groups = [
     ['Charts', k => TIERS.some(t => t.id === k) || /^pl\d$/.test(k)],
     ['Nur Hits', k => k === 'hits'],
+    ['Länder-Charts', k => k.startsWith('reg-')],
     ['Jahrzehnte', k => k.startsWith('dec-')],
     ['Genres', k => k.startsWith('gen-')],
     ['Künstler', k => k.startsWith('art-')],
@@ -2550,7 +2561,7 @@ function renderStats() {
 
 /* ---- Auswahl im Jahrzehnte- und Genremodus ---- */
 
-const PICKED = ['decades', 'genres', 'artist'];   /* Modi mit Auswahlleiste oben */
+const PICKED = ['regions', 'decades', 'genres', 'artist'];   /* Modi mit Auswahlleiste oben */
 /* Ohne Stufen gibt es keinen Grund, die Songs aus den Jahrescharts
    auszulassen - die fehlende Streamzahl stoert nur beim Einsortieren. */
 const basePool = () => (mode === 'playlist' ? plFiltered
@@ -2565,6 +2576,9 @@ const activePool = () => (settings.hits ? hitPool(basePool()) : basePool());
    die Zeit verteilen. */
 const DEC_MIN = 10;
 const GEN_MIN = 20;
+/* Ein Land steht zur Wahl, sobald so viele seiner Songs in songs.json
+   stehen - weniger waeren keine Charts. */
+const REG_MIN = 50;
 
 /* Die Auswahl fuer einen Modus als [{ value, text }]. */
 function listFor(m) {
@@ -2574,6 +2588,13 @@ function listFor(m) {
     cnt.set(key, (cnt.get(key) || 0) + 1);
     label.set(key, text);
   };
+  if (m === 'regions') {
+    filtered.forEach(s => Filters.REGIONS.forEach(([cc, name]) => {
+      if (Filters.regionStreams(s, cc) > 0) collect(cc, name);
+    }));
+    return Filters.REGIONS.filter(([cc]) => (cnt.get(cc) || 0) >= REG_MIN)
+      .map(([value, text]) => ({ value, text }));
+  }
   if (m === 'decades') {
     filtered.forEach(s => { const d = Filters.decadeOf(s); collect(d, d + 'er'); });
     return [...cnt].filter(([, n]) => n >= DEC_MIN).sort((a, b) => a[0] - b[0])
@@ -2594,9 +2615,10 @@ function listFor(m) {
 
 const pickList = () => listFor(mode);
 const pickSetting = () => (mode === 'genres' ? settings.genre
-  : mode === 'artist' ? settings.artist : settings.decade);
-const inPick = (s, value) => (mode === 'decades'
-  ? Filters.decadeOf(s) === value
+  : mode === 'artist' ? settings.artist
+  : mode === 'regions' ? settings.region : settings.decade);
+const inPick = (s, value) => (mode === 'decades' ? Filters.decadeOf(s) === value
+  : mode === 'regions' ? Filters.regionStreams(s, value) > 0
   : norm(Filters.genreOf(s)) === value);
 
 /* Fuenf Stufen brauchen genug Songs. Reicht es nicht, wird das Jahrzehnt oder
@@ -2629,6 +2651,7 @@ function stepPick(dir) {
   const next = list[(i + dir + list.length) % list.length].value;
   if (mode === 'genres') settings.genre = next;
   else if (mode === 'artist') settings.artist = next;
+  else if (mode === 'regions') settings.region = next;
   else settings.decade = next;
   save('settings', settings);
   applyFilters();
@@ -2661,8 +2684,17 @@ function applyFilters() {
   chartFiltered = filtered.filter(s => s.d);
   plFiltered = PL ? unblocked(Filters.apply(PL.songs, settings.plFilters, PL)) : [];
   loFiltered = LO ? unblocked(Filters.apply(LO.songs, settings.loFilters, LO)) : [];
+  popRegion = null;
 
-  if (mode === 'artist') {
+  if (mode === 'regions') {
+    /* Nur, was in diesem Land lief, gestuft nach den Streams dort; und
+       „bekannte Hits" im Sprachfilter heisst: bekannt in diesem Land. */
+    const now = currentPick();
+    popRegion = now ? now.value : null;
+    pickFiltered = now ? unblocked(Filters.apply(DB.songs.filter(s => inPick(s, now.value)),
+      regionRules(now.value), DB)) : [];
+    applyTiers(pickFiltered);
+  } else if (mode === 'artist') {
     /* Der Kuenstlerkatalog kommt nicht aus songs.json, sondern von Apple. */
     const now = currentPick();
     AR = now ? buildPlaylist(Artist.fromCache(now.value)) : null;
@@ -2681,6 +2713,11 @@ function applyFilters() {
   renderFilters();
   renderTierPanel();
 }
+
+/* Die Regeln der Charts, nur dass die Sprachregel nach dem Land fragt. */
+const regionRules = cc => settings.filters.map(r => (r.type === 'speech' ? { ...r, region: cc } : r));
+/* Fuer welches Land „bekannte Hits" gerade gelten. */
+const speechRegion = () => popRegion || 'de';
 
 /* Die Auswahllisten kommen aus dem Pool, der gerade gilt - in der Playlist
    stehen also ihre Genres und Kuenstler, nicht die der Charts. */
@@ -2781,11 +2818,14 @@ function renderSpeech(vorschau) {
   if (vorschau == null) $('#speechStrict').value = r.strict;
   $('#speechVal').textContent = st + ' %';
   $('#speechKnown').checked = !!r.known;
+  $('#speechKnownTxt').textContent = `In ${Filters.REGION_NAME[speechRegion()]} bekannte Hits behalten`;
   /* Gezaehlt ueber den Pool ohne die Sprachregel - also genau das, was sie
-     wegnimmt. */
+     wegnimmt. Im Jahrzehnt, Genre oder Land nur dort. */
   const db = pool();
-  const ohne = Filters.apply(db.songs, rules.filter(x => x.type !== 'speech'), db);
-  const probe = { ...r, strict: st };
+  const now = PICKED.includes(mode) && mode !== 'artist' ? currentPick() : null;
+  const basis = now ? db.songs.filter(s => inPick(s, now.value)) : db.songs;
+  const ohne = Filters.apply(basis, rules.filter(x => x.type !== 'speech'), db);
+  const probe = { ...r, strict: st, region: speechRegion() };
   const raus = ohne.filter(s => !Filters.speechPass(s, probe, db)).length;
   $('#speechNote').textContent = !t.length ? 'Keine Zielsprache gewählt – es wird nichts gefiltert.'
     : st <= 0 ? 'Strenge 0 % – es wird nichts gefiltert.'

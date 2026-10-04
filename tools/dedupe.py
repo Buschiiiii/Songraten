@@ -49,10 +49,17 @@ def merge_duplicates(songs):
         for a in (drop.get('ar') or []):
             if a not in ids:
                 ids.append(a)
+        # Streams je Land: aus beiden das Groessere, sonst verliert der
+        # zusammengefuehrte Song ein Land, das nur der andere Eintrag kannte.
+        rc = dict(drop.get('rc') or {})
+        for k, v in (keep.get('rc') or {}).items():
+            rc[k] = max(v, rc.get(k, 0))
         if keep is s:
             hit.update(s)
         hit['ar'] = ids
         hit['s'] = max(hit.get('s', 0), s.get('s', 0))
+        if rc:
+            hit['rc'] = rc
         merged.append((keep.get('t'), keep.get('a')))
 
     return order, merged

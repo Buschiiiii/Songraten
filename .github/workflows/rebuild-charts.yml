@@ -83,15 +83,15 @@ jobs:
       - name: Doppelte zusammenfuehren
         run: python3 tools/clean_songs.py
 
-      # Wie bekannt ist ein Song in Deutschland? kworb fuehrt die Spotify-
-      # Wochencharts je Land; die Summe landet als `de` in songs.json und
-      # entscheidet im Sprachfilter, ob ein spanischer Song ein bekannter
-      # Hit ist (Despacito) oder nicht. Eine Anfrage. Scheitert sie oder
-      # sieht die Tabelle fremd aus, bleibt die Datei, wie sie war - der Lauf
-      # geht trotzdem weiter.
-      - name: Streams in Deutschland
+      # Streams je Land: kworb fuehrt die Spotify-Wochencharts fuer jedes
+      # Land; die Summen landen als `rc` in songs.json. Daran haengen der
+      # Modus „Laender-Charts" und im Sprachfilter die Frage, ob ein
+      # spanischer Song in einem Land ein bekannter Hit ist (Despacito).
+      # Eine Anfrage je Land. Ein Land, das nicht kommt, behaelt seine alten
+      # Zahlen; kommt keins, bleibt die Datei, wie sie war.
+      - name: Streams je Land
         continue-on-error: true
-        run: python3 tools/fetch_de.py
+        run: python3 tools/fetch_regions.py
 
       # Vor der Pruefung, und mit always(): auch ein Lauf, der am Ende nichts
       # committen darf, soll seine Kataloge dalassen. So kommt der Bestand

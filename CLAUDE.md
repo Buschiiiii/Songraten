@@ -130,9 +130,10 @@ seit 2025 dicht). Nichts davon braucht ein Backend.
    gemeinsamen Künstler — „Hello" von Adele und von Lionel Richie bleiben
    getrennt. `tools/clean_songs.py` wendet dasselbe auf eine fertige
    `songs.json` an.
-4. `tools/fetch_de.py` schreibt `de`, die Spotify-Streams aus Deutschland
-   (kworb, deutsche Wochencharts) – für den Sprachfilter, siehe *Sprache*.
-   Eine Anfrage, `--selftest`, `--dump`.
+4. `tools/fetch_regions.py` schreibt `rc` (Spotify-Streams je Land) und
+   `known` (Grenze „bekannt" je Land) – siehe *Länder-Charts*.
+   `tools/add_regional.py` holt Länder-Hits nach, die in der Weltliste
+   fehlen.
 
 Grenzwerte der Stufen, Songs pro Stufe und die Künstleranzahl stehen oben in
 `match_local.py`.
@@ -231,6 +232,50 @@ aus den Jahrescharts und spielen in den Charts **nicht** mit, im Jahrzehnte-
 und Genremodus schon. `chartFiltered` hält sie aus den Charts heraus,
 `filtered` (und damit die Vorschlagsliste) enthält sie.
 
+## Länder-Charts
+
+Gewünscht („nur deutsche oder USA Charts, regelmäßig aktualisiert").
+Fünfter Modus mit Pfeilleiste wie Jahrzehnte (`PICKED` enthält
+`regions`, `settings.region`, Statistik `reg-de`, Grenzen-Bereich
+`reg-de`). Gespielt wird, was in einem Land in den Spotify-Wochencharts
+lief (`Filters.regionStreams(s, cc) > 0`), gestuft nach den Streams **dort**:
+`popRegion` lenkt `popOf()` auf `rc[cc]`, solange der Modus läuft. Länder:
+`Filters.REGIONS` = `fetch_regions.REGIONS` (de, at, ch, us, gb, fr, es,
+it, nl); zur Wahl steht ein Land ab `REG_MIN` (50) Songs nach Filtern. Die
+Auflösung nennt „35 Mio. Streams in Deutschland".
+
+**Daten** (`tools/fetch_regions.py`, täglich und nach *Charts neu bauen*,
+hinter `clean_songs.py`, `continue-on-error`): je Land
+`country/<cc>_weekly_totals.html` von kworb, Zuordnung über Grundtitel und
+Künstlernamen (Remix und Original zählen zusammen), Ergebnis als
+`rc: {de: …, us: …}` am Song. Ein Land, das nicht kommt (unter `MIN_ROWS`
+300 Zeilen oder `MIN_MATCHED` 100 Songs), **behält seine alten Zahlen**;
+kommt keins, bleibt die Datei unverändert. Das alte Feld `de` wandert
+(`migrate_de()`), `regionStreams()` liest es zur Not noch.
+
+**`known`** in `songs.json`: ab wie vielen Streams ein Song in einem Land
+„bekannt" ist. Gleiche Tiefe wie `DE_HIT` in Deutschland – so viele Plätze,
+wie in Deutschlands kworb-Liste 10 Mio. erreichen, in jedem Land
+(`known_limits()`). In den USA ist das eine größere Zahl, in Österreich
+eine kleinere. `Filters.setKnown(DB.known)` in `boot()`; `de` ist immer
+`DE_HIT`.
+
+**Fehlende Länder-Hits** (`tools/add_regional.py`, täglich, Budget
+`region_seconds` 900): kworbs Weltliste kennt deutschen Rap, Schlager oder
+französischen Pop kaum – Deutschland hätte sonst nur Welthits, die hier
+auch liefen. Je Land die obersten `TOP_N` (400) der Summenliste, die
+fehlen (`Index.find()`, wie die Zuordnung), höchstens `CAP_ARTIST` (15) je
+Künstler und Land; abwechselnd nach Rang über alle Länder, damit jedes
+zuerst seine größten bekommt. Suche im Store des Landes, Bewertung wie
+`add_decades.py` (`score`, `MIN_SCORE`, `BAD`), Cache
+`.cache/region_lookup.json`. Neue Songs: `s` 0, `d` leer (also nicht in
+den Welt-Charts, wohl in Jahrzehnten und Genres), `rc` schreibt danach
+`fetch_regions.py`. Apple drosselt aus GitHubs Rechenzentren hart – das
+holt sich über viele Tage ein, wie die Jahrescharts.
+
+`dedupe.merge_duplicates()` vereinigt `rc` (je Land das Größere), sonst
+verlöre ein zusammengeführter Song ein Land.
+
 ## Mehr Songs für alte Jahrzehnte
 
 `songs.json` hängt an kworb (Spotify all-time) und deckt deshalb alles vor 2000
@@ -324,18 +369,15 @@ Englisch/Deutsch-Verwechslungen sind egal, beide gelten als verständlich.
 „Pink Venom, How You Like That, DDU-DU DDU-DU sind ok" und „Despacito ist
 auch okay, weil man das in DE kennt"). `langOf()` macht aus jeder fremden
 Sprache die Gruppe `dh` „Bekannte Hits (fremdsprachig)", wenn
-`knownInDe()` zutrifft:
+`knownIn(s, r, 'de')` zutrifft:
 
-- **`de` ≥ `DE_HIT`** (10 Mio.): Spotify-Streams **aus Deutschland**,
+- **`rc.de` ≥ `DE_HIT`** (10 Mio.): Spotify-Streams **aus Deutschland**,
   Summe der deutschen Wochencharts bei kworb (`country/de_weekly_totals`,
-  zählt nur Wochen in den Top 200 – also Chartpräsenz hier).
-  `tools/fetch_de.py` holt die Seite, ordnet über Grundtitel und Künstler zu
-  (Remix und Original zählen zusammen) und schreibt `de` in `songs.json`;
-  läuft im täglichen Workflow und nach *Charts neu bauen*, jeweils hinter
-  `clean_songs.py`, mit `continue-on-error`. Bricht ohne Schreiben ab unter
-  `MIN_ROWS` (300) Zeilen oder `MIN_MATCHED` (150) Songs. Das Log listet die
+  zählt nur Wochen in den Top 200 – also Chartpräsenz hier). Woher die
+  Zahlen kommen: *Länder-Charts*. Das Log von `fetch_regions.py` listet die
   deutschen Streams der Songs aus fremdsprachigen Genres – daran die Grenze
-  einstellen. Erster Lauf (4. Oktober): 12 911 Zeilen, 1540 Songs mit `de`;
+  einstellen. Erster Lauf (4. Oktober, damals noch `fetch_de.py` und Feld
+  `de`): 12 911 Zeilen, 1540 Songs;
   Despacito 101 Mio., Mi Gente/Con Calma/Loco Contigo 48, El Perdón 16,
   Bum Bum Tam Tam 10, darunter Sin Pijama, Bebé, Te Boté (5). Mit 50 Mio.
   wäre fast nur Despacito geblieben.
@@ -378,9 +420,10 @@ Zielsprachen (`Filters.TARGETS`, alles außer `dh`), Regler `#speechStrict`
 (beim Ziehen nur Anzeige und Zählung, gefiltert wird bei `change`),
 *In Deutschland bekannte Hits behalten* und `#speechNote` („950 von 6320
 Songs fliegen raus", gezählt über den Pool ohne die Sprachregel).
-`renderSpeech()` hängt an `renderFilters()`. **Region ist fest
-Deutschland** – andere Länder bräuchten weitere kworb-Seiten in
-`fetch_de.py` und ein Feld je Land.
+`renderSpeech()` hängt an `renderFilters()`. **Bekannt wo?** Sonst
+Deutschland; im Modus *Länder-Charts* das gewählte Land (`regionRules()`
+setzt `region` an die Sprachregel, `speechRegion()`, der Schalter heißt
+dann „In USA bekannte Hits behalten").
 
 Die harte Einteilung bleibt als Regeltyp `lang` für gezielte Regeln:
 Klappliste *Sprachen* (`#gLang`) mit Songzahl, „ohne K-Pop", „dazu
@@ -1093,7 +1136,7 @@ Frontend hält ein fehlendes Feld zusätzlich aus.
 ## Aufbau der Seite
 
 Links Kopfzeile (Marke, Stufenliste, Neuwürfeln, Rundenpunkte) und darunter
-*Stufen*, *Schwierigkeit* und *Statistik*; in der Mitte das Spielfeld; rechts *Modus* (mit dem
+*Stufen*, *Schwierigkeit* und *Statistik*; in der Mitte das Spielfeld; rechts *Modus* (sieben Modi, mit dem
 Schalter *Nur Hits*), *Eigene Playlist* (mit *Von Spotify*), *Künstler*, *Eigene Musik*, *Nachhören bei*, *Spielweise* und ganz
 unten die *Songauswahl*. *Songs ansehen* öffnet von zwei Stellen aus
 (`.js-browse`) die Songliste.

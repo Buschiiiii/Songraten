@@ -1535,6 +1535,43 @@ const dummy = n => ({ t: 'Song ' + n, a: 'Kuenstler ' + n, al: 'Album', y: 2020,
   $('#modeSeg [data-v="charts"]').click(); await tick(40);
   assert(G('mode') === 'charts' && G('usesTiers()'), 'Genres: zurueck zu den Charts mit Stufen');
 
+  /* ------------------------------------------------------ Laender-Charts */
+  $('#modeSeg [data-v="regions"]').click(); await tick(40);
+  assert(G('mode') === 'regions' && !$('#pickBar').hidden && $('#pickLabel').textContent === 'Deutschland',
+    'Laender: Modus mit Pfeilleiste, voreingestellt Deutschland');
+  assert(G('pickFiltered.length') > 500 && G("pickFiltered.every(s => Filters.regionStreams(s, 'de') > 0)"),
+    'Laender: der Pool sind die Songs aus den deutschen Charts (' + G('pickFiltered.length') + ')');
+  assert(G('usesTiers()') && G('tierScope()') === 'reg-de', 'Laender: gestuft, mit eigenem Bereich fuer die Grenzen');
+  {
+    const de = "Filters.regionStreams(s, 'de')";
+    const easyMin = G(`Math.min(...byTier.easy.map(s => ${de}))`);
+    const medMax = G(`Math.max(...byTier.medium.map(s => ${de}))`);
+    assert(easyMin >= medMax, `Laender: Easy hat mehr Streams in Deutschland als Medium (${Math.round(easyMin / 1e6)} >= ${Math.round(medMax / 1e6)} Mio.)`);
+  }
+  assert(G("pickFiltered.some(s => s.t === 'Con Calma')") && /Deutschland/.test($('#speechKnownTxt').textContent),
+    'Laender: bekannte Hits gelten fuer Deutschland');
+  assert(G('round').every(r => r.song && G('pickFiltered').some(s => s.i === r.song.i)),
+    'Laender: die Runde zieht nur aus dem Land');
+  /* Ein zweites Land, nachgebaut: 120 Songs mit Streams in den USA. */
+  G(`DB.songs.slice(0, 120).forEach((s, i) => { s.rc = { ...(s.rc || {}), us: (300 - i) * 1e6 }; });
+     DB.songs.find(s => s.t === 'Ojitos Lindos').rc = { us: 160e6 };
+     DB.songs.find(s => s.t === 'Sin Pijama').rc = { us: 100e6 };
+     Filters.setKnown({ ...DB.known, us: 150e6 }); applyFilters()`);
+  assert(G("listFor('regions').map(o => o.value).join()") === 'de,us', 'Laender: ein Land mit genug Songs steht zur Wahl');
+  $('#pickNext').click(); await tick(40);
+  assert(G('settings.region') === 'us' && $('#pickLabel').textContent === 'USA' && G('tierScope()') === 'reg-us',
+    'Laender: der Pfeil springt in die USA');
+  assert(G("pickFiltered.some(s => s.t === 'Ojitos Lindos')") && !G("pickFiltered.some(s => s.t === 'Sin Pijama')")
+    && /USA/.test($('#speechKnownTxt').textContent),
+    'Laender: bekannt heisst jetzt bekannt in den USA - Ojitos Lindos bleibt, Sin Pijama nicht');
+  assert(G('popOf(byTier.easy[0])') >= G('popOf(byTier.impossible[0] || byTier.easy[0])'),
+    'Laender: sortiert nach Streams in den USA');
+  $('#modeSeg [data-v="charts"]').click(); await tick(40);
+  assert(G('mode') === 'charts' && G('popRegion') === null && G('popOf(DB.songs[0])') === G('DB.songs[0].pop'),
+    'Laender: zurueck in den Charts zaehlt wieder die Weltzahl');
+  G(`DB.songs.forEach(s => { if (s.rc && s.rc.us) { delete s.rc.us; if (!Object.keys(s.rc).length) delete s.rc; } });
+     settings.region = 'de'; applyFilters()`);
+
   /* --------------------------------------------------- Knopf und Balken */
   G('newRound()'); await tick(30);
   const txt = () => $('#actionBtn .txt').textContent;
@@ -1683,8 +1720,8 @@ const dummy = n => ({ t: 'Song ' + n, a: 'Kuenstler ' + n, al: 'Album', y: 2020,
     assert(!drin('Ojitos Lindos') && !drin('Mikrokosmos') && drin("Hips Don't Lie") && drin('Mein Herz brennt')
       && drin('Despacito') && drin('Pink Venom') && drin('DDU-DU DDU-DU') && drin('How You Like That'),
       'Sprache: Ojitos Lindos und Mikrokosmos fliegen raus, Shakira auf Englisch, Rammstein, Despacito und die K-Pop-Hits bleiben');
-    /* Deutsche Streams (`de`, tools/fetch_de.py) machen einen Song bekannt. */
-    const latin = de => F(`Filters.langOf({ t: 'Tití Me Preguntó', a: 'Bad Bunny', g: 'Latin Urban', s: 1.5e9${de ? ', de: ' + de : ''} })`);
+    /* Deutsche Streams (`rc.de`, tools/fetch_regions.py) machen einen Song bekannt. */
+    const latin = de => F(`Filters.langOf({ t: 'Tití Me Preguntó', a: 'Bad Bunny', g: 'Latin Urban', s: 1.5e9${de ? ', rc: { de: ' + de + ' }' : ''} })`);
     assert(latin(0) === 'es' && latin(F('Filters.DE_HIT') - 1) === 'es' && latin(F('Filters.DE_HIT')) === 'dh',
       'Sprache: ab DE_HIT Streams in Deutschland zaehlt ein spanischer Song als bekannt, darunter nicht');
     assert(sp('Con Calma') === 'dh' && sp('Mi Gente') === 'dh' && sp('Sin Pijama') === 'es',

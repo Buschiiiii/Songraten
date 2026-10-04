@@ -7,11 +7,12 @@ Die Seite ist reines HTML/CSS/JavaScript. Kein Server, kein Build, keine
 Bibliotheken. Alles läuft im Browser – anmelden musst du dich nur, wenn du
 Playlists direkt von Spotify holen willst, und auch das ohne Server.
 
-**Sechs Arten zu spielen**
+**Sieben Arten zu spielen**
 
 | Modus | Woraus gespielt wird |
 |---|---|
 | Charts & Stufen | die ganze Songliste, Easy bis Impossible nach Spotify-Streams |
+| Länder-Charts | was in einem Land lief (Deutschland, USA, UK …), Stufen nach den Streams dort |
 | Jahrzehnte | ein Jahrzehnt, Stufen relativ dazu vergeben |
 | Genres | ein Genre, Stufen relativ dazu vergeben |
 | Künstler | alle Songs eines Künstlers samt Gastauftritten, fünf zufällige davon |
@@ -125,6 +126,21 @@ wenige Bildschirme.
    ```
 
 Fertig. Jede spätere Änderung im Repo ist nach etwa einer Minute live.
+
+## Länder-Charts
+
+Rechts unter **Modus** auf *Länder-Charts*. Oben wählst du mit den Pfeilen das
+Land – Deutschland, Österreich, Schweiz, USA, Großbritannien, Frankreich,
+Spanien, Italien, Niederlande. Gespielt wird nur, was dort in den
+Spotify-Wochencharts lief, und die Stufen gehen nach den Streams **in diesem
+Land**: Easy sind die größten deutschen Hits, nicht die größten weltweit. Im
+Sprachfilter heißt „bekannte Hits behalten" dann: bekannt in diesem Land.
+
+Die Zahlen holt der tägliche Lauf von kworb (deutsche, amerikanische …
+Wochencharts). Was nur in einem Land groß war – deutscher Rap, Schlager,
+französischer Pop –, steht nicht in der weltweiten Liste; die obersten 400
+je Land sucht der Lauf nach und nach bei Apple dazu. Ein Land erscheint, sobald
+es mindestens 50 Songs hat.
 
 ## Nach Jahrzehnten oder Genres spielen
 

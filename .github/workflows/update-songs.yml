@@ -21,6 +21,9 @@ on:
       seconds:
         description: 'Sekunden fuer die Titelsuche bei Apple'
         default: '1500'
+      region_seconds:
+        description: 'Sekunden fuer die Laender-Hits bei Apple'
+        default: '900'
 
 permissions:
   contents: write
@@ -32,7 +35,7 @@ concurrency:
 jobs:
   update:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 60
 
     steps:
       - uses: actions/checkout@v7
@@ -61,18 +64,25 @@ jobs:
       - name: Titel bei Apple suchen
         run: python3 tools/add_decades.py ${{ github.event.inputs.seconds || 1500 }}
 
+      # Was nur in einem Land gross war (deutscher Rap, Schlager, franzoesischer
+      # Pop), steht nicht in kworbs Weltliste. Die obersten 400 je Land, die
+      # fehlen, bei Apple suchen - ueber viele Tage, wie die Jahrescharts.
+      - name: Laender-Hits bei Apple suchen
+        continue-on-error: true
+        run: python3 tools/add_regional.py ${{ github.event.inputs.region_seconds || 900 }}
+
       - name: Doppelte zusammenfuehren
         run: python3 tools/clean_songs.py
 
-      # Wie bekannt ist ein Song in Deutschland? kworb fuehrt die Spotify-
-      # Wochencharts je Land; die Summe landet als `de` in songs.json und
-      # entscheidet im Sprachfilter, ob ein spanischer Song ein bekannter
-      # Hit ist (Despacito) oder nicht. Eine Anfrage. Scheitert sie oder
-      # sieht die Tabelle fremd aus, bleibt die Datei, wie sie war - der Lauf
-      # geht trotzdem weiter.
-      - name: Streams in Deutschland
+      # Streams je Land: kworb fuehrt die Spotify-Wochencharts fuer jedes
+      # Land; die Summen landen als `rc` in songs.json. Daran haengen der
+      # Modus „Laender-Charts" und im Sprachfilter die Frage, ob ein
+      # spanischer Song in einem Land ein bekannter Hit ist (Despacito).
+      # Eine Anfrage je Land. Ein Land, das nicht kommt, behaelt seine alten
+      # Zahlen; kommt keins, bleibt die Datei, wie sie war.
+      - name: Streams je Land
         continue-on-error: true
-        run: python3 tools/fetch_de.py
+        run: python3 tools/fetch_regions.py
 
       # Lieber nichts committen als eine halbe Datei ausliefern: die Seite
       # bleibt weiss, wenn songs.json kaputt ist.

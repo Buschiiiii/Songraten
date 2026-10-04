@@ -33,7 +33,7 @@ def run(script, *args, cwd=None):
 
 
 def selftests():
-    for script in ('fetch_yearcharts.py', 'add_decades.py', 'fetch_kworb.py', 'fetch_de.py'):
+    for script in ('fetch_yearcharts.py', 'add_decades.py', 'fetch_kworb.py', 'fetch_regions.py', 'add_regional.py'):
         r = run(script, '--selftest')
         check(r.returncode == 0, f'{script} --selftest' + ('' if r.returncode == 0 else ': ' + r.stderr.strip()))
     r = run('fame.py')

@@ -56,8 +56,10 @@ const Filters = (() => {
      „Pink Venom" auch, Bad Bunnys „Ojitos Lindos" kaum jemand (Besitzer,
      4. Oktober: „es sollen nur die Songs raus, die man in DE nicht kennt").
      Ein fremdsprachiger Song wird zu „Bekannte Hits" (`dh`), wenn
-       - er in Deutschland genug gestreamt wurde: `de` aus tools/fetch_de.py,
-         die Spotify-Wochencharts-Summe nur fuer Deutschland, ab DE_HIT;
+       - er in Deutschland genug gestreamt wurde: `rc.de` aus
+         tools/fetch_regions.py, die Spotify-Wochencharts-Summe nur fuer
+         Deutschland, ab DE_HIT (andere Laender: knownIn() mit der Grenze
+         aus songs.json, `known`);
        - oder er K-Pop mit mindestens KPOP_HIT weltweiten Streams ist (die
          erste Fassung dieser Regel, vor den deutschen Zahlen; DDU-DU DDU-DU
          liegt bei 890 Mio.);
@@ -210,13 +212,29 @@ const Filters = (() => {
     return r;
   }
 
+  /* Laender fuer „Laender-Charts" und die Frage „bekannt wo?". Die
+     Reihenfolge ist die der Pfeilleiste; tools/fetch_regions.py holt
+     dieselben. */
+  const REGIONS = [['de', 'Deutschland'], ['at', 'Österreich'], ['ch', 'Schweiz'], ['us', 'USA'],
+    ['gb', 'Großbritannien'], ['fr', 'Frankreich'], ['es', 'Spanien'], ['it', 'Italien'], ['nl', 'Niederlande']];
+  const REGION_NAME = Object.fromEntries(REGIONS);
+  /* Ab wie vielen Streams ein Song in einem Land als bekannt gilt - so tief
+     in der Liste des Landes, wie DE_HIT in Deutschland reicht. Kommt aus
+     songs.json (`known`, fetch_regions.py), siehe setKnown(). */
+  let KNOWN_AT = { de: DE_HIT };
+  const setKnown = m => { KNOWN_AT = { ...(m || {}), de: DE_HIT }; };
+  /* Streams eines Songs in einem Land; `de` ist das Feld von vor `rc`. */
+  const regionStreams = (s, cc) => (s && s.rc && s.rc[cc]) || (cc === 'de' && s && s.de) || 0;
+
   const plainTitle = t => norm(String(t || '').replace(/\s+-\s+.*$/, '').replace(/\s*[([][^)\]]*[)\]]/g, ''));
-  function knownInDe(s, r) {
-    if ((s.de || 0) >= DE_HIT) return true;
+  function knownIn(s, r, cc) {
+    const grenze = KNOWN_AT[cc || 'de'];
+    if (grenze && regionStreams(s, cc || 'de') >= grenze) return true;
     if (r === 'ko' && (s.s || 0) >= KPOP_HIT) return true;
     const t = plainTitle(s.t), a = ` ${norm(s.a)} `;
     return DE_CLASSICS.some(([ct, ca]) => t === ct && a.includes(` ${ca} `));
   }
+  const knownInDe = (s, r) => knownIn(s, r, 'de');
 
   /* Sprachfilter mit Strenge (Besitzer, 4. Oktober: „0 % gar keine
      Filterung, 100 % ausschliesslich Englisch, aber eben auch false
@@ -272,7 +290,9 @@ const Filters = (() => {
     const targets = speechTargets(r);
     const strict = Math.max(0, Math.min(100, +r.strict || 0));
     if (!targets.length || strict <= 0) return true;
-    if (r.known && knownInDe(s, guess(s, db || { songs: [s] }))) return true;
+    /* `region` setzt app.js im Modus „Laender-Charts" - bekannt heisst dann
+       bekannt in diesem Land. */
+    if (r.known && knownIn(s, guess(s, db || { songs: [s] }), r.region || 'de')) return true;
     /* Ein Rest bleibt auch bei 100 % erlaubt: ein englischer Kuenstler mit
        einem einzigen spanischen Song hat sonst bei jedem seiner Songs ein
        paar Prozent „fremd" (Blinding Lights: 2 %). */
@@ -460,6 +480,6 @@ const Filters = (() => {
   const SPEECH_DEFAULT = speechRule(['en', 'de'], 50, true);
   const DEFAULT_CHARTS = [...DEFAULT, SPEECH_DEFAULT];
 
-  return { speechRule, speechTargets, speechPass, foreign, SPEECH_DEFAULT, TARGETS, apply, matches, options, counts, parse, label, same, migrate, langOf, knownOnly,
+  return { REGIONS, REGION_NAME, setKnown, regionStreams, knownIn, speechRule, speechTargets, speechPass, foreign, SPEECH_DEFAULT, TARGETS, apply, matches, options, counts, parse, label, same, migrate, langOf, knownOnly,
            isInstrumental, decadeOf, genreOf, DEFAULT, DEFAULT_CHARTS, LANG_RULES, LANG_NAME, KPOP_HIT, DE_HIT, MIN_POOL };
 })();
