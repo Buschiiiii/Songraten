@@ -17,7 +17,7 @@ const Filters = (() => {
      Kuenstler und eigener Musik hat man selbst gewaehlt - dort nicht. */
   const LANG_RULES = [{ mode: 'nur', type: 'lang', value: 'en', text: 'Englisch' },
                       { mode: 'nur', type: 'lang', value: 'de', text: 'Deutsch' },
-                      { mode: 'nur', type: 'lang', value: 'kh', text: 'K-Pop-Hits' }];
+                      { mode: 'nur', type: 'lang', value: 'dh', text: 'Bekannte Hits' }];
   const DEFAULT_CHARTS = [...DEFAULT, ...LANG_RULES];
 
   const norm = s => (s || '').toLowerCase()
@@ -53,16 +53,31 @@ const Filters = (() => {
      Geprueft gegen die Songliste vom 4. Oktober: rund 740 spanische, 115
      indische, 60 koreanische Songs; Englisch/Deutsch-Verwechslungen sind
      egal, beide gelten als verstaendlich. */
-  /* K-Pop wird nicht nach Sprache, sondern nach Bekanntheit geteilt: „How
-     You Like That", „Pink Venom", „DDU-DU DDU-DU" kennt man, die zwanzigste
-     BTS-Albumnummer nicht (Besitzer, 4. Oktober). Grenze 750 Mio. Streams -
-     dieselbe wie zwischen Medium und Hard in den Charts; DDU-DU DDU-DU liegt
-     bei 890 Mio. Ohne Streamzahl (Playlist, eigene Musik) bleibt es K-Pop. */
+  /* Fremdsprachig heisst nicht unbekannt: Despacito kennt hier jeder,
+     „Pink Venom" auch, Bad Bunnys „Ojitos Lindos" kaum jemand (Besitzer,
+     4. Oktober: „es sollen nur die Songs raus, die man in DE nicht kennt").
+     Ein fremdsprachiger Song wird zu „Bekannte Hits" (`dh`), wenn
+       - er in Deutschland genug gestreamt wurde: `de` aus tools/fetch_de.py,
+         die Spotify-Wochencharts-Summe nur fuer Deutschland, ab DE_HIT;
+       - oder er K-Pop mit mindestens KPOP_HIT weltweiten Streams ist (die
+         erste Fassung dieser Regel, vor den deutschen Zahlen; DDU-DU DDU-DU
+         liegt bei 890 Mio.);
+       - oder er auf DE_CLASSICS steht: Hits aus der Zeit vor Spotify, fuer
+         die es keine deutschen Streamzahlen gibt. */
   const KPOP_HIT = 7.5e8;
-  const LANGS = [['en', 'Englisch'], ['de', 'Deutsch'], ['kh', 'K-Pop-Hits'], ['es', 'Spanisch'], ['pt', 'Portugiesisch'],
-    ['fr', 'Französisch'], ['it', 'Italienisch'], ['ko', 'K-Pop (weitere)'], ['hi', 'Indisch'], ['x', 'Andere']];
+  const DE_HIT = 5e7;
+  const DE_CLASSICS = [['macarena', 'los del rio'], ['la bamba', 'los lobos'], ['la bamba', 'ritchie valens'],
+    ['livin la vida loca', 'ricky martin'], ['gasolina', 'daddy yankee'], ['danza kuduro', 'don omar'],
+    ['danza kuduro', 'lucenzo'], ['vem dancar kuduro', 'lucenzo'], ['despacito', 'luis fonsi'],
+    ['bailando', 'enrique iglesias'], ['lambada', 'kaoma'], ['dragostea din tei', 'o zone'],
+    ['ai se eu te pego', 'michel telo'], ['gangnam style', 'psy'], ['alors on danse', 'stromae'],
+    ['papaoutai', 'stromae'], ['vamos a la playa', 'righeira'], ['bamboleo', 'gipsy kings'],
+    ['volare', 'gipsy kings'], ['nel blu dipinto di blu', 'domenico modugno'], ['bella ciao', 'el profesor'],
+    ['la isla bonita', 'madonna'], ['mi gente', 'j balvin'], ['taki taki', 'dj snake'], ['calma', 'pedro capo']];
+  const LANGS = [['en', 'Englisch'], ['de', 'Deutsch'], ['dh', 'Bekannte Hits (fremdsprachig)'], ['es', 'Spanisch'],
+    ['pt', 'Portugiesisch'], ['fr', 'Französisch'], ['it', 'Italienisch'], ['ko', 'K-Pop'], ['hi', 'Indisch'], ['x', 'Andere']];
   const LANG_NAME = Object.fromEntries(LANGS);
-  const KNOWN = ['en', 'de', 'kh'];
+  const KNOWN = ['en', 'de', 'dh'];
   const wl = t => new Set(t.split(/\s+/).filter(Boolean));
   const LW = {
     en: wl(`the you your you're youre i i'm im i'll ill i've my it it's its is are be of to and on in with we all love
@@ -186,9 +201,17 @@ const Filters = (() => {
     if (!per) langCache.set(db || s, per = new WeakMap());
     if (per.has(s)) return per.get(s);
     let r = guess(s, db || { songs: [s] });
-    if (r === 'ko' && (s.s || 0) >= KPOP_HIT) r = 'kh';
+    if (r !== 'en' && r !== 'de' && knownInDe(s, r)) r = 'dh';
     per.set(s, r);
     return r;
+  }
+
+  const plainTitle = t => norm(String(t || '').replace(/\s+-\s+.*$/, '').replace(/\s*[([][^)\]]*[)\]]/g, ''));
+  function knownInDe(s, r) {
+    if ((s.de || 0) >= DE_HIT) return true;
+    if (r === 'ko' && (s.s || 0) >= KPOP_HIT) return true;
+    const t = plainTitle(s.t), a = ` ${norm(s.a)} `;
+    return DE_CLASSICS.some(([ct, ca]) => t === ct && a.includes(` ${ca} `));
   }
 
   function guess(s, db) {
@@ -249,6 +272,8 @@ const Filters = (() => {
         const text = GENRE_ALIAS[r.value];
         x = { ...r, value: norm(text), text };
       }
+      /* „K-Pop-Hits" (kurz am 4. Oktober) steckt jetzt in „Bekannte Hits". */
+      if (r.type === 'lang' && r.value === 'kh') x = { ...r, value: 'dh', text: 'Bekannte Hits' };
       if (!out.some(o => o.type === x.type && String(o.value) === String(x.value))) out.push(x);
     });
     return out;
@@ -359,5 +384,5 @@ const Filters = (() => {
     && !(rules || []).some(r => r.type === 'lang' && r.mode === 'nur' && !KNOWN.includes(r.value));
 
   return { apply, matches, options, counts, parse, label, same, migrate, langOf, knownOnly,
-           isInstrumental, decadeOf, genreOf, DEFAULT, DEFAULT_CHARTS, LANG_RULES, LANG_NAME, KPOP_HIT, MIN_POOL };
+           isInstrumental, decadeOf, genreOf, DEFAULT, DEFAULT_CHARTS, LANG_RULES, LANG_NAME, KPOP_HIT, DE_HIT, MIN_POOL };
 })();

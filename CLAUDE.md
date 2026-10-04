@@ -130,6 +130,9 @@ seit 2025 dicht). Nichts davon braucht ein Backend.
    gemeinsamen Künstler — „Hello" von Adele und von Lionel Richie bleiben
    getrennt. `tools/clean_songs.py` wendet dasselbe auf eine fertige
    `songs.json` an.
+4. `tools/fetch_de.py` schreibt `de`, die Spotify-Streams aus Deutschland
+   (kworb, deutsche Wochencharts) – für den Sprachfilter, siehe *Sprache*.
+   Eine Anfrage, `--selftest`, `--dump`.
 
 Grenzwerte der Stufen, Songs pro Stufe und die Künstleranzahl stehen oben in
 `match_local.py`.
@@ -315,26 +318,44 @@ keine Sprache, deshalb rät `Filters.langOf(s, db)` sie aus drei Quellen:
    entscheidet der Künstler nur bei klarer Mehrheit (85 %, bei `ko`/`hi`
    60 %) – Becky G und Enrique Iglesias singen auch Englisch.
 
-Stand 4. Oktober: 5347 en, 748 es, 117 hi, 109 ko, 24 pt, wenige de/fr/it.
 Englisch/Deutsch-Verwechslungen sind egal, beide gelten als verständlich.
 
-**K-Pop wird nach Bekanntheit geteilt, nicht nach Sprache** (Besitzer:
-„Pink Venom, How You Like That, DDU-DU DDU-DU sind ok, nur nicht Zeug, was
-man praktisch nicht kennen kann"). `langOf()` macht aus `ko` mit
-mindestens `KPOP_HIT` (750 Mio. Streams, dieselbe Grenze wie Medium/Hard)
-eine eigene Gruppe `kh` „K-Pop-Hits" – 24 Songs, DDU-DU DDU-DU liegt bei
-890 Mio. Der Rest heißt „K-Pop (weitere)". Ohne Streamzahl (Playlist,
-eigene Musik) bleibt es `ko`.
+**Fremdsprachig, aber in Deutschland bekannt, bleibt drin** (Besitzer:
+„Pink Venom, How You Like That, DDU-DU DDU-DU sind ok" und „Despacito ist
+auch okay, weil man das in DE kennt"). `langOf()` macht aus jeder fremden
+Sprache die Gruppe `dh` „Bekannte Hits (fremdsprachig)", wenn
+`knownInDe()` zutrifft:
+
+- **`de` ≥ `DE_HIT`** (50 Mio.): Spotify-Streams **aus Deutschland**,
+  Summe der deutschen Wochencharts bei kworb (`country/de_weekly_totals`).
+  `tools/fetch_de.py` holt die Seite, ordnet über Grundtitel und Künstler zu
+  (Remix und Original zählen zusammen) und schreibt `de` in `songs.json`;
+  läuft im täglichen Workflow und nach *Charts neu bauen*, jeweils hinter
+  `clean_songs.py`, mit `continue-on-error`. Bricht ohne Schreiben ab unter
+  `MIN_ROWS` (300) Zeilen oder `MIN_MATCHED` (150) Songs. Das Log listet die
+  deutschen Streams der Songs aus fremdsprachigen Genres – daran die Grenze
+  einstellen. **Die Grenze ist geschätzt**, die Seite war von hier aus nicht
+  erreichbar.
+- **K-Pop mit `s` ≥ `KPOP_HIT`** (750 Mio. weltweit): K-Pop läuft in den
+  deutschen Wochencharts selten lange, ist aber bekannt; DDU-DU DDU-DU liegt
+  bei 890 Mio.
+- **`DE_CLASSICS`**: Titel + Künstler von Hits aus der Zeit vor Spotify
+  (Macarena, Lambada, Dragostea Din Tei, Gangnam Style …) und ein paar
+  sicheren Fällen (Despacito, Gasolina, Bailando).
+
+Stand 4. Oktober, noch ohne `de`: 5347 en, 741 es, 31 dh, 117 hi, 85 ko.
+Ohne Streamzahl (Playlist, eigene Musik) greifen nur die Klassiker.
 
 Regeltyp `lang` wie Genre: Klappliste *Sprachen* (`#gLang`) mit Songzahl,
-Schalter *Nur Englisch, Deutsch und K-Pop-Hits* (`#fLang`,
+Schalter *Nur Englisch, Deutsch und bekannte Hits* (`#fLang`,
 `Filters.knownOnly()`) setzt drei `nur`-Regeln (`LANG_RULES`, wirken als
 oder). **Voreingestellt nur in
 `settings.filters`** (Charts, Jahrzehnte, Genres, `DEFAULT_CHARTS`) – in
 Playlist, Künstler und eigener Musik hat man selbst gewählt.
 Bestehende Einstellungen bekommen die Regel einmal (`settings.langRules`
-= 2); wer schon die erste Fassung (en + de, `langRules` 1) hatte, bekommt
-nur `kh` nachgereicht. Wer sie abgeschaltet hat, behält das. Folge im Genremodus: Latin, K-Pop
+= 3); wer die erste Fassung (en + de, `langRules` 1) hatte, bekommt nur
+`dh` nachgereicht, die zweite („K-Pop-Hits", `kh`) zieht `Filters.migrate()`
+auf `dh` um. Wer sie abgeschaltet hat, behält das. Folge im Genremodus: Latin, K-Pop
 und Bollywood fallen aus der Auswahl (unter `GEN_MIN`). In *Songs ansehen*
 steht die geratene Sprache an der Zeile, wenn sie nicht en/de ist.
 

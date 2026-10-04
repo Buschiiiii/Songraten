@@ -215,17 +215,18 @@ if (!Array.isArray(settings.stages) || settings.stages.length !== STAGES.length)
 settings.filters = Filters.migrate(settings.filters);
 settings.plFilters = Filters.migrate(settings.plFilters);
 /* Sprachregel (4. Oktober): wer schon gespielt hat, bekommt „nur Englisch,
-   Deutsch und K-Pop-Hits" einmal dazu - aber nur, wenn er keine eigene
-   Sprachregel hat. Stufe 2: wer die erste Fassung (nur en + de) hat,
-   bekommt die K-Pop-Hits nachgereicht. Danach bleibt, was er einstellt. */
-if ((settings.langRules || 0) < 2) {
+   Deutsch und bekannte Hits" einmal dazu - aber nur, wenn er keine eigene
+   Sprachregel hat. Wer die erste Fassung (nur en + de, langRules 1) hat,
+   bekommt die bekannten Hits nachgereicht; die zweite (mit „K-Pop-Hits")
+   zieht Filters.migrate() schon um. Danach bleibt, was er einstellt. */
+if ((settings.langRules || 0) < 3) {
   const nurLang = settings.filters.filter(r => r.type === 'lang');
   if (!settings.langRules && !nurLang.length) settings.filters.push(...Filters.LANG_RULES.map(r => ({ ...r })));
   else if (settings.langRules === 1 && nurLang.length === 2 && nurLang.every(r => r.mode === 'nur')
            && ['en', 'de'].every(v => nurLang.some(r => r.value === v))) {
-    settings.filters.push({ ...Filters.LANG_RULES.find(r => r.value === 'kh') });
+    settings.filters.push({ ...Filters.LANG_RULES.find(r => r.value === 'dh') });
   }
-  settings.langRules = 2;
+  settings.langRules = 3;
   save('settings', settings);
 }
 /* Ein gespeicherter Dienst, den es nicht mehr gibt, faellt zurueck. */
@@ -603,7 +604,7 @@ const INFO = {
   hard: 'Ein verpasster Song beendet die ganze Runde – die übrigen Plätze fallen mit, gezählt wird nur, was du wirklich gespielt hast. Und es geht strikt der Reihe nach: ein Platz weiter vorn ist gesperrt, solange davor noch einer offen ist.',
   start: 'Apples Hörproben sind 30 Sekunden, meist aus der Songmitte – „ab Songanfang“ wie im Original geht damit nicht. Anfang des Ausschnitts: jeder Platz beginnt am Anfang der Hörprobe. Zufällige Stelle: irgendwo darin, so dass die längste Stufe noch hineinpasst. Eigene Musik spielt immer ab dem ersten hörbaren Ton.',
   filter: 'Regeln für den Pool: „nur“ schränkt ein (mehrere Genres: oder; Genre und Jahrzehnt: und), „ohne“ wirft raus, „dazu“ holt dazu und schlägt beides – „nur 2010er, ohne Rap, dazu Billie Eilish“ ergibt die 2010er ohne Rap plus alle Billie-Eilish-Songs. Jeder Modus hat seine eigenen Regeln. Instrumentals (auch Schlaflied- und Klavierfassungen) werden an Titel, Album und Genre erkannt.\n'
-    + 'Sprache: Apple liefert keine, deshalb wird sie geraten – aus dem Titel (fremde Schrift, ñ, ã, typische Wörter wie „el“, „que“, „the“, „you“), dem Genre (Latin, K-Pop, Bollywood …) und dem, was der Künstler sonst singt. „Hips Don’t Lie“ bleibt so Englisch, „Despacito“ wird Spanisch. Charts, Jahrzehnte und Genres starten mit „nur Englisch, Deutsch und K-Pop-Hits“, weil die Bekanntheit an weltweiten Streams hängt und sonst Bad Bunny und Arijit Singh oben stehen. K-Pop-Hits sind K-Pop-Songs ab 750 Mio. Streams („How You Like That“, „Pink Venom“, „DDU-DU DDU-DU“), der Rest steht als „K-Pop (weitere)“. Unter „Sprachen“ lässt sich jede einzeln dazunehmen oder ausschließen.\n'
+    + 'Sprache: Apple liefert keine, deshalb wird sie geraten – aus dem Titel (fremde Schrift, ñ, ã, typische Wörter wie „el“, „que“, „the“, „you“), dem Genre (Latin, K-Pop, Bollywood …) und dem, was der Künstler sonst singt. „Hips Don’t Lie“ bleibt so Englisch, „Despacito“ wird Spanisch. Charts, Jahrzehnte und Genres starten mit „nur Englisch, Deutsch und bekannte Hits“: die Bekanntheit hängt an weltweiten Streams, und da stehen Bad Bunny und Arijit Singh weit oben, die hier kaum jemand kennt. „Bekannte Hits“ sind fremdsprachige Songs, die man in Deutschland trotzdem kennt – genug Spotify-Streams in Deutschland (ab 50 Mio., wöchentlich von kworb geholt), K-Pop ab 750 Mio. Streams weltweit („Pink Venom“, „DDU-DU DDU-DU“) und ein paar alte Hits ohne Streamdaten (Macarena, La Bamba, Gasolina). Despacito bleibt also, Ojitos Lindos fliegt raus. Unter „Sprachen“ lässt sich jede Gruppe einzeln dazunehmen oder ausschließen.\n'
     + 'Unter 30 Songs warnt die Zeile. Filter wirken ab der nächsten Runde – die laufende bleibt. „Songs ansehen“ zeigt genau den Pool, aus dem gezogen wird; dort lässt sich jeder Song reinhören, nachhören und entfernen (gilt dann in jedem Modus).',
 };
 

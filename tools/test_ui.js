@@ -1665,23 +1665,27 @@ const dummy = n => ({ t: 'Song ' + n, a: 'Kuenstler ' + n, al: 'Album', y: 2020,
   };
 
   assert(F('settings.filters').length === 4 && F('settings.filters')[0].type === 'instrumental'
-    && F("settings.filters.filter(r => r.type === 'lang' && r.mode === 'nur').map(r => r.value).join()") === 'en,de,kh',
-    'Filter: Instrumentals sind von Haus aus draussen, dazu nur Englisch, Deutsch und K-Pop-Hits');
+    && F("settings.filters.filter(r => r.type === 'lang' && r.mode === 'nur').map(r => r.value).join()") === 'en,de,dh',
+    'Filter: Instrumentals sind von Haus aus draussen, dazu nur Englisch, Deutsch und bekannte Hits');
   assert($$('#fInst').checked && $$('#fLang').checked, 'Filter: beide Schalter stehen passend dazu an');
   assert(F('filtered').length < all, 'Filter: die Standardregel greift');
 
   /* Sprache: geraten aus Titel, Genre und Kuenstler */
   {
     const sp = t => F(`Filters.langOf(DB.songs.find(s => s.t.startsWith(${JSON.stringify(t)})), DB)`);
-    assert(sp('Despacito') === 'es' && sp("Hips Don't Lie") === 'en' && sp('Viva La Vida') === 'en'
+    assert(sp('Ojitos Lindos') === 'es' && sp("Hips Don't Lie") === 'en' && sp('Viva La Vida') === 'en'
       && sp('Mikrokosmos') === 'ko' && sp('Tum Hi Ho') === 'hi' && sp('Mein Herz brennt') === 'de' && sp('Blinding Lights') === 'en',
-      'Sprache: Despacito spanisch, Hips Don’t Lie und Viva La Vida englisch, Mikrokosmos K-Pop, Tum Hi Ho indisch');
-    assert(['How You Like That', 'Pink Venom', 'DDU-DU DDU-DU', 'Dynamite'].every(t => sp(t) === 'kh'),
-      'Sprache: die grossen K-Pop-Hits sind eine eigene Gruppe');
+      'Sprache: Ojitos Lindos spanisch, Hips Don’t Lie und Viva La Vida englisch, Mikrokosmos K-Pop, Tum Hi Ho indisch');
+    assert(['Despacito', 'Gasolina', 'How You Like That', 'Pink Venom', 'DDU-DU DDU-DU', 'Dynamite'].every(t => sp(t) === 'dh'),
+      'Sprache: Despacito, Gasolina und die grossen K-Pop-Hits sind bekannte Hits');
     const drin = t => F(`filtered.some(s => s.t.startsWith(${JSON.stringify(t)}))`);
-    assert(!drin('Despacito') && !drin('Mikrokosmos') && drin("Hips Don't Lie") && drin('Mein Herz brennt')
-      && drin('Pink Venom') && drin('DDU-DU DDU-DU') && drin('How You Like That'),
-      'Sprache: Despacito und Mikrokosmos fliegen raus, Shakira auf Englisch, Rammstein und die K-Pop-Hits bleiben');
+    assert(!drin('Ojitos Lindos') && !drin('Mikrokosmos') && drin("Hips Don't Lie") && drin('Mein Herz brennt')
+      && drin('Despacito') && drin('Pink Venom') && drin('DDU-DU DDU-DU') && drin('How You Like That'),
+      'Sprache: Ojitos Lindos und Mikrokosmos fliegen raus, Shakira auf Englisch, Rammstein, Despacito und die K-Pop-Hits bleiben');
+    /* Deutsche Streams (`de`, tools/fetch_de.py) machen einen Song bekannt. */
+    const latin = de => F(`Filters.langOf({ t: 'Tití Me Preguntó', a: 'Bad Bunny', g: 'Latin Urban', s: 1.5e9${de ? ', de: ' + de : ''} })`);
+    assert(latin(0) === 'es' && latin(F('Filters.DE_HIT') - 1) === 'es' && latin(F('Filters.DE_HIT')) === 'dh',
+      'Sprache: ab DE_HIT Streams in Deutschland zaehlt ein spanischer Song als bekannt, darunter nicht');
     assert(F('listFor("genres").every(g => !/latin|spanisch|mexiko|bollywood/.test(g.value))'),
       'Sprache: die Genre-Auswahl kennt dann kein Latin oder Bollywood mehr');
     const zeile = [...$$('#gLang').querySelectorAll('.fopt')].find(r => r.querySelector('.txt').textContent === 'Spanisch');
@@ -1692,7 +1696,7 @@ const dummy = n => ({ t: 'Song ' + n, a: 'Kuenstler ' + n, al: 'Album', y: 2020,
       'Filter: Schlaflied-Fassungen gelten als Instrumental, Hozier nicht');
     const ohne = F('filtered').length;
     $$('#fLang').checked = false; $$('#fLang').dispatchEvent(new w.Event('change'));
-    assert(F('filtered').length > ohne + 500 && drin('Despacito') && !F("settings.filters.some(r => r.type === 'lang')"),
+    assert(F('filtered').length > ohne + 500 && drin('Ojitos Lindos') && !F("settings.filters.some(r => r.type === 'lang')"),
       'Sprache: Schalter aus holt alle Sprachen zurueck (' + ohne + ' -> ' + F('filtered').length + ')');
     assert(!F("settings.plFilters.some(r => r.type === 'lang')") && !F("settings.arFilters.some(r => r.type === 'lang')"),
       'Sprache: Playlist und Kuenstler haben keine Sprachregel - dort hat man selbst gewaehlt');
@@ -1763,13 +1767,19 @@ const dummy = n => ({ t: 'Song ' + n, a: 'Kuenstler ' + n, al: 'Album', y: 2020,
   {
     const alt = makeWindow({ 'songrate:settings': JSON.stringify({ filters: [{ mode: 'ohne', type: 'instrumental', value: '', text: 'Instrumental' }] }) });
     await waitFor(() => !alt.document.querySelector('#app').hidden);
-    assert(alt.__ev("settings.filters.filter(r => r.type === 'lang').length") === 3 && alt.__ev('settings.langRules') === 2,
-      'Sprache: alte Einstellungen bekommen „nur Englisch, Deutsch und K-Pop-Hits" einmal dazu');
+    assert(alt.__ev("settings.filters.filter(r => r.type === 'lang').length") === 3 && alt.__ev('settings.langRules') === 3,
+      'Sprache: alte Einstellungen bekommen „nur Englisch, Deutsch und bekannte Hits" einmal dazu');
     const erst = makeWindow({ 'songrate:settings': JSON.stringify({ langRules: 1, filters: [
       { mode: 'nur', type: 'lang', value: 'en', text: 'Englisch' }, { mode: 'nur', type: 'lang', value: 'de', text: 'Deutsch' }] }) });
     await waitFor(() => !erst.document.querySelector('#app').hidden);
-    assert(erst.__ev("settings.filters.map(r => r.value).join()") === 'en,de,kh' && erst.document.querySelector('#fLang').checked,
-      'Sprache: wer die erste Fassung hat, bekommt die K-Pop-Hits nachgereicht');
+    assert(erst.__ev("settings.filters.map(r => r.value).join()") === 'en,de,dh' && erst.document.querySelector('#fLang').checked,
+      'Sprache: wer die erste Fassung hat, bekommt die bekannten Hits nachgereicht');
+    const zweit = makeWindow({ 'songrate:settings': JSON.stringify({ langRules: 2, filters: [
+      { mode: 'nur', type: 'lang', value: 'en', text: 'Englisch' }, { mode: 'nur', type: 'lang', value: 'de', text: 'Deutsch' },
+      { mode: 'nur', type: 'lang', value: 'kh', text: 'K-Pop-Hits' }] }) });
+    await waitFor(() => !zweit.document.querySelector('#app').hidden);
+    assert(zweit.__ev("settings.filters.map(r => r.value).join()") === 'en,de,dh' && zweit.document.querySelector('#fLang').checked,
+      'Sprache: aus „K-Pop-Hits" werden „Bekannte Hits"');
     const weg = makeWindow({ 'songrate:settings': JSON.stringify({ langRules: 1, filters: [] }) });
     await waitFor(() => !weg.document.querySelector('#app').hidden);
     assert(weg.__ev('settings.filters.length') === 0 && !weg.document.querySelector('#fLang').checked,
