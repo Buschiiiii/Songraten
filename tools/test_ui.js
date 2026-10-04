@@ -1664,9 +1664,9 @@ const dummy = n => ({ t: 'Song ' + n, a: 'Kuenstler ' + n, al: 'Album', y: 2020,
     row.click();
   };
 
-  assert(F('settings.filters').length === 3 && F('settings.filters')[0].type === 'instrumental'
-    && F("settings.filters.filter(r => r.type === 'lang' && r.mode === 'nur').map(r => r.value).join()") === 'en,de',
-    'Filter: Instrumentals sind von Haus aus draussen, dazu nur Englisch und Deutsch');
+  assert(F('settings.filters').length === 4 && F('settings.filters')[0].type === 'instrumental'
+    && F("settings.filters.filter(r => r.type === 'lang' && r.mode === 'nur').map(r => r.value).join()") === 'en,de,kh',
+    'Filter: Instrumentals sind von Haus aus draussen, dazu nur Englisch, Deutsch und K-Pop-Hits');
   assert($$('#fInst').checked && $$('#fLang').checked, 'Filter: beide Schalter stehen passend dazu an');
   assert(F('filtered').length < all, 'Filter: die Standardregel greift');
 
@@ -1674,16 +1674,19 @@ const dummy = n => ({ t: 'Song ' + n, a: 'Kuenstler ' + n, al: 'Album', y: 2020,
   {
     const sp = t => F(`Filters.langOf(DB.songs.find(s => s.t.startsWith(${JSON.stringify(t)})), DB)`);
     assert(sp('Despacito') === 'es' && sp("Hips Don't Lie") === 'en' && sp('Viva La Vida') === 'en'
-      && sp('Dynamite') === 'ko' && sp('Tum Hi Ho') === 'hi' && sp('Mein Herz brennt') === 'de' && sp('Blinding Lights') === 'en',
-      'Sprache: Despacito spanisch, Hips Don’t Lie und Viva La Vida englisch, Dynamite koreanisch, Tum Hi Ho indisch');
+      && sp('Mikrokosmos') === 'ko' && sp('Tum Hi Ho') === 'hi' && sp('Mein Herz brennt') === 'de' && sp('Blinding Lights') === 'en',
+      'Sprache: Despacito spanisch, Hips Don’t Lie und Viva La Vida englisch, Mikrokosmos K-Pop, Tum Hi Ho indisch');
+    assert(['How You Like That', 'Pink Venom', 'DDU-DU DDU-DU', 'Dynamite'].every(t => sp(t) === 'kh'),
+      'Sprache: die grossen K-Pop-Hits sind eine eigene Gruppe');
     const drin = t => F(`filtered.some(s => s.t.startsWith(${JSON.stringify(t)}))`);
-    assert(!drin('Despacito') && !drin('Dynamite') && drin("Hips Don't Lie") && drin('Mein Herz brennt'),
-      'Sprache: nur Englisch und Deutsch wirft Despacito und Dynamite raus, Shakira auf Englisch und Rammstein bleiben');
-    assert(F('listFor("genres").every(g => !/latin|spanisch|mexiko|k pop|bollywood/.test(g.value))'),
-      'Sprache: die Genre-Auswahl kennt dann kein Latin, K-Pop oder Bollywood mehr');
+    assert(!drin('Despacito') && !drin('Mikrokosmos') && drin("Hips Don't Lie") && drin('Mein Herz brennt')
+      && drin('Pink Venom') && drin('DDU-DU DDU-DU') && drin('How You Like That'),
+      'Sprache: Despacito und Mikrokosmos fliegen raus, Shakira auf Englisch, Rammstein und die K-Pop-Hits bleiben');
+    assert(F('listFor("genres").every(g => !/latin|spanisch|mexiko|bollywood/.test(g.value))'),
+      'Sprache: die Genre-Auswahl kennt dann kein Latin oder Bollywood mehr');
     const zeile = [...$$('#gLang').querySelectorAll('.fopt')].find(r => r.querySelector('.txt').textContent === 'Spanisch');
-    assert(zeile && +zeile.querySelector('.num').textContent > 500 && $$('#gLang').querySelector('.fcount').textContent === ' · 2',
-      'Sprache: die Klappliste nennt Spanisch mit Songzahl und zaehlt die zwei Regeln');
+    assert(zeile && +zeile.querySelector('.num').textContent > 500 && $$('#gLang').querySelector('.fcount').textContent === ' · 3',
+      'Sprache: die Klappliste nennt Spanisch mit Songzahl und zaehlt die drei Regeln');
     assert(F("Filters.isInstrumental(DB.songs.find(s => s.a === 'Lullaby Rock!'))")
       && !F("Filters.isInstrumental(DB.songs.find(s => s.t === \"Arsonist's Lullabye\"))"),
       'Filter: Schlaflied-Fassungen gelten als Instrumental, Hozier nicht');
@@ -1754,14 +1757,19 @@ const dummy = n => ({ t: 'Song ' + n, a: 'Kuenstler ' + n, al: 'Album', y: 2020,
 
   /* Zuruecksetzen */
   $$('#fReset').click();
-  assert(F('settings.filters').length === 3 && $$('#fInst').checked && $$('#fLang').checked,
+  assert(F('settings.filters').length === 4 && $$('#fInst').checked && $$('#fLang').checked,
     'Filter: Zuruecksetzen laesst nur den Standard stehen');
   /* Wer schon gespielt hat, bekommt die Sprachregel einmal dazu - danach nie wieder. */
   {
     const alt = makeWindow({ 'songrate:settings': JSON.stringify({ filters: [{ mode: 'ohne', type: 'instrumental', value: '', text: 'Instrumental' }] }) });
     await waitFor(() => !alt.document.querySelector('#app').hidden);
-    assert(alt.__ev("settings.filters.filter(r => r.type === 'lang').length") === 2 && alt.__ev('settings.langRules') === 1,
-      'Sprache: alte Einstellungen bekommen „nur Englisch und Deutsch" einmal dazu');
+    assert(alt.__ev("settings.filters.filter(r => r.type === 'lang').length") === 3 && alt.__ev('settings.langRules') === 2,
+      'Sprache: alte Einstellungen bekommen „nur Englisch, Deutsch und K-Pop-Hits" einmal dazu');
+    const erst = makeWindow({ 'songrate:settings': JSON.stringify({ langRules: 1, filters: [
+      { mode: 'nur', type: 'lang', value: 'en', text: 'Englisch' }, { mode: 'nur', type: 'lang', value: 'de', text: 'Deutsch' }] }) });
+    await waitFor(() => !erst.document.querySelector('#app').hidden);
+    assert(erst.__ev("settings.filters.map(r => r.value).join()") === 'en,de,kh' && erst.document.querySelector('#fLang').checked,
+      'Sprache: wer die erste Fassung hat, bekommt die K-Pop-Hits nachgereicht');
     const weg = makeWindow({ 'songrate:settings': JSON.stringify({ langRules: 1, filters: [] }) });
     await waitFor(() => !weg.document.querySelector('#app').hidden);
     assert(weg.__ev('settings.filters.length') === 0 && !weg.document.querySelector('#fLang').checked,

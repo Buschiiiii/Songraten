@@ -16,7 +16,8 @@ const Filters = (() => {
   /* Charts, Jahrzehnte und Genres: dazu nur, was man versteht. In Playlist,
      Kuenstler und eigener Musik hat man selbst gewaehlt - dort nicht. */
   const LANG_RULES = [{ mode: 'nur', type: 'lang', value: 'en', text: 'Englisch' },
-                      { mode: 'nur', type: 'lang', value: 'de', text: 'Deutsch' }];
+                      { mode: 'nur', type: 'lang', value: 'de', text: 'Deutsch' },
+                      { mode: 'nur', type: 'lang', value: 'kh', text: 'K-Pop-Hits' }];
   const DEFAULT_CHARTS = [...DEFAULT, ...LANG_RULES];
 
   const norm = s => (s || '').toLowerCase()
@@ -52,10 +53,16 @@ const Filters = (() => {
      Geprueft gegen die Songliste vom 4. Oktober: rund 740 spanische, 115
      indische, 60 koreanische Songs; Englisch/Deutsch-Verwechslungen sind
      egal, beide gelten als verstaendlich. */
-  const LANGS = [['en', 'Englisch'], ['de', 'Deutsch'], ['es', 'Spanisch'], ['pt', 'Portugiesisch'],
-    ['fr', 'Französisch'], ['it', 'Italienisch'], ['ko', 'K-Pop / Koreanisch'], ['hi', 'Indisch'], ['x', 'Andere']];
+  /* K-Pop wird nicht nach Sprache, sondern nach Bekanntheit geteilt: „How
+     You Like That", „Pink Venom", „DDU-DU DDU-DU" kennt man, die zwanzigste
+     BTS-Albumnummer nicht (Besitzer, 4. Oktober). Grenze 750 Mio. Streams -
+     dieselbe wie zwischen Medium und Hard in den Charts; DDU-DU DDU-DU liegt
+     bei 890 Mio. Ohne Streamzahl (Playlist, eigene Musik) bleibt es K-Pop. */
+  const KPOP_HIT = 7.5e8;
+  const LANGS = [['en', 'Englisch'], ['de', 'Deutsch'], ['kh', 'K-Pop-Hits'], ['es', 'Spanisch'], ['pt', 'Portugiesisch'],
+    ['fr', 'Französisch'], ['it', 'Italienisch'], ['ko', 'K-Pop (weitere)'], ['hi', 'Indisch'], ['x', 'Andere']];
   const LANG_NAME = Object.fromEntries(LANGS);
-  const KNOWN = ['en', 'de'];
+  const KNOWN = ['en', 'de', 'kh'];
   const wl = t => new Set(t.split(/\s+/).filter(Boolean));
   const LW = {
     en: wl(`the you your you're youre i i'm im i'll ill i've my it it's its is are be of to and on in with we all love
@@ -178,7 +185,8 @@ const Filters = (() => {
     let per = langCache.get(db || s);
     if (!per) langCache.set(db || s, per = new WeakMap());
     if (per.has(s)) return per.get(s);
-    const r = guess(s, db || { songs: [s] });
+    let r = guess(s, db || { songs: [s] });
+    if (r === 'ko' && (s.s || 0) >= KPOP_HIT) r = 'kh';
     per.set(s, r);
     return r;
   }
@@ -351,5 +359,5 @@ const Filters = (() => {
     && !(rules || []).some(r => r.type === 'lang' && r.mode === 'nur' && !KNOWN.includes(r.value));
 
   return { apply, matches, options, counts, parse, label, same, migrate, langOf, knownOnly,
-           isInstrumental, decadeOf, genreOf, DEFAULT, DEFAULT_CHARTS, LANG_RULES, LANG_NAME, MIN_POOL };
+           isInstrumental, decadeOf, genreOf, DEFAULT, DEFAULT_CHARTS, LANG_RULES, LANG_NAME, KPOP_HIT, MIN_POOL };
 })();

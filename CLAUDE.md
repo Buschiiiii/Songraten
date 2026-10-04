@@ -318,13 +318,23 @@ keine Sprache, deshalb rät `Filters.langOf(s, db)` sie aus drei Quellen:
 Stand 4. Oktober: 5347 en, 748 es, 117 hi, 109 ko, 24 pt, wenige de/fr/it.
 Englisch/Deutsch-Verwechslungen sind egal, beide gelten als verständlich.
 
+**K-Pop wird nach Bekanntheit geteilt, nicht nach Sprache** (Besitzer:
+„Pink Venom, How You Like That, DDU-DU DDU-DU sind ok, nur nicht Zeug, was
+man praktisch nicht kennen kann"). `langOf()` macht aus `ko` mit
+mindestens `KPOP_HIT` (750 Mio. Streams, dieselbe Grenze wie Medium/Hard)
+eine eigene Gruppe `kh` „K-Pop-Hits" – 24 Songs, DDU-DU DDU-DU liegt bei
+890 Mio. Der Rest heißt „K-Pop (weitere)". Ohne Streamzahl (Playlist,
+eigene Musik) bleibt es `ko`.
+
 Regeltyp `lang` wie Genre: Klappliste *Sprachen* (`#gLang`) mit Songzahl,
-Schalter *Nur Englisch und Deutsch* (`#fLang`, `Filters.knownOnly()`) setzt
-zwei `nur`-Regeln (`LANG_RULES`, wirken als oder). **Voreingestellt nur in
+Schalter *Nur Englisch, Deutsch und K-Pop-Hits* (`#fLang`,
+`Filters.knownOnly()`) setzt drei `nur`-Regeln (`LANG_RULES`, wirken als
+oder). **Voreingestellt nur in
 `settings.filters`** (Charts, Jahrzehnte, Genres, `DEFAULT_CHARTS`) – in
 Playlist, Künstler und eigener Musik hat man selbst gewählt.
-Bestehende Einstellungen bekommen die Regel einmal (`settings.langRules`),
-wer sie danach abschaltet, behält das. Folge im Genremodus: Latin, K-Pop
+Bestehende Einstellungen bekommen die Regel einmal (`settings.langRules`
+= 2); wer schon die erste Fassung (en + de, `langRules` 1) hatte, bekommt
+nur `kh` nachgereicht. Wer sie abgeschaltet hat, behält das. Folge im Genremodus: Latin, K-Pop
 und Bollywood fallen aus der Auswahl (unter `GEN_MIN`). In *Songs ansehen*
 steht die geratene Sprache an der Zeile, wenn sie nicht en/de ist.
 
