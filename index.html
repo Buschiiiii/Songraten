@@ -318,11 +318,25 @@
         <span class="switch-txt">Instrumentals ausblenden</span>
       </label>
 
-      <label class="switch" for="fLang">
+      <label class="switch" for="fLang" data-info="speech">
         <input type="checkbox" id="fLang" checked>
         <span class="track"></span>
-        <span class="switch-txt">Nur Englisch, Deutsch und bekannte Hits</span>
+        <span class="switch-txt">Sprachfilter</span>
       </label>
+      <div id="speechBody" class="speech">
+        <div class="chips" id="speechLangs"></div>
+        <div class="speech-strict">
+          <span>Strenge</span>
+          <input id="speechStrict" class="range" type="range" min="0" max="100" step="5" value="50">
+          <b id="speechVal">50 %</b>
+        </div>
+        <label class="switch" for="speechKnown">
+          <input type="checkbox" id="speechKnown" checked>
+          <span class="track"></span>
+          <span class="switch-txt">In Deutschland bekannte Hits behalten</span>
+        </label>
+        <p id="speechNote" class="fnote"></p>
+      </div>
 
       <p class="fhead">Angeklicktes wirkt als</p>
       <div class="seg seg-row" id="fMode">

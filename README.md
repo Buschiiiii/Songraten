@@ -362,17 +362,19 @@ Spotify (Premium) oder Apple Music angemeldet, spielt er das ganze Lied,
 sonst 30 Sekunden. Spotify braucht dafür die Song-ID – die kommt aus dem
 Import oder, angemeldet, über eine Suche; Apple reicht die Songliste.
 
-**Nur Englisch, Deutsch und bekannte Hits.** Die Bekanntheit der Songs
-hängt an weltweiten Streams – deshalb tauchten Bad Bunny, Arijit Singh und
-BTS weit oben auf. Charts, Jahrzehnte und Genres spielen jetzt
-standardmäßig nur englische und deutsche Songs und fremdsprachige, die man
-in Deutschland kennt: mit mindestens 10 Mio. Spotify-Streams aus
-Deutschland (kworb, deutsche Wochencharts), die großen K-Pop-Hits („How You
-Like That“, „Pink Venom“) und Klassiker von vor Spotify (Macarena,
-Despacito, Gangnam Style). Die Sprache wird aus Titel, Genre und Künstler
-geraten; unter *Songauswahl → Sprachen* lässt sich jede Sprache einzeln
-wieder dazunehmen, der Schalter *Nur Englisch, Deutsch und bekannte Hits*
-nimmt alles auf einmal zurück.
+**Sprachfilter mit Strenge.** Die Bekanntheit der Songs hängt an
+weltweiten Streams – deshalb tauchten Bad Bunny, Arijit Singh und BTS weit
+oben auf. Charts, Jahrzehnte und Genres filtern deshalb standardmäßig nach
+Sprache: unter *Songauswahl → Sprachfilter* wählst du die Zielsprachen
+(voreingestellt Englisch und Deutsch) und mit dem Regler, wie streng
+gefiltert wird – 0 % gar nicht, 50 % was eher fremd als vertraut wirkt,
+100 % alles mit dem kleinsten fremden Hinweis (dann fliegen auch Songs wie
+Rihannas „Te Amo“). Die Sprache wird aus Titel, Genre und Künstler
+geschätzt. *In Deutschland bekannte Hits behalten* lässt fremdsprachige
+Songs drin, die man hier kennt: ab 10 Mio. Spotify-Streams aus
+Deutschland (kworb, deutsche Wochencharts), die großen K-Pop-Hits („Pink
+Venom“) und Klassiker von vor Spotify (Macarena, Despacito, Gangnam
+Style).
 
 Hinter jedem Panelnamen und an den wichtigen Schaltern steht ein kleines
 **i** – antippen erklärt, was die Einstellung genau tut und wie sie rechnet.

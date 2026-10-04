@@ -18,7 +18,6 @@ const Filters = (() => {
   const LANG_RULES = [{ mode: 'nur', type: 'lang', value: 'en', text: 'Englisch' },
                       { mode: 'nur', type: 'lang', value: 'de', text: 'Deutsch' },
                       { mode: 'nur', type: 'lang', value: 'dh', text: 'Bekannte Hits' }];
-  const DEFAULT_CHARTS = [...DEFAULT, ...LANG_RULES];
 
   const norm = s => (s || '').toLowerCase()
     .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
@@ -80,6 +79,8 @@ const Filters = (() => {
   const LANGS = [['en', 'Englisch'], ['de', 'Deutsch'], ['dh', 'Bekannte Hits (fremdsprachig)'], ['es', 'Spanisch'],
     ['pt', 'Portugiesisch'], ['fr', 'Französisch'], ['it', 'Italienisch'], ['ko', 'K-Pop'], ['hi', 'Indisch'], ['x', 'Andere']];
   const LANG_NAME = Object.fromEntries(LANGS);
+  /* Was man als Zielsprache waehlen kann: alles ausser der Hit-Gruppe. */
+  const TARGETS = LANGS.filter(([v]) => v !== 'dh').map(([v, t]) => [v, v === 'ko' ? 'Koreanisch' : t]);
   const KNOWN = ['en', 'de', 'dh'];
   const wl = t => new Set(t.split(/\s+/).filter(Boolean));
   const LW = {
@@ -137,11 +138,11 @@ const Filters = (() => {
   /* Was der Titel allein sagt: [Sprache, Gewicht]. */
   function fromTitle(s) {
     const roh = titleCore(s.t);
-    if (HANGUL.test(roh) || HANGUL.test(s.a || '')) return ['ko', 9];
-    if (INDIC.test(roh) || INDIC.test(s.a || '')) return ['hi', 9];
-    if (OTHER_SCRIPT.test(roh) || OTHER_SCRIPT.test(s.a || '')) return ['x', 9];
+    if (HANGUL.test(roh) || HANGUL.test(s.a || '')) return ['ko', 9, { ko: 9 }];
+    if (INDIC.test(roh) || INDIC.test(s.a || '')) return ['hi', 9, { hi: 9 }];
+    if (OTHER_SCRIPT.test(roh) || OTHER_SCRIPT.test(s.a || '')) return ['x', 9, { x: 9 }];
     const lt = roh.toLowerCase().replace(/[’‘]/g, "'");
-    if (/bzrp music sessions/.test(lt)) return ['es', 3];
+    if (/bzrp music sessions/.test(lt)) return ['es', 3, { es: 3 }];
     const sc = { en: 0, es: 0, pt: 0, fr: 0, it: 0, de: 0 };
     (lt.match(/[a-zà-öø-ÿœ']+/g) || []).forEach(w => {
       for (const k in LW) if (LW[k].has(w)) sc[k] += 1;
@@ -155,7 +156,7 @@ const Filters = (() => {
     if (/n't|'s\b|'m\b|'re\b|'ll\b|'ve\b|in'\b/.test(lt)) sc.en += 1.5;
     let best = null, c = 0;
     for (const k in sc) if (sc[k] > c) { best = k; c = sc[k]; }
-    return [best, c];
+    return [best, c, sc];
   }
 
   const langGenre = s => LANG_GENRES[norm(s.g)] || null;
@@ -194,7 +195,7 @@ const Filters = (() => {
     });
     let k = null, v = 0, n = 0;
     for (const x in tot) { n += tot[x]; if (tot[x] > v) { v = tot[x]; k = x; } }
-    return { k, share: n ? v / n : 0, n };
+    return { k, share: n ? v / n : 0, n, tot };
   }
 
   const langCache = new WeakMap();
@@ -215,6 +216,67 @@ const Filters = (() => {
     if (r === 'ko' && (s.s || 0) >= KPOP_HIT) return true;
     const t = plainTitle(s.t), a = ` ${norm(s.a)} `;
     return DE_CLASSICS.some(([ct, ca]) => t === ct && a.includes(` ${ca} `));
+  }
+
+  /* Sprachfilter mit Strenge (Besitzer, 4. Oktober: „0 % gar keine
+     Filterung, 100 % ausschliesslich Englisch, aber eben auch false
+     positives"). Statt einer Entscheidung je Song eine Verteilung: jede
+     Sprache sammelt Gewicht aus Titelwoertern, Schrift, Genre und dem, was
+     der Kuenstler sonst singt; Englisch bekommt einen kleinen Vorschuss,
+     weil ein Titel ohne jeden Hinweis meistens englisch ist. foreign() ist
+     der Anteil, der nicht auf die Zielsprachen faellt. Gefiltert wird, was
+     mehr als 1 - Strenge fremd ist: bei 0 % nichts, bei 50 % was eher fremd
+     als vertraut ist, bei 100 % alles mit dem kleinsten fremden Hinweis
+     („Viva La Vida" wegen „la" und „vida"). */
+  const W_PRIOR = 1, W_GENRE = 2, W_KPOP = 6, W_ARTIST = 3, SPEECH_FLOOR = 0.05;
+  const distCache = new WeakMap();
+  function dist(s, db) {
+    db = db || { songs: [s] };
+    let per = distCache.get(db);
+    if (!per) distCache.set(db, per = new WeakMap());
+    let d = per.get(s);
+    if (d) return d;
+    const w = { en: W_PRIOR };
+    const put = (k, v) => { if (k && v > 0) w[k] = (w[k] || 0) + v; };
+    const [, , sc] = title(s);
+    for (const k in sc) put(k, sc[k]);
+    const g = langGenre(s);
+    put(g, g === 'ko' ? W_KPOP : W_GENRE);
+    const a = artistLean(s, db);
+    /* Zwei, drei Songs sagen ueber einen Kuenstler noch wenig. */
+    const sicher = Math.min(1, a.n / 3);
+    for (const k in a.tot) put(k, W_ARTIST * sicher * a.tot[k] / a.n);
+    let sum = 0;
+    for (const k in w) sum += w[k];
+    d = {};
+    for (const k in w) d[k] = w[k] / sum;
+    per.set(s, d);
+    return d;
+  }
+  function foreign(s, db, targets) {
+    const d = dist(s, db);
+    let mine = 0;
+    targets.forEach(k => { mine += d[k] || 0; });
+    return Math.max(0, 1 - mine);
+  }
+  const speechTargets = r => String(r.value || '').split(',').filter(Boolean);
+  /* Eine Regel je Regelsatz; value sind die Zielsprachen, strict die
+     Strenge in Prozent, known: in Deutschland bekannte Hits bleiben. */
+  function speechRule(targets, strict, known) {
+    const t = TARGETS.filter(([v]) => targets.includes(v));
+    const st = Math.max(0, Math.min(100, Math.round(+strict || 0)));
+    return { mode: 'nur', type: 'speech', value: t.map(x => x[0]).join(','), strict: st, known: !!known,
+             text: `Sprache ${t.map(x => x[1]).join(', ') || '–'} · ${st} %${known ? ' · + Hits' : ''}` };
+  }
+  function speechPass(s, r, db) {
+    const targets = speechTargets(r);
+    const strict = Math.max(0, Math.min(100, +r.strict || 0));
+    if (!targets.length || strict <= 0) return true;
+    if (r.known && knownInDe(s, guess(s, db || { songs: [s] }))) return true;
+    /* Ein Rest bleibt auch bei 100 % erlaubt: ein englischer Kuenstler mit
+       einem einzigen spanischen Song hat sonst bei jedem seiner Songs ein
+       paar Prozent „fremd" (Blinding Lights: 2 %). */
+    return foreign(s, db, targets) <= Math.max(SPEECH_FLOOR, 1 - strict / 100) + 1e-9;
   }
 
   function guess(s, db) {
@@ -277,8 +339,16 @@ const Filters = (() => {
       }
       /* „K-Pop-Hits" (kurz am 4. Oktober) steckt jetzt in „Bekannte Hits". */
       if (r.type === 'lang' && r.value === 'kh') x = { ...r, value: 'dh', text: 'Bekannte Hits' };
+      if (x.type === 'speech') x = speechRule(speechTargets(x), x.strict, x.known);
+      /* Eine Sprachregel je Satz - die spaetere gewinnt. */
+      if (x.type === 'speech') { const i = out.findIndex(o => o.type === 'speech'); if (i >= 0) out.splice(i, 1); }
       if (!out.some(o => o.type === x.type && String(o.value) === String(x.value))) out.push(x);
     });
+    /* Der Schalter von vorher („nur Englisch, Deutsch und bekannte Hits",
+       drei lang-Regeln) wird zur Sprachregel mit 50 % - dieselbe Auswahl. */
+    if (knownOnly(out) && !out.some(r => r.type === 'speech')) {
+      return [...out.filter(r => !(r.type === 'lang' && r.mode === 'nur')), { ...SPEECH_DEFAULT }];
+    }
     return out;
   }
 
@@ -286,6 +356,7 @@ const Filters = (() => {
     switch (r.type) {
       case 'instrumental': return isInstrumental(s);
       case 'lang': return langOf(s, db) === r.value;
+      case 'speech': return speechPass(s, r, db);
       case 'genre': return norm(genreOf(s)) === r.value;
       case 'decade': return decadeOf(s) === +r.value;
       case 'artist': return norm(s.a) === r.value ||
@@ -386,6 +457,9 @@ const Filters = (() => {
   const knownOnly = rules => KNOWN.every(v => (rules || []).some(r => r.type === 'lang' && r.mode === 'nur' && r.value === v))
     && !(rules || []).some(r => r.type === 'lang' && r.mode === 'nur' && !KNOWN.includes(r.value));
 
-  return { apply, matches, options, counts, parse, label, same, migrate, langOf, knownOnly,
+  const SPEECH_DEFAULT = speechRule(['en', 'de'], 50, true);
+  const DEFAULT_CHARTS = [...DEFAULT, SPEECH_DEFAULT];
+
+  return { speechRule, speechTargets, speechPass, foreign, SPEECH_DEFAULT, TARGETS, apply, matches, options, counts, parse, label, same, migrate, langOf, knownOnly,
            isInstrumental, decadeOf, genreOf, DEFAULT, DEFAULT_CHARTS, LANG_RULES, LANG_NAME, KPOP_HIT, DE_HIT, MIN_POOL };
 })();

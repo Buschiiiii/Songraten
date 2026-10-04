@@ -1664,9 +1664,10 @@ const dummy = n => ({ t: 'Song ' + n, a: 'Kuenstler ' + n, al: 'Album', y: 2020,
     row.click();
   };
 
-  assert(F('settings.filters').length === 4 && F('settings.filters')[0].type === 'instrumental'
-    && F("settings.filters.filter(r => r.type === 'lang' && r.mode === 'nur').map(r => r.value).join()") === 'en,de,dh',
-    'Filter: Instrumentals sind von Haus aus draussen, dazu nur Englisch, Deutsch und bekannte Hits');
+  assert(F('settings.filters').length === 2 && F('settings.filters')[0].type === 'instrumental'
+    && F("JSON.stringify((({ value, strict, known }) => ({ value, strict, known }))(settings.filters.find(r => r.type === 'speech')))")
+       === '{"value":"en,de","strict":50,"known":true}',
+    'Filter: Instrumentals sind von Haus aus draussen, dazu der Sprachfilter Englisch/Deutsch mit 50 % und bekannten Hits');
   assert($$('#fInst').checked && $$('#fLang').checked, 'Filter: beide Schalter stehen passend dazu an');
   assert(F('filtered').length < all, 'Filter: die Standardregel greift');
 
@@ -1691,16 +1692,45 @@ const dummy = n => ({ t: 'Song ' + n, a: 'Kuenstler ' + n, al: 'Album', y: 2020,
     assert(F('listFor("genres").every(g => !/latin|spanisch|mexiko|bollywood/.test(g.value))'),
       'Sprache: die Genre-Auswahl kennt dann kein Latin oder Bollywood mehr');
     const zeile = [...$$('#gLang').querySelectorAll('.fopt')].find(r => r.querySelector('.txt').textContent === 'Spanisch');
-    assert(zeile && +zeile.querySelector('.num').textContent > 500 && $$('#gLang').querySelector('.fcount').textContent === ' · 3',
-      'Sprache: die Klappliste nennt Spanisch mit Songzahl und zaehlt die drei Regeln');
+    assert(zeile && +zeile.querySelector('.num').textContent > 500,
+      'Sprache: die Klappliste nennt Spanisch mit Songzahl');
+    /* Strenge, Zielsprachen, bekannte Hits */
+    const regler = v => { const r = $$('#speechStrict'); r.value = v; r.dispatchEvent(new w.Event('input')); r.dispatchEvent(new w.Event('change')); };
+    const bei50 = F('filtered').length;
+    assert(/^\d+ von \d+ Songs fliegen raus/.test($$('#speechNote').textContent) && $$('#speechVal').textContent === '50 %'
+      && [...$$('#speechLangs').querySelectorAll('.chip.on')].map(b => b.dataset.v).join() === 'en,de',
+      'Sprache: Regler, Chips und Zeile zeigen den Filter (' + $$('#speechNote').textContent + ')');
+    regler(0);
+    const bei0 = F('filtered').length;
+    assert(bei0 > bei50 + 500 && drin('Ojitos Lindos') && F("settings.filters.find(r => r.type === 'speech').strict") === 0,
+      'Sprache: 0 % filtert nichts (' + bei50 + ' -> ' + bei0 + ')');
+    regler(100);
+    const bei100 = F('filtered').length;
+    const rihanna = () => F("filtered.some(s => s.t === 'Te Amo' && s.a === 'Rihanna')");
+    assert(bei100 < bei50 && !rihanna() && drin('Despacito') && drin('Viva La Vida') && drin('Blinding Lights'),
+      'Sprache: 100 % wirft auch Grenzfaelle wie Rihannas Te Amo raus, bekannte Hits bleiben (' + bei100 + ')');
+    $$('#speechKnown').checked = false; $$('#speechKnown').dispatchEvent(new w.Event('change'));
+    assert(!drin('Despacito') && !drin('Pink Venom') && !drin('Viva La Vida') && drin('Blinding Lights') && drin('Shape of You')
+      && F('filtered').length < bei100,
+      'Sprache: ohne „bekannte Hits behalten" fliegt bei 100 % auch Despacito und Viva La Vida, Blinding Lights bleibt');
+    regler(50);
+    $$('#speechKnown').checked = true; $$('#speechKnown').dispatchEvent(new w.Event('change'));
+    assert(F('filtered').length === bei50, 'Sprache: zurueck auf 50 % ist alles wie vorher');
+    $$('#speechLangs').querySelector('[data-v="es"]').click();
+    assert(drin('Ojitos Lindos') && F("settings.filters.find(r => r.type === 'speech').value") === 'en,de,es'
+      && $$('#speechLangs').querySelector('[data-v="es"]').classList.contains('on'),
+      'Sprache: Spanisch als Zielsprache holt die spanischen Songs dazu');
+    $$('#speechLangs').querySelector('[data-v="es"]').click();
+    assert(!drin('Ojitos Lindos') && F('filtered').length === bei50, 'Sprache: und wieder weg');
     assert(F("Filters.isInstrumental(DB.songs.find(s => s.a === 'Lullaby Rock!'))")
       && !F("Filters.isInstrumental(DB.songs.find(s => s.t === \"Arsonist's Lullabye\"))"),
       'Filter: Schlaflied-Fassungen gelten als Instrumental, Hozier nicht');
     const ohne = F('filtered').length;
     $$('#fLang').checked = false; $$('#fLang').dispatchEvent(new w.Event('change'));
-    assert(F('filtered').length > ohne + 500 && drin('Ojitos Lindos') && !F("settings.filters.some(r => r.type === 'lang')"),
+    assert(F('filtered').length > ohne + 500 && drin('Ojitos Lindos') && !F("settings.filters.some(r => r.type === 'speech')")
+      && $$('#speechBody').hidden,
       'Sprache: Schalter aus holt alle Sprachen zurueck (' + ohne + ' -> ' + F('filtered').length + ')');
-    assert(!F("settings.plFilters.some(r => r.type === 'lang')") && !F("settings.arFilters.some(r => r.type === 'lang')"),
+    assert(!F("settings.plFilters.some(r => r.type === 'speech')") && !F("settings.arFilters.some(r => r.type === 'speech')"),
       'Sprache: Playlist und Kuenstler haben keine Sprachregel - dort hat man selbst gewaehlt');
   }
 
@@ -1763,25 +1793,30 @@ const dummy = n => ({ t: 'Song ' + n, a: 'Kuenstler ' + n, al: 'Album', y: 2020,
 
   /* Zuruecksetzen */
   $$('#fReset').click();
-  assert(F('settings.filters').length === 4 && $$('#fInst').checked && $$('#fLang').checked,
+  assert(F('settings.filters').length === 2 && $$('#fInst').checked && $$('#fLang').checked,
     'Filter: Zuruecksetzen laesst nur den Standard stehen');
   /* Wer schon gespielt hat, bekommt die Sprachregel einmal dazu - danach nie wieder. */
   {
     const alt = makeWindow({ 'songrate:settings': JSON.stringify({ filters: [{ mode: 'ohne', type: 'instrumental', value: '', text: 'Instrumental' }] }) });
     await waitFor(() => !alt.document.querySelector('#app').hidden);
-    assert(alt.__ev("settings.filters.filter(r => r.type === 'lang').length") === 3 && alt.__ev('settings.langRules') === 3,
-      'Sprache: alte Einstellungen bekommen „nur Englisch, Deutsch und bekannte Hits" einmal dazu');
+    assert(alt.__ev("settings.filters.filter(r => r.type === 'speech').length") === 1 && alt.__ev('settings.langRules') === 4,
+      'Sprache: alte Einstellungen bekommen den Sprachfilter einmal dazu');
     const erst = makeWindow({ 'songrate:settings': JSON.stringify({ langRules: 1, filters: [
       { mode: 'nur', type: 'lang', value: 'en', text: 'Englisch' }, { mode: 'nur', type: 'lang', value: 'de', text: 'Deutsch' }] }) });
     await waitFor(() => !erst.document.querySelector('#app').hidden);
-    assert(erst.__ev("settings.filters.map(r => r.value).join()") === 'en,de,dh' && erst.document.querySelector('#fLang').checked,
-      'Sprache: wer die erste Fassung hat, bekommt die bekannten Hits nachgereicht');
+    const nurSpeech = win => win.__ev("settings.filters.map(r => r.type + ':' + r.value + ':' + r.strict + ':' + r.known).join()") === 'speech:en,de:50:true'
+      && win.document.querySelector('#fLang').checked;
+    assert(nurSpeech(erst), 'Sprache: aus der ersten Fassung (en + de) wird der Sprachfilter');
     const zweit = makeWindow({ 'songrate:settings': JSON.stringify({ langRules: 2, filters: [
       { mode: 'nur', type: 'lang', value: 'en', text: 'Englisch' }, { mode: 'nur', type: 'lang', value: 'de', text: 'Deutsch' },
       { mode: 'nur', type: 'lang', value: 'kh', text: 'K-Pop-Hits' }] }) });
     await waitFor(() => !zweit.document.querySelector('#app').hidden);
-    assert(zweit.__ev("settings.filters.map(r => r.value).join()") === 'en,de,dh' && zweit.document.querySelector('#fLang').checked,
-      'Sprache: aus „K-Pop-Hits" werden „Bekannte Hits"');
+    assert(nurSpeech(zweit), 'Sprache: aus der zweiten Fassung (mit „K-Pop-Hits") ebenso');
+    const dritt = makeWindow({ 'songrate:settings': JSON.stringify({ langRules: 3, filters: [
+      { mode: 'nur', type: 'lang', value: 'en', text: 'Englisch' }, { mode: 'nur', type: 'lang', value: 'de', text: 'Deutsch' },
+      { mode: 'nur', type: 'lang', value: 'dh', text: 'Bekannte Hits' }] }) });
+    await waitFor(() => !dritt.document.querySelector('#app').hidden);
+    assert(nurSpeech(dritt), 'Sprache: und aus der dritten („bekannte Hits")');
     const weg = makeWindow({ 'songrate:settings': JSON.stringify({ langRules: 1, filters: [] }) });
     await waitFor(() => !weg.document.querySelector('#app').hidden);
     assert(weg.__ev('settings.filters.length') === 0 && !weg.document.querySelector('#fLang').checked,

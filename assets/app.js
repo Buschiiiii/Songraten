@@ -214,19 +214,20 @@ if (!Array.isArray(settings.stages) || settings.stages.length !== STAGES.length)
 /* Zusammengefasste Genres: alte Regeln auf den neuen Namen ziehen. */
 settings.filters = Filters.migrate(settings.filters);
 settings.plFilters = Filters.migrate(settings.plFilters);
-/* Sprachregel (4. Oktober): wer schon gespielt hat, bekommt „nur Englisch,
-   Deutsch und bekannte Hits" einmal dazu - aber nur, wenn er keine eigene
-   Sprachregel hat. Wer die erste Fassung (nur en + de, langRules 1) hat,
-   bekommt die bekannten Hits nachgereicht; die zweite (mit „K-Pop-Hits")
-   zieht Filters.migrate() schon um. Danach bleibt, was er einstellt. */
-if ((settings.langRules || 0) < 3) {
+/* Sprachfilter (4. Oktober): wer schon gespielt hat, bekommt ihn einmal
+   dazu - aber nur, wenn er keine eigene Sprachregel hat. Die drei
+   lang-Regeln der zweiten und dritten Fassung zieht Filters.migrate()
+   schon um; die erste (nur en + de, langRules 1) wird hier ersetzt. Danach
+   bleibt, was er einstellt. */
+if ((settings.langRules || 0) < 4) {
   const nurLang = settings.filters.filter(r => r.type === 'lang');
-  if (!settings.langRules && !nurLang.length) settings.filters.push(...Filters.LANG_RULES.map(r => ({ ...r })));
-  else if (settings.langRules === 1 && nurLang.length === 2 && nurLang.every(r => r.mode === 'nur')
+  const hat = settings.filters.some(r => r.type === 'speech');
+  if (!settings.langRules && !nurLang.length && !hat) settings.filters.push({ ...Filters.SPEECH_DEFAULT });
+  else if (settings.langRules === 1 && !hat && nurLang.length === 2 && nurLang.every(r => r.mode === 'nur')
            && ['en', 'de'].every(v => nurLang.some(r => r.value === v))) {
-    settings.filters.push({ ...Filters.LANG_RULES.find(r => r.value === 'dh') });
+    settings.filters = [...settings.filters.filter(r => r.type !== 'lang'), { ...Filters.SPEECH_DEFAULT }];
   }
-  settings.langRules = 3;
+  settings.langRules = 4;
   save('settings', settings);
 }
 /* Ein gespeicherter Dienst, den es nicht mehr gibt, faellt zurueck. */
@@ -603,8 +604,12 @@ const INFO = {
   suggest: 'Alle bekannten Songs: auch der Song von 1955, der aufs Stichwort passt, steht in der Liste – sie verrät nicht, was gerade im Pool ist. Nur aus der Auswahl: kürzer, aber bei kleinen Pools fast die Lösung. Geraten wird über Titel und Künstler, nicht über die Quelle.',
   hard: 'Ein verpasster Song beendet die ganze Runde – die übrigen Plätze fallen mit, gezählt wird nur, was du wirklich gespielt hast. Und es geht strikt der Reihe nach: ein Platz weiter vorn ist gesperrt, solange davor noch einer offen ist.',
   start: 'Apples Hörproben sind 30 Sekunden, meist aus der Songmitte – „ab Songanfang“ wie im Original geht damit nicht. Anfang des Ausschnitts: jeder Platz beginnt am Anfang der Hörprobe. Zufällige Stelle: irgendwo darin, so dass die längste Stufe noch hineinpasst. Eigene Musik spielt immer ab dem ersten hörbaren Ton.',
+  speech: 'Apple liefert keine Sprache, deshalb wird sie geschätzt – aus Titelwörtern („el“, „que“ gegen „the“, „you“), Schrift und Zeichen (Hangul, ñ, ã), dem Genre (Latin, K-Pop, Bollywood …) und dem, was der Künstler sonst singt. Jeder Song bekommt so einen Anteil „fremd“: 0 % ist sicher eine deiner Zielsprachen, 100 % sicher keine.\n'
+    + 'Die Strenge sagt, ab wann ein Song rausfliegt: bei 0 % nie, bei 50 % wenn er eher fremd als vertraut wirkt, bei 100 % beim kleinsten fremden Hinweis – dann trifft es auch „Viva La Vida“ oder „Te Amo“, die nur so klingen. Die Zeile darunter zählt beim Ziehen mit.\n'
+    + 'Bekannte Hits behalten: fremdsprachige Songs, die man in Deutschland trotzdem kennt, bleiben bei jeder Strenge – mindestens 10 Mio. Spotify-Streams in Deutschland (deutsche Wochencharts, täglich von kworb), K-Pop ab 750 Mio. Streams weltweit („Pink Venom“, „DDU-DU DDU-DU“) und ein paar alte Hits ohne Streamdaten (Macarena, La Bamba, Gasolina). Für 100 % nur Englisch: ausschalten.\n'
+    + 'Unter „Sprachen“ steht die geschätzte Sprache als Liste – zum gezielten „ohne K-Pop“ oder „dazu Französisch“.',
   filter: 'Regeln für den Pool: „nur“ schränkt ein (mehrere Genres: oder; Genre und Jahrzehnt: und), „ohne“ wirft raus, „dazu“ holt dazu und schlägt beides – „nur 2010er, ohne Rap, dazu Billie Eilish“ ergibt die 2010er ohne Rap plus alle Billie-Eilish-Songs. Jeder Modus hat seine eigenen Regeln. Instrumentals (auch Schlaflied- und Klavierfassungen) werden an Titel, Album und Genre erkannt.\n'
-    + 'Sprache: Apple liefert keine, deshalb wird sie geraten – aus dem Titel (fremde Schrift, ñ, ã, typische Wörter wie „el“, „que“, „the“, „you“), dem Genre (Latin, K-Pop, Bollywood …) und dem, was der Künstler sonst singt. „Hips Don’t Lie“ bleibt so Englisch, „Despacito“ wird Spanisch. Charts, Jahrzehnte und Genres starten mit „nur Englisch, Deutsch und bekannte Hits“: die Bekanntheit hängt an weltweiten Streams, und da stehen Bad Bunny und Arijit Singh weit oben, die hier kaum jemand kennt. „Bekannte Hits“ sind fremdsprachige Songs, die man in Deutschland trotzdem kennt – genug Spotify-Streams in Deutschland (ab 10 Mio. in den deutschen Wochencharts, täglich von kworb geholt), K-Pop ab 750 Mio. Streams weltweit („Pink Venom“, „DDU-DU DDU-DU“) und ein paar alte Hits ohne Streamdaten (Macarena, La Bamba, Gasolina). Despacito bleibt also, Ojitos Lindos fliegt raus. Unter „Sprachen“ lässt sich jede Gruppe einzeln dazunehmen oder ausschließen.\n'
+    + 'Sprache: siehe das i am Sprachfilter.\n'
     + 'Unter 30 Songs warnt die Zeile. Filter wirken ab der nächsten Runde – die laufende bleibt. „Songs ansehen“ zeigt genau den Pool, aus dem gezogen wird; dort lässt sich jeder Song reinhören, nachhören und entfernen (gilt dann in jedem Modus).',
 };
 
@@ -2712,14 +2717,30 @@ function buildFilterUI() {
     applyFilters();
   };
 
-  /* Nur Englisch und Deutsch: zwei „nur"-Regeln, die als oder wirken. Aus
-     nimmt jede Sprachregel weg, damit nichts Halbes stehen bleibt. */
+  /* Sprachfilter: eine Regel je Regelsatz. An setzt den Standard (oder was
+     zuletzt eingestellt war), aus nimmt sie weg. */
   $('#fLang').onchange = () => {
-    const list = activeFilters().filter(r => r.type !== 'lang');
-    if ($('#fLang').checked) list.push(...Filters.LANG_RULES.map(r => ({ ...r })));
+    const list = activeFilters().filter(r => r.type !== 'speech');
+    if ($('#fLang').checked) list.push({ ...(speechLast || Filters.SPEECH_DEFAULT) });
     setFilters(list);
     applyFilters();
   };
+  Filters.TARGETS.forEach(([v, text]) => {
+    const b = el('button', 'chip', text);
+    b.type = 'button';
+    b.dataset.v = v;
+    b.onclick = () => {
+      const r = speechNow();
+      const t = Filters.speechTargets(r);
+      setSpeech(t.includes(v) ? t.filter(x => x !== v) : [...t, v], r.strict, r.known);
+    };
+    $('#speechLangs').appendChild(b);
+  });
+  /* Beim Ziehen nur Zahl und Vorschau, erst beim Loslassen wird gefiltert -
+     sonst rechnet der Pool bei jedem Schritt neu. */
+  $('#speechStrict').oninput = () => renderSpeech(+$('#speechStrict').value);
+  $('#speechStrict').onchange = () => { const r = speechNow(); setSpeech(Filters.speechTargets(r), +$('#speechStrict').value, r.known); };
+  $('#speechKnown').onchange = () => { const r = speechNow(); setSpeech(Filters.speechTargets(r), r.strict, $('#speechKnown').checked); };
 
   const art = $('#fArtist');
   art.oninput = () => renderArtistHits(art.value);
@@ -2735,6 +2756,40 @@ function buildFilterUI() {
   buildOptionList('#gDecade', 'decade');
   renderArtistHits('');
   renderFilters();
+}
+
+/* Die Sprachregel des aktiven Regelsatzes (oder die zuletzt benutzte). */
+let speechLast = null;
+const speechNow = () => activeFilters().find(r => r.type === 'speech') || speechLast || Filters.SPEECH_DEFAULT;
+function setSpeech(targets, strict, known) {
+  const r = Filters.speechRule(targets, strict, known);
+  speechLast = r;
+  setFilters([...activeFilters().filter(x => x.type !== 'speech'), r]);
+  applyFilters();
+}
+/* Regler, Chips und die Zeile darunter: wie viele Songs der Filter bei
+   dieser Strenge rauswirft. `vorschau` ist der Reglerwert beim Ziehen. */
+function renderSpeech(vorschau) {
+  const rules = activeFilters();
+  const r = rules.find(x => x.type === 'speech');
+  $('#fLang').checked = !!r;
+  $('#speechBody').hidden = !r;
+  if (!r) return;
+  const st = vorschau != null ? vorschau : r.strict;
+  const t = Filters.speechTargets(r);
+  $('#speechLangs').querySelectorAll('.chip').forEach(b => b.classList.toggle('on', t.includes(b.dataset.v)));
+  if (vorschau == null) $('#speechStrict').value = r.strict;
+  $('#speechVal').textContent = st + ' %';
+  $('#speechKnown').checked = !!r.known;
+  /* Gezaehlt ueber den Pool ohne die Sprachregel - also genau das, was sie
+     wegnimmt. */
+  const db = pool();
+  const ohne = Filters.apply(db.songs, rules.filter(x => x.type !== 'speech'), db);
+  const probe = { ...r, strict: st };
+  const raus = ohne.filter(s => !Filters.speechPass(s, probe, db)).length;
+  $('#speechNote').textContent = !t.length ? 'Keine Zielsprache gewählt – es wird nichts gefiltert.'
+    : st <= 0 ? 'Strenge 0 % – es wird nichts gefiltert.'
+    : `${raus} von ${ohne.length} Songs fliegen raus` + (st >= 90 ? ' – darunter auch Songs, die nur nach fremder Sprache aussehen.' : '.');
 }
 
 /* Charts, Jahrzehnte und Genres starten mit „nur Englisch und Deutsch",
@@ -2835,7 +2890,7 @@ function renderFilters() {
   });
   $('#fReset').hidden = !rules.length;
   $('#fInst').checked = rules.some(r => r.type === 'instrumental' && r.mode === 'ohne');
-  $('#fLang').checked = Filters.knownOnly(rules);
+  renderSpeech();
   markRules();
 
   const n = basePool().length;

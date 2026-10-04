@@ -349,16 +349,48 @@ Sprache die Gruppe `dh` „Bekannte Hits (fremdsprachig)", wenn
 Stand 4. Oktober: 5347 en, 727 es, 47 dh, 117 hi, 85 ko.
 Ohne Streamzahl (Playlist, eigene Musik) greifen nur die Klassiker.
 
-Regeltyp `lang` wie Genre: Klappliste *Sprachen* (`#gLang`) mit Songzahl,
-Schalter *Nur Englisch, Deutsch und bekannte Hits* (`#fLang`,
-`Filters.knownOnly()`) setzt drei `nur`-Regeln (`LANG_RULES`, wirken als
-oder). **Voreingestellt nur in
+**Sprachfilter mit Strenge** (`type: 'speech'`, Besitzer: „0 % gar keine
+Filterung, 100 % ausschließlich Englisch, aber eben auch false
+positives"). `langOf()` entscheidet hart; der Filter braucht einen Wert.
+`dist()` verteilt Gewicht auf die Sprachen – Titelwörter und Zeichen (der
+Vektor aus `fromTitle()`), Schrift 9, Genre `W_GENRE` 2 (K-Pop `W_KPOP` 6),
+Künstlerprofil `W_ARTIST` 3 × Anteil (gedämpft unter drei Songs), Englisch
+`W_PRIOR` 1 Vorschuss – und normiert. `foreign(s, db, ziele)` ist der Rest
+außerhalb der Zielsprachen; `speechPass()` lässt durch, was höchstens
+`max(SPEECH_FLOOR, 1 − Strenge)` fremd ist. `SPEECH_FLOOR` 0,05, weil
+sonst bei 100 % „Blinding Lights" (2 % fremd, The Weeknd hat einen
+spanischen Song) flöge. Mit `known` bleibt, was `knownInDe()` sagt – das
+gilt für **alle** Songs, also bleibt bei 100 % auch „Viva La Vida"
+(Coldplay, deutsche Streams); für reines Englisch den Schalter aus.
+
+Kalibriert an der harten Einteilung: 50 % mit Englisch/Deutsch und Hits
+behält 5399 Songs, `langOf()` 5400 – dieselbe Auswahl bis auf Grenzfälle.
+Kurve (mit Hits): 0 % 6356, 25 % 5563, 50 % 5399, 75 % 5337, 90 % 5211,
+100 % 5051. Die Gewichte sind von Hand gesetzt; wer nachstellt, prüft
+gegen genau diese Zahlen.
+
+Eine Regel je Regelsatz: `{mode:'nur', type:'speech', value:'en,de',
+strict:50, known:true, text}` aus `Filters.speechRule()`, `migrate()` hält
+sie einzeln und baut den Text neu. Bedienung im Panel *Songauswahl*:
+Schalter *Sprachfilter* (`#fLang`, aus = Regel weg, an = zuletzt benutzte
+`speechLast` oder `SPEECH_DEFAULT`), darunter `#speechBody` mit Chips der
+Zielsprachen (`Filters.TARGETS`, alles außer `dh`), Regler `#speechStrict`
+(beim Ziehen nur Anzeige und Zählung, gefiltert wird bei `change`),
+*In Deutschland bekannte Hits behalten* und `#speechNote` („950 von 6320
+Songs fliegen raus", gezählt über den Pool ohne die Sprachregel).
+`renderSpeech()` hängt an `renderFilters()`. **Region ist fest
+Deutschland** – andere Länder bräuchten weitere kworb-Seiten in
+`fetch_de.py` und ein Feld je Land.
+
+Die harte Einteilung bleibt als Regeltyp `lang` für gezielte Regeln:
+Klappliste *Sprachen* (`#gLang`) mit Songzahl, „ohne K-Pop", „dazu
+Französisch". **Voreingestellt nur in
 `settings.filters`** (Charts, Jahrzehnte, Genres, `DEFAULT_CHARTS`) – in
 Playlist, Künstler und eigener Musik hat man selbst gewählt.
-Bestehende Einstellungen bekommen die Regel einmal (`settings.langRules`
-= 3); wer die erste Fassung (en + de, `langRules` 1) hatte, bekommt nur
-`dh` nachgereicht, die zweite („K-Pop-Hits", `kh`) zieht `Filters.migrate()`
-auf `dh` um. Wer sie abgeschaltet hat, behält das. Folge im Genremodus: Latin, K-Pop
+Bestehende Einstellungen bekommen den Filter einmal (`settings.langRules`
+= 4); die alten Schalter-Fassungen – en + de (`langRules` 1), en + de +
+`kh`, en + de + `dh` – werden zu `SPEECH_DEFAULT` (`migrate()` bzw. der
+Block in app.js). Wer sie abgeschaltet hat, behält das. Folge im Genremodus: Latin, K-Pop
 und Bollywood fallen aus der Auswahl (unter `GEN_MIN`). In *Songs ansehen*
 steht die geratene Sprache an der Zeile, wenn sie nicht en/de ist.
 
