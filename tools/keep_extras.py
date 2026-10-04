@@ -55,10 +55,18 @@ def carry_over(old, new):
     neu_artists = new.setdefault('artists', [])
     index = {norm(n): i for i, n in enumerate(neu_artists)}
 
-    da = {key_of(s, neu_artists) for s in new['songs']}
+    da = {key_of(s, neu_artists): s for s in new['songs']}
+    # Streams je Land (`rc`) und ihre Grenzen kennt der Neubau nicht - die
+    # schreibt erst fetch_regions.py danach. Faellt das aus, sollen die
+    # Laender-Charts nicht leer dastehen, also die alten Werte mitnehmen.
+    if old.get('known') and not new.get('known'):
+        new['known'] = old['known']
     jahrzehnte = charts = 0
     for s in old['songs']:
-        if key_of(s, alt_artists) in da:
+        gleich = da.get(key_of(s, alt_artists))
+        if gleich is not None:
+            if s.get('rc') and not gleich.get('rc'):
+                gleich['rc'] = dict(s['rc'])
             continue                      # der Neubau hat ihn selbst, der gewinnt
         kopie = dict(s)
         ids = []
@@ -73,7 +81,7 @@ def carry_over(old, new):
             ids.append(index[n])
         kopie['ar'] = ids
         new['songs'].append(kopie)
-        da.add(key_of(kopie, neu_artists))
+        da[key_of(kopie, neu_artists)] = kopie
         if s.get('d'):
             charts += 1
         else:

@@ -612,7 +612,7 @@ const INFO = {
   hard: 'Ein verpasster Song beendet die ganze Runde – die übrigen Plätze fallen mit, gezählt wird nur, was du wirklich gespielt hast. Und es geht strikt der Reihe nach: ein Platz weiter vorn ist gesperrt, solange davor noch einer offen ist.',
   start: 'Apples Hörproben sind 30 Sekunden, meist aus der Songmitte – „ab Songanfang“ wie im Original geht damit nicht. Anfang des Ausschnitts: jeder Platz beginnt am Anfang der Hörprobe. Zufällige Stelle: irgendwo darin, so dass die längste Stufe noch hineinpasst. Eigene Musik spielt immer ab dem ersten hörbaren Ton.',
   speech: 'Apple liefert keine Sprache, deshalb wird sie geschätzt – aus Titelwörtern („el“, „que“ gegen „the“, „you“), Schrift und Zeichen (Hangul, ñ, ã), dem Genre (Latin, K-Pop, Bollywood …) und dem, was der Künstler sonst singt. Jeder Song bekommt so einen Anteil „fremd“: 0 % ist sicher eine deiner Zielsprachen, 100 % sicher keine.\n'
-    + 'Die Strenge sagt, ab wann ein Song rausfliegt: bei 0 % nie, bei 50 % wenn er eher fremd als vertraut wirkt, bei 100 % beim kleinsten fremden Hinweis – dann trifft es auch „Viva La Vida“ oder „Te Amo“, die nur so klingen. Die Zeile darunter zählt beim Ziehen mit.\n'
+    + 'Die Strenge sagt, ab wann ein Song rausfliegt: bei 0 % nie, bei 50 % wenn er eher fremd als vertraut wirkt, bei 100 % beim kleinsten fremden Hinweis – dann trifft es auch Rihannas „Te Amo“, das nur so klingt (und ohne „bekannte Hits“ sogar „Viva La Vida“). Die Zeile darunter zählt beim Ziehen mit.\n'
     + 'Bekannte Hits behalten: fremdsprachige Songs, die man in Deutschland trotzdem kennt, bleiben bei jeder Strenge – mindestens 10 Mio. Spotify-Streams in Deutschland (deutsche Wochencharts, täglich von kworb; in den Länder-Charts gilt das Land, mit einer Grenze gleich tief in dessen Liste), K-Pop ab 750 Mio. Streams weltweit („Pink Venom“, „DDU-DU DDU-DU“) und ein paar alte Hits ohne Streamdaten (Macarena, La Bamba, Gasolina). Für 100 % nur Englisch: ausschalten.\n'
     + 'Unter „Sprachen“ steht die geschätzte Sprache als Liste – zum gezielten „ohne K-Pop“ oder „dazu Französisch“.',
   filter: 'Regeln für den Pool: „nur“ schränkt ein (mehrere Genres: oder; Genre und Jahrzehnt: und), „ohne“ wirft raus, „dazu“ holt dazu und schlägt beides – „nur 2010er, ohne Rap, dazu Billie Eilish“ ergibt die 2010er ohne Rap plus alle Billie-Eilish-Songs. Jeder Modus hat seine eigenen Regeln. Instrumentals (auch Schlaflied- und Klavierfassungen) werden an Titel, Album und Genre erkannt.\n'
@@ -1605,7 +1605,7 @@ function showReveal(r, won) {
   $('#revealArtist').textContent = s.a;
   const imLand = popRegion ? Filters.regionStreams(s, popRegion) : 0;
   $('#revealMeta').textContent = [s.al, s.y || null,
-    imLand ? `${fmtStreams(imLand)} Streams in ${Filters.REGION_NAME[popRegion]}`
+    imLand ? `${fmtStreams(imLand)} Streams in ${Filters.REGION_IN[popRegion]}`
     : s.s ? (s.s / 1e9 >= 1 ? (s.s / 1e9).toFixed(2) + ' Mrd. Streams' : Math.round(s.s / 1e6) + ' Mio. Streams')
       : s.r ? `Platz ${s.r} der Jahrescharts ${s.y}` : (s.g || null),
   ].filter(Boolean).join(' · ');
@@ -2579,6 +2579,7 @@ const GEN_MIN = 20;
 /* Ein Land steht zur Wahl, sobald so viele seiner Songs in songs.json
    stehen - weniger waeren keine Charts. */
 const REG_MIN = 50;
+let regionMemo = { src: null, out: [] };
 
 /* Die Auswahl fuer einen Modus als [{ value, text }]. */
 function listFor(m) {
@@ -2589,11 +2590,15 @@ function listFor(m) {
     label.set(key, text);
   };
   if (m === 'regions') {
+    /* currentPick() fragt das bei jedem Zeichnen - gemerkt, solange der
+       Pool derselbe ist. */
+    if (regionMemo.src === filtered) return regionMemo.out;
     filtered.forEach(s => Filters.REGIONS.forEach(([cc, name]) => {
       if (Filters.regionStreams(s, cc) > 0) collect(cc, name);
     }));
-    return Filters.REGIONS.filter(([cc]) => (cnt.get(cc) || 0) >= REG_MIN)
-      .map(([value, text]) => ({ value, text }));
+    regionMemo = { src: filtered, out: Filters.REGIONS.filter(([cc]) => (cnt.get(cc) || 0) >= REG_MIN)
+      .map(([value, text]) => ({ value, text })) };
+    return regionMemo.out;
   }
   if (m === 'decades') {
     filtered.forEach(s => { const d = Filters.decadeOf(s); collect(d, d + 'er'); });
@@ -2818,7 +2823,7 @@ function renderSpeech(vorschau) {
   if (vorschau == null) $('#speechStrict').value = r.strict;
   $('#speechVal').textContent = st + ' %';
   $('#speechKnown').checked = !!r.known;
-  $('#speechKnownTxt').textContent = `In ${Filters.REGION_NAME[speechRegion()]} bekannte Hits behalten`;
+  $('#speechKnownTxt').textContent = `In ${Filters.REGION_IN[speechRegion()]} bekannte Hits behalten`;
   /* Gezaehlt ueber den Pool ohne die Sprachregel - also genau das, was sie
      wegnimmt. Im Jahrzehnt, Genre oder Land nur dort. */
   const db = pool();

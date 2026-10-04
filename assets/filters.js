@@ -13,8 +13,8 @@ const Filters = (() => {
 
   const MIN_POOL = 30;
   const DEFAULT = [{ mode: 'ohne', type: 'instrumental', value: '', text: 'Instrumental' }];
-  /* Charts, Jahrzehnte und Genres: dazu nur, was man versteht. In Playlist,
-     Kuenstler und eigener Musik hat man selbst gewaehlt - dort nicht. */
+  /* Der Schalter vom 4. Oktober vor dem Sprachfilter: drei lang-Regeln.
+     Nur noch zum Erkennen und Umziehen (migrate). */
   const LANG_RULES = [{ mode: 'nur', type: 'lang', value: 'en', text: 'Englisch' },
                       { mode: 'nur', type: 'lang', value: 'de', text: 'Deutsch' },
                       { mode: 'nur', type: 'lang', value: 'dh', text: 'Bekannte Hits' }];
@@ -218,6 +218,8 @@ const Filters = (() => {
   const REGIONS = [['de', 'Deutschland'], ['at', 'Österreich'], ['ch', 'Schweiz'], ['us', 'USA'],
     ['gb', 'Großbritannien'], ['fr', 'Frankreich'], ['es', 'Spanien'], ['it', 'Italien'], ['nl', 'Niederlande']];
   const REGION_NAME = Object.fromEntries(REGIONS);
+  /* Fuer „in …": „in den USA", „in der Schweiz". */
+  const REGION_IN = { ...REGION_NAME, ch: 'der Schweiz', us: 'den USA', nl: 'den Niederlanden' };
   /* Ab wie vielen Streams ein Song in einem Land als bekannt gilt - so tief
      in der Liste des Landes, wie DE_HIT in Deutschland reicht. Kommt aus
      songs.json (`known`, fetch_regions.py), siehe setKnown(). */
@@ -480,6 +482,6 @@ const Filters = (() => {
   const SPEECH_DEFAULT = speechRule(['en', 'de'], 50, true);
   const DEFAULT_CHARTS = [...DEFAULT, SPEECH_DEFAULT];
 
-  return { REGIONS, REGION_NAME, setKnown, regionStreams, knownIn, speechRule, speechTargets, speechPass, foreign, SPEECH_DEFAULT, TARGETS, apply, matches, options, counts, parse, label, same, migrate, langOf, knownOnly,
+  return { REGIONS, REGION_NAME, REGION_IN, setKnown, regionStreams, knownIn, speechRule, speechTargets, speechPass, foreign, SPEECH_DEFAULT, TARGETS, apply, matches, options, counts, parse, label, same, migrate, langOf, knownOnly,
            isInstrumental, decadeOf, genreOf, DEFAULT, DEFAULT_CHARTS, LANG_RULES, LANG_NAME, KPOP_HIT, DE_HIT, MIN_POOL };
 })();

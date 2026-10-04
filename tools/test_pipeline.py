@@ -181,11 +181,11 @@ def rebuild_keeps_extras():
     d = tempfile.mkdtemp()
     try:
         alt = {
-            'v': 2, 'built': '2026-01-01', 'tiers': ['easy'],
+            'v': 2, 'built': '2026-01-01', 'tiers': ['easy'], 'known': {'de': 10000000, 'us': 50000000},
             'artists': ['Toto', 'Sia', 'Gaste'],
             'songs': [
                 {'t': 'Unstoppable', 'a': 'Sia', 'ar': [1], 'y': 2016, 'g': 'Pop',
-                 's': 2000000000, 'd': 'easy', 'p': 'x', 'c': 'y'},
+                 's': 2000000000, 'd': 'easy', 'p': 'x', 'c': 'y', 'rc': {'de': 40000000}},
                 {'t': 'Africa', 'a': 'Toto', 'ar': [0], 'y': 1982, 'g': 'Rock',
                  's': 0, 'r': 3, 'd': '', 'p': 'x', 'c': 'y'},
                 {'t': 'Rosanna', 'a': 'Toto', 'ar': [0, 2], 'y': 1982, 'g': 'Rock',
@@ -236,6 +236,10 @@ def rebuild_keeps_extras():
         # Streamzahl. Sonst waere ein Neubau sinnlos.
         check(titel['Unstoppable']['s'] == 2200000000,
               'der Neubau gewinnt, wo er etwas gefunden hat')
+        # Streams je Land kennt der Neubau nicht - bis fetch_regions.py
+        # laeuft, gelten die alten.
+        check(titel['Unstoppable'].get('rc') == {'de': 40000000} and out.get('known', {}).get('us') == 50000000,
+              'Streams je Land und ihre Grenzen bleiben ueber den Neubau erhalten')
     finally:
         shutil.rmtree(d, ignore_errors=True)
 

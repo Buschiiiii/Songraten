@@ -31,7 +31,9 @@ from fame import add_fame  # noqa: E402
 from fetch_regions import REGIONS, SPLIT, Index, base, load_rows  # noqa: E402
 
 SONGS = 'data/songs.json'
-CACHE = '.cache/region_lookup.json'
+# v2: der erste Lauf suchte im Store des Landes und bekam Genres auf
+# Franzoesisch, Spanisch, Italienisch - die passen nicht zu den uebrigen.
+CACHE = '.cache/region_lookup2.json'
 TOP_N = 400           # je Land - tiefer kennt man die Songs auch dort kaum
 CAP_ARTIST = 15       # je Land, sonst besteht Deutschland aus drei Rappern
 
@@ -70,6 +72,13 @@ def todo_list(all_rows, index):
     return order
 
 
+def stores(cc):
+    """Zuerst der deutsche Store: dessen Genre-Namen („Pop auf Spanisch",
+    „Musik fuer Kinder") stehen auch sonst in songs.json, und Apples Katalog
+    ist fast ueberall derselbe. Nur was dort fehlt, im Store des Landes."""
+    return ['DE'] if cc in ('de', 'at', 'ch') else ['DE', cc.upper()]
+
+
 def to_song(hit):
     out = {
         't': hit['trackName'], 'a': hit['artistName'],
@@ -98,6 +107,7 @@ def selftest():
     assert score(hit, 'Roller', 'Apache 207') >= MIN_SCORE
     s = to_song(hit)
     assert s['y'] == 2019 and s['d'] == '' and s['k'] == 5, s
+    assert stores('at') == ['DE'] and stores('fr') == ['DE', 'FR'], 'deutscher Store zuerst'
     print('Auswahl in Ordnung')
 
 
@@ -123,24 +133,28 @@ def main():
         key = norm(title) + '|' + norm(artist)
         if key not in cache:
             try:
-                hits = None
-                for versuch in range(3):
-                    try:
-                        hits = lookup(title, artist, cc.upper())
-                        break
-                    except Exception as e:
-                        drossel = '403' in str(e) or '429' in str(e)
-                        if not drossel or versuch == 2 or time.time() - t0 > budget:
-                            raise
-                        wait = (60, 180)[versuch]
-                        print(f'  Apple bremst, warte {wait}s', flush=True)
-                        save_cache(cache)
-                        time.sleep(wait)
                 best, bs = None, 0.0
-                for h in hits or []:
-                    v = score(h, title, artist)
-                    if v > bs:
-                        best, bs = h, v
+                for store in stores(cc):
+                    hits = None
+                    for versuch in range(3):
+                        try:
+                            hits = lookup(title, artist, store)
+                            break
+                        except Exception as e:
+                            drossel = '403' in str(e) or '429' in str(e)
+                            if not drossel or versuch == 2 or time.time() - t0 > budget:
+                                raise
+                            wait = (60, 180)[versuch]
+                            print(f'  Apple bremst, warte {wait}s', flush=True)
+                            save_cache(cache)
+                            time.sleep(wait)
+                    for h in hits or []:
+                        v = score(h, title, artist)
+                        if v > bs:
+                            best, bs = h, v
+                    if bs >= MIN_SCORE:
+                        break
+                    time.sleep(PAUSE)
                 cache[key] = to_song(best) if bs >= MIN_SCORE else None
                 asked += 1
                 if asked % 50 == 0:

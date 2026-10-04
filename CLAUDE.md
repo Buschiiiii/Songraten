@@ -266,9 +266,12 @@ französischen Pop kaum – Deutschland hätte sonst nur Welthits, die hier
 auch liefen. Je Land die obersten `TOP_N` (400) der Summenliste, die
 fehlen (`Index.find()`, wie die Zuordnung), höchstens `CAP_ARTIST` (15) je
 Künstler und Land; abwechselnd nach Rang über alle Länder, damit jedes
-zuerst seine größten bekommt. Suche im Store des Landes, Bewertung wie
-`add_decades.py` (`score`, `MIN_SCORE`, `BAD`), Cache
-`.cache/region_lookup.json`. Neue Songs: `s` 0, `d` leer (also nicht in
+zuerst seine größten bekommt. Gesucht wird **zuerst im deutschen Store**,
+erst ohne Treffer im Store des Landes (`stores()`): Apple liefert Genres in
+der Sprache des Stores („Variété française"), der Rest von `songs.json`
+hat die deutschen Namen („Pop auf Spanisch"). Der erste Lauf suchte im
+Landes-Store – deshalb heißt der Cache jetzt `.cache/region_lookup2.json`.
+Bewertung wie `add_decades.py` (`score`, `MIN_SCORE`, `BAD`). Neue Songs: `s` 0, `d` leer (also nicht in
 den Welt-Charts, wohl in Jahrzehnten und Genres), `rc` schreibt danach
 `fetch_regions.py`. Apple drosselt aus GitHubs Rechenzentren hart – das
 holt sich über viele Tage ein, wie die Jahrescharts.
@@ -423,7 +426,7 @@ Songs fliegen raus", gezählt über den Pool ohne die Sprachregel).
 `renderSpeech()` hängt an `renderFilters()`. **Bekannt wo?** Sonst
 Deutschland; im Modus *Länder-Charts* das gewählte Land (`regionRules()`
 setzt `region` an die Sprachregel, `speechRegion()`, der Schalter heißt
-dann „In USA bekannte Hits behalten").
+dann „In den USA bekannte Hits behalten", `Filters.REGION_IN`).
 
 Die harte Einteilung bleibt als Regeltyp `lang` für gezielte Regeln:
 Klappliste *Sprachen* (`#gLang`) mit Songzahl, „ohne K-Pop", „dazu
