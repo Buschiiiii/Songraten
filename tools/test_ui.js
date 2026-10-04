@@ -1552,25 +1552,35 @@ const dummy = n => ({ t: 'Song ' + n, a: 'Kuenstler ' + n, al: 'Album', y: 2020,
     'Laender: bekannte Hits gelten fuer Deutschland');
   assert(G('round').every(r => r.song && G('pickFiltered').some(s => s.i === r.song.i)),
     'Laender: die Runde zieht nur aus dem Land');
-  /* Ein zweites Land, nachgebaut: 120 Songs mit Streams in den USA. */
-  G(`DB.songs.slice(0, 120).forEach((s, i) => { s.rc = { ...(s.rc || {}), us: (300 - i) * 1e6 }; });
-     DB.songs.find(s => s.t === 'Ojitos Lindos').rc = { us: 160e6 };
-     DB.songs.find(s => s.t === 'Sin Pijama').rc = { us: 100e6 };
-     Filters.setKnown({ ...DB.known, us: 150e6 }); applyFilters()`);
-  assert(G("listFor('regions').map(o => o.value).join()") === 'de,us', 'Laender: ein Land mit genug Songs steht zur Wahl');
+  /* Alle neun Laender haben Zahlen (fetch_regions.py, 4. Oktober). */
+  assert(G("listFor('regions').length") >= 5 && G("listFor('regions')[0].value") === 'de',
+    'Laender: mehrere Laender stehen zur Wahl (' + G("listFor('regions').map(o => o.value).join()") + ')');
   $('#pickNext').click(); await tick(40);
-  assert(G('settings.region') === 'us' && $('#pickLabel').textContent === 'USA' && G('tierScope()') === 'reg-us',
-    'Laender: der Pfeil springt in die USA');
-  assert(G("pickFiltered.some(s => s.t === 'Ojitos Lindos')") && !G("pickFiltered.some(s => s.t === 'Sin Pijama')")
-    && /USA/.test($('#speechKnownTxt').textContent),
-    'Laender: bekannt heisst jetzt bekannt in den USA - Ojitos Lindos bleibt, Sin Pijama nicht');
-  assert(G('popOf(byTier.easy[0])') >= G('popOf(byTier.impossible[0] || byTier.easy[0])'),
-    'Laender: sortiert nach Streams in den USA');
+  assert(G('settings.region') === G("listFor('regions')[1].value") && G('tierScope()') === 'reg-' + G('settings.region'),
+    'Laender: der Pfeil springt ins naechste Land (' + $('#pickLabel').textContent + ')');
+  G("settings.region = 'us'; applyFilters(); newRound()"); await tick(40);
+  assert($('#pickLabel').textContent === 'USA' && /^In den USA/.test($('#speechKnownTxt').textContent),
+    'Laender: USA, und der Schalter sagt „in den USA bekannte Hits"');
+  {
+    /* Ein spanischer Song, der in den USA ein Hit war, hier aber nicht -
+       und einer, der es nirgends war. */
+    const usHit = G(`(DB.songs.find(s => Filters.langOf(s, DB) === 'es' && Filters.regionStreams(s, 'us') >= DB.known.us
+      && Filters.regionStreams(s, 'de') < DB.known.de && !Filters.isInstrumental(s)) || {}).t`);
+    const usKlein = G(`(DB.songs.find(s => Filters.langOf(s, DB) === 'es' && Filters.regionStreams(s, 'us') > 0
+      && Filters.regionStreams(s, 'us') < DB.known.us / 4 && Filters.foreign(s, DB, ['en', 'de']) > 0.6) || {}).t`);
+    const drinUS = t => G(`pickFiltered.some(s => s.t === ${JSON.stringify(t)})`);
+    assert(usHit && usKlein && drinUS(usHit) && !drinUS(usKlein),
+      `Laender: bekannt heisst jetzt bekannt in den USA - „${usHit}" bleibt, „${usKlein}" nicht`);
+  }
+  {
+    const us = "Filters.regionStreams(s, 'us')";
+    assert(G(`Math.min(...byTier.easy.map(s => ${us}))`) >= G(`Math.max(...byTier.medium.map(s => ${us}))`),
+      'Laender: sortiert nach Streams in den USA');
+  }
   $('#modeSeg [data-v="charts"]').click(); await tick(40);
   assert(G('mode') === 'charts' && G('popRegion') === null && G('popOf(DB.songs[0])') === G('DB.songs[0].pop'),
     'Laender: zurueck in den Charts zaehlt wieder die Weltzahl');
-  G(`DB.songs.forEach(s => { if (s.rc && s.rc.us) { delete s.rc.us; if (!Object.keys(s.rc).length) delete s.rc; } });
-     settings.region = 'de'; applyFilters()`);
+  G("settings.region = 'de'; applyFilters()");
 
   /* --------------------------------------------------- Knopf und Balken */
   G('newRound()'); await tick(30);

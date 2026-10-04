@@ -271,7 +271,18 @@ erst ohne Treffer im Store des Landes (`stores()`): Apple liefert Genres in
 der Sprache des Stores („Variété française"), der Rest von `songs.json`
 hat die deutschen Namen („Pop auf Spanisch"). Der erste Lauf suchte im
 Landes-Store – deshalb heißt der Cache jetzt `.cache/region_lookup2.json`.
-Bewertung wie `add_decades.py` (`score`, `MIN_SCORE`, `BAD`). Neue Songs: `s` 0, `d` leer (also nicht in
+Bewertung wie `add_decades.py` (`score`, `MIN_SCORE`, `BAD`), dazu
+`bewerte()`: eine Fassung (Acoustic, Live, Remix …), die nicht gesucht war,
+verliert 3 Punkte – der erste Lauf nahm „Stolen Dance (Acoustic Version)".
+Genres aus fremden Stores benennt `clean_songs.py` um (`GENRE_DE`:
+„Música latina" → Latin, „Urbano latino" → Latin Urban …).
+
+**Erster Lauf (4. Oktober abends):** alle neun Länder geladen, 1213 (fr)
+bis 2317 (us) Songs je Land mit Zahl; „bekannt" ab 10 Mio. (de), 0,6
+(at), 0,7 (ch), 30,8 (us), 7,5 (gb), 5,9 (fr), 6,1 (es), 6,2 (it), 4,3
+(nl). 1531 Länder-Hits fehlten, 97 kamen in 17 Minuten (138 Anfragen,
+dann 403) – Komet, Sommergewitter, Wildberry Lillet, Ninho, Lazza, Lo &
+Leduc. Der Rest kommt über die nächsten Wochen. Neue Songs: `s` 0, `d` leer (also nicht in
 den Welt-Charts, wohl in Jahrzehnten und Genres), `rc` schreibt danach
 `fetch_regions.py`. Apple drosselt aus GitHubs Rechenzentren hart – das
 holt sich über viele Tage ein, wie die Jahrescharts.
@@ -409,10 +420,21 @@ gilt für **alle** Songs, also bleibt bei 100 % auch „Viva La Vida"
 (Coldplay, deutsche Streams); für reines Englisch den Schalter aus.
 
 Kalibriert an der harten Einteilung: 50 % mit Englisch/Deutsch und Hits
-behält 5399 Songs, `langOf()` 5400 – dieselbe Auswahl bis auf Grenzfälle.
-Kurve (mit Hits): 0 % 6356, 25 % 5563, 50 % 5399, 75 % 5337, 90 % 5211,
-100 % 5051. Die Gewichte sind von Hand gesetzt; wer nachstellt, prüft
-gegen genau diese Zahlen.
+behielt 5399 Songs, `langOf()` 5400 – dieselbe Auswahl bis auf Grenzfälle.
+Die Gewichte sind von Hand gesetzt; wer nachstellt, prüft gegen die Kurve.
+
+**Wo ein Song lief, zählt mit** (`regionLean()`, seit den Länder-Charts):
+die neuen Länder-Hits haben oft Titel ohne Sprachhinweis („CENERE",
+„Destri", „Oceaan") und galten als englisch. `rc` je Land relativ zur
+Grenze des Landes (`KNOWN_AT`), nach Sprache des Landes (`REGION_LANG`:
+at/ch → de, gb/us → en, nl → `nl`, neu in `LANGS`) zusammengezählt; ballt
+sich ein Song auf eine Sprache, gibt das in `dist()` bis zu `W_REGION` 4
+(ab 60 % Anteil), und `guess()` nimmt die Sprache bei ≥ 80 %, wenn der
+Titel nur schwach dagegen spricht („Capri Sun" von Capo Plaza). Welthits
+verteilen sich und bleiben unberührt. Kurve mit Hits (6453 Songs, 4.
+Oktober abends): 0 % 6453, 25 % 5635, 50 % 5464, 75 % 5333, 90 % 5197,
+100 % 5067. Lücke: Songs, die sich auf zwei fremde Länder verteilen
+(„Casanova", Frankreich und Spanien), erkennt das nicht.
 
 Eine Regel je Regelsatz: `{mode:'nur', type:'speech', value:'en,de',
 strict:50, known:true, text}` aus `Filters.speechRule()`, `migrate()` hält

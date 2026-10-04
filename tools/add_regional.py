@@ -20,6 +20,7 @@ am Ende - wie add_decades.py.
 
 import json
 import os
+import re
 import sys
 import time
 
@@ -35,6 +36,16 @@ SONGS = 'data/songs.json'
 # Franzoesisch, Spanisch, Italienisch - die passen nicht zu den uebrigen.
 CACHE = '.cache/region_lookup2.json'
 TOP_N = 400           # je Land - tiefer kennt man die Songs auch dort kaum
+# Eine Fassung, die nicht gesucht war, verliert: „Stolen Dance" soll das
+# Original finden, nicht die „Acoustic Version" (erster Lauf).
+FASSUNG = re.compile(r'\b(acoustic|live|remix|mix|version|edit|sped up|slowed|remaster(ed)?)\b', re.I)
+
+
+def bewerte(hit, title, artist):
+    v = score(hit, title, artist)
+    if v and FASSUNG.search(hit.get('trackName') or '') and not FASSUNG.search(title):
+        v -= 3
+    return v
 CAP_ARTIST = 15       # je Land, sonst besteht Deutschland aus drei Rappern
 
 
@@ -105,6 +116,8 @@ def selftest():
     hit = {'trackName': 'Roller', 'artistName': 'Apache 207', 'releaseDate': '2019-08-02T07:00:00Z',
            'previewUrl': 'x', 'trackId': 5, 'primaryGenreName': 'Hip-Hop/Rap'}
     assert score(hit, 'Roller', 'Apache 207') >= MIN_SCORE
+    akustik = {**hit, 'trackName': 'Roller (Acoustic Version)'}
+    assert bewerte(akustik, 'Roller', 'Apache 207') < bewerte(hit, 'Roller', 'Apache 207'), 'Original vor Fassung'
     s = to_song(hit)
     assert s['y'] == 2019 and s['d'] == '' and s['k'] == 5, s
     assert stores('at') == ['DE'] and stores('fr') == ['DE', 'FR'], 'deutscher Store zuerst'
@@ -149,7 +162,7 @@ def main():
                             save_cache(cache)
                             time.sleep(wait)
                     for h in hits or []:
-                        v = score(h, title, artist)
+                        v = bewerte(h, title, artist)
                         if v > bs:
                             best, bs = h, v
                     if bs >= MIN_SCORE:

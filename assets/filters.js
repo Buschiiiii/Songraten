@@ -79,7 +79,7 @@ const Filters = (() => {
     ['volare', 'gipsy kings'], ['nel blu dipinto di blu', 'domenico modugno'], ['bella ciao', 'el profesor'],
     ['la isla bonita', 'madonna'], ['mi gente', 'j balvin'], ['taki taki', 'dj snake'], ['calma', 'pedro capo']];
   const LANGS = [['en', 'Englisch'], ['de', 'Deutsch'], ['dh', 'Bekannte Hits (fremdsprachig)'], ['es', 'Spanisch'],
-    ['pt', 'Portugiesisch'], ['fr', 'Französisch'], ['it', 'Italienisch'], ['ko', 'K-Pop'], ['hi', 'Indisch'], ['x', 'Andere']];
+    ['pt', 'Portugiesisch'], ['fr', 'Französisch'], ['it', 'Italienisch'], ['nl', 'Niederländisch'], ['ko', 'K-Pop'], ['hi', 'Indisch'], ['x', 'Andere']];
   const LANG_NAME = Object.fromEntries(LANGS);
   /* Was man als Zielsprache waehlen kann: alles ausser der Hit-Gruppe. */
   const TARGETS = LANGS.filter(([v]) => v !== 'dh').map(([v, t]) => [v, v === 'ko' ? 'Koreanisch' : t]);
@@ -238,6 +238,29 @@ const Filters = (() => {
   }
   const knownInDe = (s, r) => knownIn(s, r, 'de');
 
+  /* Wo ein Song lief, sagt viel ueber seine Sprache: was nur in Italien in
+     den Charts war, ist fast sicher italienisch - auch wenn der Titel
+     („CENERE", „Destri") nichts verraet. Gemessen relativ zur Grenze jedes
+     Landes (KNOWN_AT), sonst wuerden die USA alles ueberstimmen. Liefert die
+     Sprache mit dem groessten Anteil; ein Welthit verteilt sich und sagt
+     nichts. */
+  const REGION_LANG = { de: 'de', at: 'de', ch: 'de', us: 'en', gb: 'en', fr: 'fr', es: 'es', it: 'it', nl: 'nl' };
+  function regionLean(s) {
+    if (!s || !s.rc) return { k: null, share: 0 };
+    const tot = {};
+    let sum = 0;
+    for (const cc in s.rc) {
+      const g = KNOWN_AT[cc], k = REGION_LANG[cc];
+      if (!g || !k) continue;
+      const v = s.rc[cc] / g;
+      tot[k] = (tot[k] || 0) + v;
+      sum += v;
+    }
+    let k = null, v = 0;
+    for (const x in tot) if (tot[x] > v) { v = tot[x]; k = x; }
+    return { k, share: sum ? v / sum : 0 };
+  }
+
   /* Sprachfilter mit Strenge (Besitzer, 4. Oktober: „0 % gar keine
      Filterung, 100 % ausschliesslich Englisch, aber eben auch false
      positives"). Statt einer Entscheidung je Song eine Verteilung: jede
@@ -248,7 +271,7 @@ const Filters = (() => {
      mehr als 1 - Strenge fremd ist: bei 0 % nichts, bei 50 % was eher fremd
      als vertraut ist, bei 100 % alles mit dem kleinsten fremden Hinweis
      („Viva La Vida" wegen „la" und „vida"). */
-  const W_PRIOR = 1, W_GENRE = 2, W_KPOP = 6, W_ARTIST = 3, SPEECH_FLOOR = 0.05;
+  const W_PRIOR = 1, W_GENRE = 2, W_KPOP = 6, W_ARTIST = 3, W_REGION = 4, SPEECH_FLOOR = 0.05;
   const distCache = new WeakMap();
   function dist(s, db) {
     db = db || { songs: [s] };
@@ -266,6 +289,10 @@ const Filters = (() => {
     /* Zwei, drei Songs sagen ueber einen Kuenstler noch wenig. */
     const sicher = Math.min(1, a.n / 3);
     for (const k in a.tot) put(k, W_ARTIST * sicher * a.tot[k] / a.n);
+    /* Nur wenn sich ein Song auf eine Sprache ballt: ab 60 % zaehlt es,
+       bei 100 % voll. */
+    const rl = regionLean(s);
+    if (rl.k && rl.share > 0.6) put(rl.k, W_REGION * (rl.share - 0.6) / 0.4);
     let sum = 0;
     for (const k in w) sum += w[k];
     d = {};
@@ -305,6 +332,10 @@ const Filters = (() => {
     const [L, c] = title(s), g = langGenre(s);
     if (c >= 9) return L;
     if (L && L !== 'en' && c >= 3) return L;
+    /* Lief nur in Italien, Frankreich, Spanien oder den Niederlanden: ein
+       schwacher englischer Titelhinweis („Capri Sun") zaehlt dagegen nicht. */
+    const rl = regionLean(s);
+    if (rl.k && rl.k !== 'en' && rl.k !== 'de' && rl.share >= 0.8 && c < 2) return rl.k;
     const a = artistLean(s, db);
     /* K-Pop-Titel sind fast immer englisch, gesungen wird meist koreanisch
        („FAKE LOVE", „Kill This Love") - der Titel beweist hier nichts. */
