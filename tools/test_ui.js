@@ -1664,10 +1664,36 @@ const dummy = n => ({ t: 'Song ' + n, a: 'Kuenstler ' + n, al: 'Album', y: 2020,
     row.click();
   };
 
-  assert(F('settings.filters').length === 1 && F('settings.filters')[0].type === 'instrumental',
-    'Filter: Instrumentals sind von Haus aus draussen');
-  assert($$('#fInst').checked, 'Filter: der Schalter steht passend dazu an');
+  assert(F('settings.filters').length === 3 && F('settings.filters')[0].type === 'instrumental'
+    && F("settings.filters.filter(r => r.type === 'lang' && r.mode === 'nur').map(r => r.value).join()") === 'en,de',
+    'Filter: Instrumentals sind von Haus aus draussen, dazu nur Englisch und Deutsch');
+  assert($$('#fInst').checked && $$('#fLang').checked, 'Filter: beide Schalter stehen passend dazu an');
   assert(F('filtered').length < all, 'Filter: die Standardregel greift');
+
+  /* Sprache: geraten aus Titel, Genre und Kuenstler */
+  {
+    const sp = t => F(`Filters.langOf(DB.songs.find(s => s.t.startsWith(${JSON.stringify(t)})), DB)`);
+    assert(sp('Despacito') === 'es' && sp("Hips Don't Lie") === 'en' && sp('Viva La Vida') === 'en'
+      && sp('Dynamite') === 'ko' && sp('Tum Hi Ho') === 'hi' && sp('Mein Herz brennt') === 'de' && sp('Blinding Lights') === 'en',
+      'Sprache: Despacito spanisch, Hips Don’t Lie und Viva La Vida englisch, Dynamite koreanisch, Tum Hi Ho indisch');
+    const drin = t => F(`filtered.some(s => s.t.startsWith(${JSON.stringify(t)}))`);
+    assert(!drin('Despacito') && !drin('Dynamite') && drin("Hips Don't Lie") && drin('Mein Herz brennt'),
+      'Sprache: nur Englisch und Deutsch wirft Despacito und Dynamite raus, Shakira auf Englisch und Rammstein bleiben');
+    assert(F('listFor("genres").every(g => !/latin|spanisch|mexiko|k pop|bollywood/.test(g.value))'),
+      'Sprache: die Genre-Auswahl kennt dann kein Latin, K-Pop oder Bollywood mehr');
+    const zeile = [...$$('#gLang').querySelectorAll('.fopt')].find(r => r.querySelector('.txt').textContent === 'Spanisch');
+    assert(zeile && +zeile.querySelector('.num').textContent > 500 && $$('#gLang').querySelector('.fcount').textContent === ' · 2',
+      'Sprache: die Klappliste nennt Spanisch mit Songzahl und zaehlt die zwei Regeln');
+    assert(F("Filters.isInstrumental(DB.songs.find(s => s.a === 'Lullaby Rock!'))")
+      && !F("Filters.isInstrumental(DB.songs.find(s => s.t === \"Arsonist's Lullabye\"))"),
+      'Filter: Schlaflied-Fassungen gelten als Instrumental, Hozier nicht');
+    const ohne = F('filtered').length;
+    $$('#fLang').checked = false; $$('#fLang').dispatchEvent(new w.Event('change'));
+    assert(F('filtered').length > ohne + 500 && drin('Despacito') && !F("settings.filters.some(r => r.type === 'lang')"),
+      'Sprache: Schalter aus holt alle Sprachen zurueck (' + ohne + ' -> ' + F('filtered').length + ')');
+    assert(!F("settings.plFilters.some(r => r.type === 'lang')") && !F("settings.arFilters.some(r => r.type === 'lang')"),
+      'Sprache: Playlist und Kuenstler haben keine Sprachregel - dort hat man selbst gewaehlt');
+  }
 
   /* Der Schalter ist die einzige Bedienung fuer Instrumentals */
   $$('#fInst').checked = false; $$('#fInst').dispatchEvent(new w.Event('change'));
@@ -1728,7 +1754,19 @@ const dummy = n => ({ t: 'Song ' + n, a: 'Kuenstler ' + n, al: 'Album', y: 2020,
 
   /* Zuruecksetzen */
   $$('#fReset').click();
-  assert(F('settings.filters').length === 1 && $$('#fInst').checked, 'Filter: Zuruecksetzen laesst nur den Standard stehen');
+  assert(F('settings.filters').length === 3 && $$('#fInst').checked && $$('#fLang').checked,
+    'Filter: Zuruecksetzen laesst nur den Standard stehen');
+  /* Wer schon gespielt hat, bekommt die Sprachregel einmal dazu - danach nie wieder. */
+  {
+    const alt = makeWindow({ 'songrate:settings': JSON.stringify({ filters: [{ mode: 'ohne', type: 'instrumental', value: '', text: 'Instrumental' }] }) });
+    await waitFor(() => !alt.document.querySelector('#app').hidden);
+    assert(alt.__ev("settings.filters.filter(r => r.type === 'lang').length") === 2 && alt.__ev('settings.langRules') === 1,
+      'Sprache: alte Einstellungen bekommen „nur Englisch und Deutsch" einmal dazu');
+    const weg = makeWindow({ 'songrate:settings': JSON.stringify({ langRules: 1, filters: [] }) });
+    await waitFor(() => !weg.document.querySelector('#app').hidden);
+    assert(weg.__ev('settings.filters.length') === 0 && !weg.document.querySelector('#fLang').checked,
+      'Sprache: wer sie abgeschaltet hat, bekommt sie nicht zurueck');
+  }
 
   /* Zu kleiner Pool warnt, und mindestens eine Stufe laeuft leer - welches
      Jahrzehnt duenn genug ist, haengt am Datenstand, deshalb zur Laufzeit

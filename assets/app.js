@@ -183,7 +183,7 @@ let round = [];           /* 5 Songstaende */
 let active = 0;
 let settings = load('settings', {
   stages: [true, true, true, true, true, true], start: 'hook', volume: 0.8, mode: 'charts',
-  filters: Filters.DEFAULT.map(r => ({ ...r })),
+  filters: Filters.DEFAULT_CHARTS.map(r => ({ ...r })),
   plFilters: Filters.DEFAULT.map(r => ({ ...r })),
   decade: 2010,
   genre: 'pop',
@@ -214,6 +214,14 @@ if (!Array.isArray(settings.stages) || settings.stages.length !== STAGES.length)
 /* Zusammengefasste Genres: alte Regeln auf den neuen Namen ziehen. */
 settings.filters = Filters.migrate(settings.filters);
 settings.plFilters = Filters.migrate(settings.plFilters);
+/* Sprachregel (4. Oktober): wer schon gespielt hat, bekommt „nur Englisch
+   und Deutsch" einmal dazu - aber nur, wenn er keine eigene Sprachregel hat.
+   Danach bleibt, was er einstellt. */
+if (!settings.langRules) {
+  if (!settings.filters.some(r => r.type === 'lang')) settings.filters.push(...Filters.LANG_RULES.map(r => ({ ...r })));
+  settings.langRules = 1;
+  save('settings', settings);
+}
 /* Ein gespeicherter Dienst, den es nicht mehr gibt, faellt zurueck. */
 if (!Links.has(settings.service)) settings.service = Links.DEFAULT;
 let stats = load('stats', { rounds: 0, solved: 0, played: 0, best: 0, streak: 0, bestStreak: 0, byTier: {} });
@@ -588,7 +596,8 @@ const INFO = {
   suggest: 'Alle bekannten Songs: auch der Song von 1955, der aufs Stichwort passt, steht in der Liste – sie verrät nicht, was gerade im Pool ist. Nur aus der Auswahl: kürzer, aber bei kleinen Pools fast die Lösung. Geraten wird über Titel und Künstler, nicht über die Quelle.',
   hard: 'Ein verpasster Song beendet die ganze Runde – die übrigen Plätze fallen mit, gezählt wird nur, was du wirklich gespielt hast. Und es geht strikt der Reihe nach: ein Platz weiter vorn ist gesperrt, solange davor noch einer offen ist.',
   start: 'Apples Hörproben sind 30 Sekunden, meist aus der Songmitte – „ab Songanfang“ wie im Original geht damit nicht. Anfang des Ausschnitts: jeder Platz beginnt am Anfang der Hörprobe. Zufällige Stelle: irgendwo darin, so dass die längste Stufe noch hineinpasst. Eigene Musik spielt immer ab dem ersten hörbaren Ton.',
-  filter: 'Regeln für den Pool: „nur“ schränkt ein (mehrere Genres: oder; Genre und Jahrzehnt: und), „ohne“ wirft raus, „dazu“ holt dazu und schlägt beides – „nur 2010er, ohne Rap, dazu Billie Eilish“ ergibt die 2010er ohne Rap plus alle Billie-Eilish-Songs. Jeder Modus hat seine eigenen Regeln. Instrumentals werden an Titel, Album und Genre erkannt.\n'
+  filter: 'Regeln für den Pool: „nur“ schränkt ein (mehrere Genres: oder; Genre und Jahrzehnt: und), „ohne“ wirft raus, „dazu“ holt dazu und schlägt beides – „nur 2010er, ohne Rap, dazu Billie Eilish“ ergibt die 2010er ohne Rap plus alle Billie-Eilish-Songs. Jeder Modus hat seine eigenen Regeln. Instrumentals (auch Schlaflied- und Klavierfassungen) werden an Titel, Album und Genre erkannt.\n'
+    + 'Sprache: Apple liefert keine, deshalb wird sie geraten – aus dem Titel (fremde Schrift, ñ, ã, typische Wörter wie „el“, „que“, „the“, „you“), dem Genre (Latin, K-Pop, Bollywood …) und dem, was der Künstler sonst singt. „Hips Don’t Lie“ bleibt so Englisch, „Despacito“ wird Spanisch. Charts, Jahrzehnte und Genres starten mit „nur Englisch und Deutsch“, weil die Bekanntheit an weltweiten Streams hängt und sonst Bad Bunny und Arijit Singh oben stehen. Unter „Sprachen“ lässt sich jede einzeln dazunehmen oder ausschließen.\n'
     + 'Unter 30 Songs warnt die Zeile. Filter wirken ab der nächsten Runde – die laufende bleibt. „Songs ansehen“ zeigt genau den Pool, aus dem gezogen wird; dort lässt sich jeder Song reinhören, nachhören und entfernen (gilt dann in jedem Modus).',
 };
 
@@ -1909,7 +1918,12 @@ function browRow(s) {
 
   const txt = el('div', 'bt');
   txt.appendChild(el('b', null, s.t || '–'));
-  const unten = [s.a, s.y || null].filter(Boolean).join(' · ');
+  /* Die geratene Sprache steht dabei, wenn sie nicht Englisch oder Deutsch
+     ist - so sieht man, warum ein Song mit „nur Englisch und Deutsch" fehlt,
+     und kann einen Fehlgriff entfernen. */
+  const sp = weg ? '' : Filters.langOf(s, pool());
+  const unten = [s.a, s.y || null, sp && sp !== 'en' && sp !== 'de' ? Filters.LANG_NAME[sp] : null]
+    .filter(Boolean).join(' · ');
   txt.appendChild(el('span', null, unten));
   row.appendChild(txt);
 
@@ -2661,6 +2675,7 @@ function applyFilters() {
 function rebuildFilterLists() {
   if (!$('#gGenre')) return;
   buildOptionList('#gGenre', 'genre');
+  buildOptionList('#gLang', 'lang');
   buildOptionList('#gDecade', 'decade');
   renderArtistHits($('#fArtist').value);
   /* Im Jahrzehntmodus waehlt die Leiste oben das Jahrzehnt - eine zweite
@@ -2686,7 +2701,16 @@ function buildFilterUI() {
   };
 
   $('#fReset').onclick = () => {
-    setFilters(Filters.DEFAULT.map(r => ({ ...r })));
+    setFilters(defaultFilters().map(r => ({ ...r })));
+    applyFilters();
+  };
+
+  /* Nur Englisch und Deutsch: zwei „nur"-Regeln, die als oder wirken. Aus
+     nimmt jede Sprachregel weg, damit nichts Halbes stehen bleibt. */
+  $('#fLang').onchange = () => {
+    const list = activeFilters().filter(r => r.type !== 'lang');
+    if ($('#fLang').checked) list.push(...Filters.LANG_RULES.map(r => ({ ...r })));
+    setFilters(list);
     applyFilters();
   };
 
@@ -2700,10 +2724,15 @@ function buildFilterUI() {
   };
 
   buildOptionList('#gGenre', 'genre');
+  buildOptionList('#gLang', 'lang');
   buildOptionList('#gDecade', 'decade');
   renderArtistHits('');
   renderFilters();
 }
+
+/* Charts, Jahrzehnte und Genres starten mit „nur Englisch und Deutsch",
+   Playlist, Kuenstler und eigene Musik nicht - dort hat man selbst gewaehlt. */
+const defaultFilters = () => (['playlist', 'local', 'artist'].includes(mode) ? Filters.DEFAULT : Filters.DEFAULT_CHARTS);
 
 /* Haekchenliste fuer Genres und Jahrzehnte. Steht komplett da - anklicken
    statt tippen, damit man sich nicht vertippen kann. */
@@ -2776,7 +2805,7 @@ function markRules() {
     row.classList.toggle('on', !!r);
     ['nur', 'ohne', 'dazu'].forEach(m => row.classList.toggle(m, !!r && r.mode === m));
   });
-  [['#gGenre', 'genre'], ['#gDecade', 'decade'], ['#gArtist', 'artist']].forEach(([sel, type]) => {
+  [['#gGenre', 'genre'], ['#gLang', 'lang'], ['#gDecade', 'decade'], ['#gArtist', 'artist']].forEach(([sel, type]) => {
     const n = rules.filter(r => r.type === type).length;
     $(sel).querySelector('.fcount').textContent = n ? ` · ${n}` : '';
   });
@@ -2799,6 +2828,7 @@ function renderFilters() {
   });
   $('#fReset').hidden = !rules.length;
   $('#fInst').checked = rules.some(r => r.type === 'instrumental' && r.mode === 'ohne');
+  $('#fLang').checked = Filters.knownOnly(rules);
   markRules();
 
   const n = basePool().length;

@@ -291,10 +291,52 @@ keine offene Liste). Die Häkchen spiegeln die Regeln, `markRules()` hält
 beides zusammen. `Filters.counts()` liefert die Zahlen und wird pro Art
 einmal gerechnet.
 
+### Sprache (`lang`, seit 4. Oktober)
+
+Gemeldet: über alle Modi verteilt spanische Songs. Ursache ist die
+Bekanntheit selbst – sie hängt an **weltweiten** Spotify-Streams, und da
+stehen Bad Bunny, Karol G, Arijit Singh und BTS weit oben. Apple liefert
+keine Sprache, deshalb rät `Filters.langOf(s, db)` sie aus drei Quellen:
+
+1. **Titel** (`fromTitle()`, ohne Klammerzusätze wie „(From …)“/„(feat. …)“,
+   `titleCore()`): fremde Schrift (Hangul → `ko`, indische Schriften → `hi`,
+   sonst `x`), Sonderzeichen (ñ ¿ → es, ã õ ç → pt, ä ö ß und ü außer in
+   „gü“ → de), kurze typische Wörter je Sprache (`LW`), englische
+   Verkürzungen („n't“, „'s“), „Bzrp Music Sessions“ → es.
+2. **Genre** (`LANG_GENRES`, deutsche und US-Store-Namen): Latin, Latin
+   Urban, Pop auf Spanisch, Mexiko, Salsa → es; Sertanejo → pt; Bollywood,
+   Tamilisch → hi; **K-Pop → immer `ko`** – K-Pop-Titel sind fast immer
+   englisch, gesungen wird meist koreanisch.
+3. **Künstler** (`profile()`, je Bestand einmal): was seine übrigen Songs
+   sind; ein Titel ohne Hinweis zählt halb als Englisch. Ein englischer
+   Titelhinweis schlägt ein Latin-Genre (Shakira „Hips Don't Lie“), ein
+   englisch singender Künstler schlägt einen schwachen spanischen Hinweis
+   (Coldplay „Viva La Vida“, Rihanna „Te Amo“). Ohne jeden Titelhinweis
+   entscheidet der Künstler nur bei klarer Mehrheit (85 %, bei `ko`/`hi`
+   60 %) – Becky G und Enrique Iglesias singen auch Englisch.
+
+Stand 4. Oktober: 5347 en, 748 es, 117 hi, 109 ko, 24 pt, wenige de/fr/it.
+Englisch/Deutsch-Verwechslungen sind egal, beide gelten als verständlich.
+
+Regeltyp `lang` wie Genre: Klappliste *Sprachen* (`#gLang`) mit Songzahl,
+Schalter *Nur Englisch und Deutsch* (`#fLang`, `Filters.knownOnly()`) setzt
+zwei `nur`-Regeln (`LANG_RULES`, wirken als oder). **Voreingestellt nur in
+`settings.filters`** (Charts, Jahrzehnte, Genres, `DEFAULT_CHARTS`) – in
+Playlist, Künstler und eigener Musik hat man selbst gewählt.
+Bestehende Einstellungen bekommen die Regel einmal (`settings.langRules`),
+wer sie danach abschaltet, behält das. Folge im Genremodus: Latin, K-Pop
+und Bollywood fallen aus der Auswahl (unter `GEN_MIN`). In *Songs ansehen*
+steht die geratene Sprache an der Zeile, wenn sie nicht en/de ist.
+
 Voreingestellt ist `ohne Instrumental`. Die Kataloge kennzeichnen Instrumentals
 nicht, deshalb die Erkennung über Titel, Album (`instrumental`, `karaoke`,
 `score` …) und Genres, die praktisch nie Gesang haben. Bewusst eng: im
-aktuellen `songs.json` trifft sie genau einen Song. Wer echte Instrumentals
+aktuellen `songs.json` trifft sie genau einen Song. Seit 4. Oktober auch
+**Schlaflied- und Klavierfassungen** („Lullaby Versions of Bad Bunny Songs“,
+„Piano rendition of …“, Genre *Schlaflieder*) – 26 solcher Cover standen
+als spielbare Songs im Pool. Bewusst nicht „lullaby“ allein: Hoziers
+„Arsonist's Lullabye“ und Jack Johnsons „…Lullabies for the Film Curious
+George“ sind gesungen. Wer echte Instrumentals
 vermisst, erweitert `INST_WORDS`/`INST_GENRES`.
 
 Der Pool wird sofort neu gerechnet, die **laufende Runde aber nicht angefasst**
