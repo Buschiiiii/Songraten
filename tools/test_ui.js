@@ -1804,7 +1804,9 @@ const dummy = n => ({ t: 'Song ' + n, a: 'Kuenstler ' + n, al: 'Album', y: 2020,
       'Sprache: Spanisch als Zielsprache holt die spanischen Songs dazu');
     $$('#speechLangs').querySelector('[data-v="es"]').click();
     assert(!drin('Ojitos Lindos') && F('filtered').length === bei50, 'Sprache: und wieder weg');
-    assert(F("Filters.isInstrumental(DB.songs.find(s => s.a === 'Lullaby Rock!'))")
+    /* Nachgebaut: die echten Schlaflied-Cover hat fix_covers.py am 5. Oktober
+       gegen die Originale getauscht. */
+    assert(F("Filters.isInstrumental({ t: 'Me Porto Bonito', a: 'Lullaby Rock!', al: 'Lullaby Versions of Bad Bunny Songs', g: 'Schlaflieder' })")
       && !F("Filters.isInstrumental(DB.songs.find(s => s.t === \"Arsonist's Lullabye\"))"),
       'Filter: Schlaflied-Fassungen gelten als Instrumental, Hozier nicht');
     const ohne = F('filtered').length;

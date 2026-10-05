@@ -327,7 +327,11 @@ Instrumental-Filter Schlaflieder wegräumt – die Originale fehlten aber.
   Katalog über `lookup?id=`** (`katalog()`, `musicArtist` → Künstler-ID →
   200 Songs), dann in der Suche. Der erste Lauf nahm nur die Suche und
   fand 1 von 32: die übrigen sind explizit, und die Suche verschweigt
-  explizite Titel (siehe *Auflösen*). Cache deshalb `cover_lookup2.json`. Nur ein Treffer,
+  explizite Titel (siehe *Auflösen*). Cache deshalb `cover_lookup2.json`.
+  Zweiter Lauf (5. Oktober): 31 von 32 getauscht; übrig ist „Loud
+  (Originally by Mac Miller)" – Mac Millers Katalog hat ihn nicht unter
+  den ersten 200, er bleibt als Karaoke ausgeblendet. `test_ui.js` prüft
+  die Schlaflied-Erkennung seitdem an einem nachgebauten Song. Nur ein Treffer,
   der selbst kein Cover ist und vom echten Künstler stammt, ersetzt Titel,
   Künstler, Album, Preview, Cover, `k`, Genre; Streams, Stufe und `rc`
   bleiben, die Cover-Band fliegt aus `ar`.
