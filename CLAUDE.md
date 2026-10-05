@@ -90,6 +90,22 @@ Aufwecker, der so lange erneut versucht, bis der Context wirklich läuft.
    fällt über einen Timer auch ohne `onended` (`playEndTimer`,
    `previewSong()` ruft `done` genau einmal).
 
+### Überspringen spielt weiter, statt neu anzufangen
+
+Gewünscht (5. Oktober): „0–10 s laufen, bei 5 s überspringe ich auf 20 s –
+dann nicht zurück auf 0, sondern nach 10 einfach weiter". `submit()` ruft
+`playCurrent(true)`; läuft noch derselbe Ausschnitt (gleicher Puffer, gleicher
+Startpunkt, mehr als 30 ms übrig), hängt `Audio2.extend()` den Rest nahtlos an:
+das Ausblenden des laufenden Stücks wird gestrichen (`cancelScheduledValues`),
+ein zweites Stück startet genau an dessen Ende mit dem Pufferversatz dahinter
+(`piece()`, ohne Einblenden). Eine Wiedergabe ist deshalb `current = {buffer,
+offset, t0, end, onEnd, env, srcs}`; `onEnd` kommt erst mit dem letzten
+Stück, `stop()` stoppt alle. Der Balken setzt an der gehörten Stelle fort
+(`sweepBar(secs, from)`). Der Abspielknopf selbst fängt immer vorn an, und
+läuft nichts mehr, spielt die neue Stufe wie bisher von vorn. In Chromium
+mit echtem Web Audio geprüft (0,6 s verlängert auf 1,5 s, Ende nach
+1,50 s); `test_ui.js` zählt die Starts mit (`__holdAudio`, `__starts`).
+
 **Wenn nichts zu hören ist, sagt die Seite es.** `audioCheck()` schaut
 500 ms nach dem Start, ob der Context `running` ist und seine Uhr läuft;
 sonst steht unter dem Knopf „Kein Ton – nochmal auf Abspielen tippen" mit
@@ -289,6 +305,28 @@ holt sich über viele Tage ein, wie die Jahrescharts.
 
 `dedupe.merge_duplicates()` vereinigt `rc` (je Land das Größere), sonst
 verlöre ein zusammengeführter Song ein Land.
+
+## Cover statt Original: `fix_covers.py`
+
+Gefunden am 4. Oktober: 32 große Hits standen als Schlaflied-, Klavier-,
+8-Bit- oder Karaoke-Fassung in `songs.json` – „See You Again" (3,1 Mrd.)
+von „Twinkle Twinkle Little Rock Star", „The Box" von „The Cat and Owl",
+Frank Ocean als „Blond Piano". `match_local.py` hatte sie aus dem Katalog
+des echten Künstlers genommen; zu hören waren sie nie, weil der
+Instrumental-Filter Schlaflieder wegräumt – die Originale fehlten aber.
+
+- **Vorbeugen:** `match_local.find()` überspringt Katalogtreffer, deren Album
+  oder Künstler nach Cover aussieht (`COVER`; bewusst nicht „lullaby"
+  allein, Avril Lavignes Album heißt „Goodbye Lullaby").
+- **Reparieren:** `tools/fix_covers.py` (täglich, Budget 300 s, vor
+  `clean_songs.py`): Cover am Album/Titel erkannt **und** unter den
+  Künstler-IDs ein anderer Name als die Cover-Band – das ist der echte
+  Künstler. Gesucht wird der Grundtitel (`clean_title()` nimmt „(Piano
+  rendition of …)" weg) im deutschen Store, nacheinander mit jedem
+  Beteiligten (bei „See You Again" steht Kali Uchis vorn). Nur ein Treffer,
+  der selbst kein Cover ist und vom echten Künstler stammt, ersetzt Titel,
+  Künstler, Album, Preview, Cover, `k`, Genre; Streams, Stufe und `rc`
+  bleiben, die Cover-Band fliegt aus `ar`. Cache `.cache/cover_lookup.json`.
 
 ## Mehr Songs für alte Jahrzehnte
 

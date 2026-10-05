@@ -127,8 +127,15 @@ function makeWindow(store, patchDb, url) {
     constructor() { w.__ctxCount++; this.state = w.__ctxState || 'running'; this.t0 = Date.now(); this.destination = {}; }
     get currentTime() { return this.state === 'running' && !w.__clockDead ? (Date.now() - this.t0) / 1000 : 0; }
     close() { this.state = 'closed'; return Promise.resolve(); }
-    createGain() { return { gain: { value: 1, setValueAtTime() {}, linearRampToValueAtTime() {} }, connect() {} }; }
-    createBufferSource() { const s = { buffer: null, connect() {}, start() {}, stop() {}, onended: null }; setTimeout(() => s.onended && s.onended(), 0); return s; }
+    createGain() { return { gain: { value: 1, setValueAtTime() {}, linearRampToValueAtTime() {}, cancelScheduledValues() {} }, connect() {} }; }
+    /* `__holdAudio`: die Wiedergabe endet nicht von selbst, und jeder Start
+       landet in `__starts` - so laesst sich das Weiterspielen pruefen. */
+    createBufferSource() {
+      const s = { buffer: null, connect() {}, start(...a) { (w.__starts = w.__starts || []).push(a); },
+                  stop() { if (w.__holdAudio && s.onended) { const f = s.onended; s.onended = null; f(); } }, onended: null };
+      setTimeout(() => !w.__holdAudio && s.onended && s.onended(), 0);
+      return s;
+    }
     /* Previews kommen als Acht-Byte-Attrappe herein, lokale Dateien sind
        echte Bytes - daran unterscheidet der Test die beiden Wege. Der
        "Song" beginnt mit 2,5 s Stille, damit firstSound() etwas zu tun hat. */
@@ -1592,6 +1599,34 @@ const dummy = n => ({ t: 'Song ' + n, a: 'Kuenstler ' + n, al: 'Album', y: 2020,
   G('choose(round[active].song)');
   assert(txt() === 'Raten', 'Knopf: mit gewaehltem Song heisst er Raten');
   G('clearPick(); newRound()'); await tick(30);
+
+  /* Ueberspringen, waehrend der Ausschnitt laeuft: kein Neustart, sondern
+     nahtlos weiter bis zur neuen Laenge. */
+  {
+    G('round[active].stage = 3; render()');            /* 2 s */
+    w.__holdAudio = true; w.__starts = [];
+    /* Der stumme Ein-Sample-Puffer aus unlock() startet ohne Laenge. */
+    const st = () => (w.__starts || []).filter(a => a.length === 3);
+    await G('playCurrent()'); await tick(30);
+    const [at0, from0, len0] = st()[0] || [];
+    G('submit()'); await tick(30);                       /* ueberspringen -> 8 s */
+    const zweiter = st()[1] || [];
+    assert(st().length === 2 && Math.abs(len0 - 2) < 1e-6 && Math.abs(zweiter[0] - (at0 + 2)) < 1e-6
+      && Math.abs(zweiter[1] - (from0 + 2)) < 1e-6 && Math.abs(zweiter[2] - 6) < 1e-6,
+      'Weiterspielen: nach dem Ueberspringen werden die Sekunden 2 bis 8 nahtlos angehaengt, nicht von vorn gespielt');
+    assert($('#playBtn').classList.contains('playing'), 'Weiterspielen: der Knopf zeigt weiter „laeuft"');
+    await G('playCurrent()'); await tick(30);
+    assert(st().length === 3 && Math.abs(st()[2][2] - 8) < 1e-6,
+      'Weiterspielen: der Abspielknopf selbst faengt wieder vorn an');
+    G('Audio2.stop()');
+    const vorher = st().length;
+    G('submit()'); await tick(30);                       /* nichts laeuft -> 15 s von vorn */
+    const neu = st()[vorher] || [];
+    assert(st().length === vorher + 1 && Math.abs(neu[2] - 15) < 1e-6 && Math.abs(neu[1] - from0) < 1e-6,
+      'Weiterspielen: laeuft nichts mehr, spielt die neue Stufe wie bisher von vorn');
+    w.__holdAudio = false;
+    G('Audio2.stop(); clearPick(); newRound()'); await tick(30);
+  }
 
   /* Buchstaben duerfen nichts ausloesen, wenn der Fokus auf einem Knopf liegt */
   $('#rerollAll').focus();

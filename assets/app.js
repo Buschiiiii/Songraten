@@ -1266,7 +1266,10 @@ function audioCheck() {
   }, 500);
 }
 
-async function playCurrent() {
+/* `weiter`: nach Ueberspringen oder falschem Tipp. Laeuft der Ausschnitt
+   noch, geht er nahtlos bis zur neuen Laenge weiter, statt von vorn zu
+   beginnen (Audio2.extend). Der Abspielknopf selbst faengt immer vorn an. */
+async function playCurrent(weiter) {
   const r = round[active];
   if (!r || !r.song || r.status !== 'playing') return;
   const btn = $('#playBtn');
@@ -1281,15 +1284,19 @@ async function playCurrent() {
   }
   const secs = enabledStages()[r.stage];
   btn.classList.add('playing');
-  let dur = 0;
-  try { dur = Audio2.play(r.buffer, r.offset, secs, () => btn.classList.remove('playing')); }
-  catch (e) { btn.classList.remove('playing'); return audioNote('Abspielen ist fehlgeschlagen.', e); }
-  sweepBar(secs);
-  audioCheck();
+  const done = () => btn.classList.remove('playing');
+  let dur = 0, from = 0, fort = null;
+  try {
+    fort = weiter ? Audio2.extend(r.buffer, r.offset, secs, done) : null;
+    if (fort) { dur = fort.dur; from = fort.elapsed; }
+    else dur = Audio2.play(r.buffer, r.offset, secs, done);
+  } catch (e) { btn.classList.remove('playing'); return audioNote('Abspielen ist fehlgeschlagen.', e); }
+  sweepBar(secs, from);
+  if (!fort) audioCheck();
   /* Das Viereck faellt auch dann, wenn onended nie kommt - bei stehender
      Uhr bleibt der Knopf sonst fuer immer „laeuft". */
   clearTimeout(playEndTimer);
-  playEndTimer = setTimeout(() => btn.classList.remove('playing'), Math.max(260, (dur + 0.6) * 1000));
+  playEndTimer = setTimeout(done, Math.max(260, (dur - from + 0.6) * 1000));
 }
 let playEndTimer = null;
 
@@ -1316,7 +1323,7 @@ function xForTime(t, stops) {
   return stops.length ? stops[stops.length - 1].x : 0;
 }
 
-function sweepBar(secs) {
+function sweepBar(secs, from) {
   const bar = $('#stageBar');
   const ov = bar.querySelector('.stage-progress');
   const segs = [...bar.querySelectorAll('.stage-seg')];
@@ -1324,12 +1331,13 @@ function sweepBar(secs) {
 
   const stops = barStops(segs);
   const dur = Math.max(secs, 0.4) * 1000;
-  const t0 = performance.now();
+  /* Beim Weiterspielen steht der Balken schon da, wo der Ton ist. */
+  const t0 = performance.now() - Math.min(1, (from || 0) / secs) * dur;
 
   clearTimeout(sweepTimer);
   cancelAnimationFrame(sweepRaf);
   ov.style.transition = 'none';
-  ov.style.width = '0px';
+  ov.style.width = xForTime(Math.min(secs, from || 0), stops) + 'px';
   ov.style.opacity = '1';
 
   const step = now => {
@@ -1507,7 +1515,7 @@ function submit() {
   if (r.stage < stages.length - 1) {
     r.stage++;
     render();
-    playCurrent();
+    playCurrent(true);
   } else {
     lose(r);
   }

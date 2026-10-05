@@ -522,6 +522,10 @@ Die Kürzel sind deshalb keine Schriftzeichen.
 Klickst du irgendwo neben das Suchfeld, funktionieren zusätzlich Leertaste
 und 1–5.
 
+Überspringst du, während der Ausschnitt noch läuft, spielt er einfach weiter
+bis zur neuen Länge, statt von vorn anzufangen. Der Abspielknopf startet
+immer von vorn.
+
 ### Stufen einstellen
 
 Links unter *Stufen* schaltest du einzelne Längen ab. Ist 0,01s aus, startet jeder

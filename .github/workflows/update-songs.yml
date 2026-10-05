@@ -71,6 +71,13 @@ jobs:
         continue-on-error: true
         run: python3 tools/add_regional.py ${{ github.event.inputs.region_seconds || 900 }}
 
+      # Hits, die als Schlaflied- oder Klavier-Cover in songs.json stehen
+      # („See You Again" als Spieluhr), gegen das Original tauschen. Vor dem
+      # Zusammenfuehren: gibt es das Original schon, verschmilzt es danach.
+      - name: Cover gegen Originale tauschen
+        continue-on-error: true
+        run: python3 tools/fix_covers.py 300
+
       - name: Doppelte zusammenfuehren
         run: python3 tools/clean_songs.py
 

@@ -22,6 +22,10 @@ CAP_DECADE = 12
 BAD = re.compile(r"(remix|live|version|edit\b|mix\b|instrumental|karaoke|sped up|slowed|"
                  r"acoustic|demo\b|commentary|remaster|re-recorded|reprise|interlude|"
                  r"extended|club |dub |bonus|a cappella|acapella|cover\b|medley|mashup)", re.I)
+# Bewusst nicht „lullaby" allein: Avril Lavignes Album heisst „Goodbye Lullaby".
+COVER = re.compile(r"(lullaby (versions?|renditions?|tribute)|lullabies for|piano (rendition|tribute|version)|"
+                   r"tribute to|8-bit|originally (performed )?by|karaoke|in the style of|made famous|"
+                   r"twinkle twinkle|rockabye baby)", re.I)
 FEAT = re.compile(r"[\(\[]?\s*(?:feat\.?|featuring|ft\.?|with|mit)\s+([^)\]]+)[\)\]]?", re.I)
 SPLIT = re.compile(r"\s*(?:&|,|\bx\b|\bX\b|\bvs\.?\b|\bwith\b|\band\b|\bund\b|/|\+)\s*")
 NEVER_SPLIT = {"hall & oates", "daryl hall & john oates", "sam & dave", "sonny & cher",
@@ -128,6 +132,11 @@ def find(cand):
                     pairs += [(r, t) for t in idx[key]]
         for r, t in pairs:
             if BAD.search(t['trackName'] or '') and not cand_bad:
+                continue
+            # Schlaflied-, Klavier- und 8-Bit-Fassungen stehen manchmal im
+            # Katalog des echten Kuenstlers - „See You Again" kam so als
+            # Spieluhr herein (fix_covers.py repariert die alten Faelle).
+            if COVER.search((t.get('collectionName') or '') + ' ' + (t.get('artistName') or '')):
                 continue
             if r > score:
                 best, score = t, r

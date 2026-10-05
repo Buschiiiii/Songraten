@@ -5,7 +5,9 @@
 const Audio2 = (() => {
   let ctx = null;
   let gain = null;
-  let current = null;
+  /* Was gerade spielt: eine Wiedergabe aus einem oder mehreren aneinander
+     gesetzten Stuecken (extend()). */
+  let current = null;   /* { buffer, offset, t0, end, onEnd, env, srcs } */
   /* Eine dekodierte Preview belegt rund 10 MB (30 s Stereo als Float). Ohne
      Grenze waeren nach zwanzig Runden 1 GB belegt, und Safari auf dem iPhone
      wirft den Tab weg. Die Runde haelt ihre fuenf Puffer selbst - der Cache
@@ -200,8 +202,9 @@ const Audio2 = (() => {
 
   function stop() {
     if (current) {
-      try { current.stop(); } catch (e) {}
+      const p = current;
       current = null;
+      p.srcs.forEach(src => { try { src.stop(); } catch (e) {} });
     }
   }
 
@@ -219,23 +222,68 @@ const Audio2 = (() => {
     ensure();
     stop();
     const dur = Math.min(seconds, Math.max(0, buffer.duration - offset));
-    const ramp = Math.min(0.004, dur / 4);
-    const src = ctx.createBufferSource();
-    src.buffer = buffer;
-    const env = ctx.createGain();
     const t0 = ctx.currentTime + 0.02;
-    env.gain.setValueAtTime(0, t0);
-    env.gain.linearRampToValueAtTime(1, t0 + ramp);
-    env.gain.setValueAtTime(1, t0 + dur - ramp);
-    env.gain.linearRampToValueAtTime(0, t0 + dur);
+    const p = { buffer, offset, t0, end: t0 + dur, onEnd, env: null, srcs: [] };
+    piece(p, t0, offset, dur, true);
+    mark = { t: ctx.currentTime, at: Date.now() };
+    current = p;
+    return dur;
+  }
+
+  /* Ein Stueck Puffer ab `at` (Kontextzeit), `from` Sekunden im Puffer,
+     `len` lang. Ausgeblendet wird immer am Ende, eingeblendet nur am Anfang
+     einer Wiedergabe - ein angehaengtes Stueck setzt nahtlos fort. */
+  function piece(p, at, from, len, fadeIn) {
+    const ramp = Math.min(0.004, len / 4);
+    const src = ctx.createBufferSource();
+    src.buffer = p.buffer;
+    const env = ctx.createGain();
+    if (fadeIn) {
+      env.gain.setValueAtTime(0, at);
+      env.gain.linearRampToValueAtTime(1, at + ramp);
+    } else env.gain.setValueAtTime(1, at);
+    env.gain.setValueAtTime(1, at + len - ramp);
+    env.gain.linearRampToValueAtTime(0, at + len);
     src.connect(env);
     env.connect(gain);
-    src.start(t0, offset, dur);
-    src.stop(t0 + dur + 0.01);
-    mark = { t: ctx.currentTime, at: Date.now() };
-    current = src;
-    src.onended = () => { if (current === src) current = null; if (onEnd) onEnd(); };
-    return dur;
+    src.start(at, from, len);
+    src.stop(at + len + 0.01);
+    p.srcs.push(src);
+    p.env = env;
+    /* Fertig ist die Wiedergabe erst mit dem letzten Stueck. */
+    src.onended = () => {
+      if (p.srcs[p.srcs.length - 1] !== src) return;
+      if (current === p) current = null;
+      if (p.onEnd) p.onEnd();
+    };
+  }
+
+  /* Weiterspielen statt neu anfangen (Besitzer, 5. Oktober: „0–10 s laufen,
+     bei 5 s ueberspringe ich auf 20 s – dann nicht zurueck auf 0, sondern
+     nach 10 einfach weiter"). Laeuft gerade derselbe Ausschnitt, wird das
+     Ausblenden am Ende gestrichen und der Rest nahtlos angehaengt. Liefert
+     { dur, elapsed } oder null, wenn nichts (mehr) laeuft - dann spielt der
+     Aufrufer wie bisher von vorn. */
+  function extend(buffer, offset, seconds, onEnd) {
+    const p = current;
+    if (!p || !ctx || p.buffer !== buffer || p.offset !== offset) return null;
+    const now = ctx.currentTime;
+    if (now > p.end - 0.03) return null;
+    const total = Math.min(seconds, Math.max(0, buffer.duration - offset));
+    const sofar = p.end - p.t0;
+    const elapsed = Math.max(0, now - p.t0);
+    p.onEnd = onEnd;
+    if (total - sofar > 0.001) {
+      try {
+        p.env.gain.cancelScheduledValues(now);
+        p.env.gain.setValueAtTime(1, now);
+        piece(p, p.end, offset + sofar, total - sofar, false);
+      } catch (e) {
+        return null;
+      }
+      p.end = p.t0 + total;
+    }
+    return { dur: p.end - p.t0, elapsed };
   }
 
   function setVolume(v) {
@@ -252,6 +300,6 @@ const Audio2 = (() => {
     + `, Lautstärke ${Math.round(volume * 100)} %`;
   const diag = () => ({ state: ctx ? ctx.state : 'none', clock: alive(), text: describe(), error: lastError, cached: cache.size });
 
-  return { load, loadFile, excerpt, firstSound, play, stop, setVolume, warm, ensure, unlock, rebuild, diag,
+  return { load, loadFile, excerpt, firstSound, play, extend, stop, setVolume, warm, ensure, unlock, rebuild, diag,
            state: () => (ctx ? ctx.state : 'none'), cached: () => cache.size };
 })();
