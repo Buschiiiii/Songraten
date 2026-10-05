@@ -26,13 +26,17 @@ import os
 import re
 import sys
 import time
+import urllib.parse
+import urllib.request
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from add_decades import MIN_SCORE, PAUSE, lookup, norm, score  # noqa: E402
+from add_decades import MIN_SCORE, PAUSE, UA, lookup, norm, score  # noqa: E402
 from fetch_regions import base, names  # noqa: E402
 
 SONGS = 'data/songs.json'
-CACHE = '.cache/cover_lookup.json'
+# v2: der erste Lauf suchte nur ueber die Suche - die verschweigt seit
+# September 2025 explizite Titel, und das waren 31 der 32.
+CACHE = '.cache/cover_lookup2.json'
 COVER = re.compile(r'(lullaby (versions?|renditions?|tribute)|lullabies for|piano (rendition|tribute|version)|'
                    r'\btribute\)|8-bit|originally (performed )?by|karaoke|in the style of|made famous)', re.I)
 
@@ -67,6 +71,33 @@ def pick(hits, title, echt):
         if v > bs:
             best, bs = h, v
     return best if bs >= MIN_SCORE else None
+
+
+def holen(params, pfad='search'):
+    url = f'https://itunes.apple.com/{pfad}?' + urllib.parse.urlencode(params)
+    with urllib.request.urlopen(urllib.request.Request(url, headers=UA), timeout=25) as r:
+        return json.load(r).get('results', [])
+
+
+def katalog(name, cache):
+    """Alle Songs eines Kuenstlers ueber lookup?id= - anders als die Suche
+    liefert das auch explizite Titel („See You Again", „The Box"). Zwei
+    Anfragen je Kuenstler, gemerkt unter `kuenstler:<name>`."""
+    key = 'kuenstler:' + norm(name)
+    if key not in cache:
+        treffer = holen({'term': name, 'entity': 'musicArtist', 'limit': 5, 'country': 'DE'})
+        gleich = [a for a in treffer if norm(a.get('artistName')) == norm(name)] or treffer[:1]
+        songs = []
+        if gleich and gleich[0].get('artistId'):
+            time.sleep(PAUSE)
+            songs = [t for t in holen({'id': gleich[0]['artistId'], 'entity': 'song', 'limit': 200, 'country': 'DE'},
+                                      'lookup')
+                     if t.get('wrapperType') == 'track' and t.get('previewUrl')]
+        cache[key] = [{k: t.get(k) for k in ('trackName', 'artistName', 'collectionName', 'previewUrl',
+                                             'artworkUrl100', 'trackId', 'primaryGenreName', 'releaseDate')}
+                      for t in songs]
+        time.sleep(PAUSE)
+    return cache[key]
 
 
 def apply(s, hit, artists):
@@ -109,6 +140,19 @@ def selftest():
     apply(cover, hit, a)
     assert cover['a'] == 'Tyler, The Creator' and cover['p'] == 'echt' and cover['ar'] == [1], cover
     assert cover['s'] == 3134000000 and cover['d'] == 'easy' and cover['rc'] == {'de': 5}, 'Streams bleiben'
+    # Der Katalog ueber lookup?id= (explizite Titel fehlen in der Suche).
+    global holen
+    echt_holen = holen
+    holen = lambda params, pfad='search': (  # noqa: E731
+        [{'artistName': 'Tyler, The Creator', 'artistId': 1}] if params.get('entity') == 'musicArtist'
+        else [{'wrapperType': 'artist'},
+              {'wrapperType': 'track', 'trackName': 'EARFQUAKE', 'artistName': 'Tyler, The Creator',
+               'collectionName': 'IGOR', 'previewUrl': 'igor'}])
+    try:
+        kat = katalog('Tyler, The Creator', {})
+    finally:
+        holen = echt_holen
+    assert len(kat) == 1 and pick(kat, 'EARFQUAKE', ['Tyler, The Creator'])['previewUrl'] == 'igor', kat
     print('Cover-Erkennung in Ordnung')
 
 
@@ -132,18 +176,21 @@ def main():
                 print('Zeitbudget aufgebraucht', flush=True)
                 break
             # Bei Duetten steht oft der Gast vorn („Kali Uchis" bei „See You
-            # Again") - also mit jedem Beteiligten suchen, bis einer passt.
+            # Again") - also bei jedem Beteiligten nachsehen, bis einer passt:
+            # erst im Katalog (auch Explizites), dann in der Suche.
             hit, kaputt = None, False
             for wer in echt[:3]:
                 try:
-                    hits = lookup(clean_title(s.get('t')), wer, 'DE')
-                    asked += 1
+                    hit = pick(katalog(wer, cache), clean_title(s.get('t')), echt)
+                    asked += 2
+                    if not hit:
+                        hit = pick(lookup(clean_title(s.get('t')), wer, 'DE'), clean_title(s.get('t')), echt)
+                        asked += 1
+                        time.sleep(PAUSE)
                 except Exception as e:  # noqa: BLE001
                     print(f'  Abbruch bei "{s.get("t")}": {e}', flush=True)
                     kaputt = True
                     break
-                hit = pick(hits, clean_title(s.get('t')), echt)
-                time.sleep(PAUSE)
                 if hit:
                     break
             if kaputt:

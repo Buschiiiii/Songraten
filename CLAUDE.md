@@ -323,10 +323,14 @@ Instrumental-Filter Schlaflieder wegräumt – die Originale fehlten aber.
   Künstler-IDs ein anderer Name als die Cover-Band – das ist der echte
   Künstler. Gesucht wird der Grundtitel (`clean_title()` nimmt „(Piano
   rendition of …)" weg) im deutschen Store, nacheinander mit jedem
-  Beteiligten (bei „See You Again" steht Kali Uchis vorn). Nur ein Treffer,
+  Beteiligten (bei „See You Again" steht Kali Uchis vorn) – **zuerst im
+  Katalog über `lookup?id=`** (`katalog()`, `musicArtist` → Künstler-ID →
+  200 Songs), dann in der Suche. Der erste Lauf nahm nur die Suche und
+  fand 1 von 32: die übrigen sind explizit, und die Suche verschweigt
+  explizite Titel (siehe *Auflösen*). Cache deshalb `cover_lookup2.json`. Nur ein Treffer,
   der selbst kein Cover ist und vom echten Künstler stammt, ersetzt Titel,
   Künstler, Album, Preview, Cover, `k`, Genre; Streams, Stufe und `rc`
-  bleiben, die Cover-Band fliegt aus `ar`. Cache `.cache/cover_lookup.json`.
+  bleiben, die Cover-Band fliegt aus `ar`.
 
 ## Mehr Songs für alte Jahrzehnte
 
