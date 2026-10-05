@@ -1579,6 +1579,21 @@ Umgebung **zuerst einrichten**, sonst zeigt die Seite nach dem Patch die
 alte Nummer. Die Actions-Commits (`Songs aktualisiert`) laufen ohne Hook
 und ändern die Nummer nicht; dafür ändert sich dort `Songs vom …`.
 
+## App-Icon (5. Oktober)
+
+Für „Zum Dock hinzufügen" (Safari) und den iPhone-Homescreen:
+`manifest.webmanifest` im Wurzelverzeichnis (Name „Songraten", `start_url`
+und `scope` „./", Farben `#0a0b0a`, Icons 192/512/1024 mit `purpose: any`,
+die 1024er zusätzlich `maskable`) und in `index.html` `rel="manifest"`,
+`rel="apple-touch-icon"` (`assets/icons/apple-touch-icon.png`, 180 px) und
+`theme-color`. Die Bilder liegen in `assets/icons/`, `icon.svg` ist nur die
+Vorlage. **Bewusst kein `display: "standalone"`**: am iPhone soll sich am
+Verhalten nichts ändern, vor allem nicht am Spotify-Login (die Weiterleitung
+zurück landete sonst in einem eigenen Fenster). Das Emoji-Favicon im Tab
+bleibt. CSP: kein `manifest-src` nötig, es fällt auf `default-src 'self'`
+zurück – in Chromium geprüft (`Page.getAppManifest` ohne Fehler, alle
+Icons 200).
+
 ## Deployment
 
 Dateien liegen im Repo-Wurzelverzeichnis, GitHub Pages auf `main` / root,
