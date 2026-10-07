@@ -266,6 +266,25 @@ const enabledStages = () => STAGES.filter((_, i) => settings.stages[i]);
    Track-ID: die waere genauer, wuerde aber nur im selben Pool treffen. */
 const songKey = s => (s ? norm(s.t) + '|' + norm(s.a) : '');
 
+/* Derselbe Song, auch wenn eine Quelle etwas anhaengt: songs.json hat
+   „What Was I Made For? (From The Motion Picture "Barbie")", Apples Katalog
+   im Kuenstlermodus nur „What Was I Made For?". Gleicher Grundtitel
+   (`Playlist.base()`) und ein gemeinsamer Kuenstler reichen. */
+const baseMemo = new WeakMap();
+function baseOf(s) {
+  let b = baseMemo.get(s);
+  if (b == null) baseMemo.set(s, b = Playlist.base(s.t));
+  return b;
+}
+function sharesArtist(x, y) {
+  if (x.a && norm(x.a) === norm(y.a)) return true;
+  const ys = new Set(y.anl || []);
+  return (x.anl || []).some(a => ys.has(a));
+}
+function sameSong(x, y) {
+  return x === y || songKey(x) === songKey(y) || (baseOf(x) === baseOf(y) && sharesArtist(x, y));
+}
+
 let blockedKeys = new Set();
 function readBlocked() {
   settings.blocked = (settings.blocked || []).filter(b => b && b.key);
@@ -1368,25 +1387,36 @@ function resetBar() {
 function suggest(q) {
   const n = norm(q);
   if (n.length < 2) return hideSuggest();
-  const out = [], seen = new Set();
+  /* Fassungen desselben Songs (`sameSong()`) stehen nur einmal da, mit dem
+     kuerzesten Titel - sie zaehlen beim Raten ohnehin gleich. Rang und
+     Bekanntheit nimmt die Zeile vom besten Mitglied. */
+  const fame = x => (x.f != null ? x.f : -1);
+  const out = [], groups = new Map();
   for (const s of suggestSource()) {
     let sc = 0;
     if (s.n.startsWith(n)) sc = 3;
     else if (s.n.includes(n)) sc = 2;
     else if (s.na.includes(n)) sc = 1;
     if (!sc) continue;
-    const k = s.n + '|' + s.na;
-    if (seen.has(k)) continue;
-    seen.add(k);
-    out.push([sc, s]);
+    const b = baseOf(s);
+    const same = (groups.get(b) || []).find(e => sameSong(e.s, s));
+    if (same) {
+      if (s.t.length < same.s.t.length) same.s = s;
+      same.sc = Math.max(same.sc, sc);
+      same.f = Math.max(same.f, fame(s));
+      same.st = Math.max(same.st, s.s || 0);
+      continue;
+    }
+    const e = { sc, s, f: fame(s), st: s.s || 0 };
+    out.push(e);
+    if (!groups.has(b)) groups.set(b, []);
+    groups.get(b).push(e);
   }
   /* Erst die Trefferart, dann die Bekanntheit. `f` kennt auch die alten Hits
      ohne Streamzahl - ohne das staenden sie immer ganz unten. */
-  const fame = x => (x.f != null ? x.f : -1);
-  out.sort((a, b) => b[0] - a[0] || fame(b[1]) - fame(a[1])
-    || b[1].s - a[1].s || a[1].t.localeCompare(b[1].t));
+  out.sort((a, b) => b.sc - a.sc || b.f - a.f || b.st - a.st || a.s.t.localeCompare(b.s.t));
 
-  sugAll = out.map(x => x[1]);
+  sugAll = out.map(e => e.s);
   sugItems = [];
   sugIdx = -1;
 
@@ -1499,11 +1529,8 @@ function submit() {
     /* Ueber Namen, nicht ueber Nummern: die Vorschlaege koennen aus einer
        anderen Quelle kommen als der Song, und dort zaehlen die Nummern
        anders. */
-    const ga = guess.anl || [], ta = new Set(target.anl || []);
-    const sameArtist = ga.some(a => ta.has(a));
-    const correct = guess === target || songKey(guess) === songKey(target)
-      || (norm(guess.t) === norm(target.t) && sameArtist);
-    const artist = !correct && sameArtist;
+    const correct = sameSong(guess, target);
+    const artist = !correct && sharesArtist(guess, target);
     r.guesses.push({ t: guess.t, a: guess.a, kind: correct ? 'ok' : artist ? 'artist' : 'no' });
     if (correct) return win(r);
   } else {

@@ -1127,6 +1127,24 @@ const dummy = n => ({ t: 'Song ' + n, a: 'Kuenstler ' + n, al: 'Album', y: 2020,
   G("round[active].song = { ...DB.songs.find(s => s.t === 'Hello' && s.a === 'Adele'), i: 99998 }; round[active].status = 'playing'; round[active].guesses = []");
   G("pick = { t: 'Someone Like You', a: 'Adele', anl: ['adele'] }; submit()"); await tick(10);
   assert(G('round[active].guesses').some(g => g.kind === 'artist'), 'Raten: gleicher Kuenstler aus fremder Quelle wird gelb');
+  /* Gemeldet (Billie Eilish, Kuenstlermodus): songs.json hat den Titel mit
+     „(From The Motion Picture …)", Apples Katalog ohne - zwei Vorschlaege,
+     und der laengere galt als falsch. */
+  G("window.__lang = { t: 'Testlied (From The Motion Picture \"Testfilm\")', a: 'Testsängerin', anl: ['testsangerin'], n: 'testlied from the motion picture testfilm', na: 'testsangerin', f: 90, s: 5e8 };"
+    + "window.__kurz = { t: 'Testlied', a: 'Testsängerin', anl: ['testsangerin'], n: 'testlied', na: 'testsangerin' };"
+    + "DB.songs.push(__lang); PL.songs.push(__kurz); sugSrc = {};");
+  G("suggest('testlied')");
+  assert(G('sugAll').length === 1 && G('sugAll[0].t') === 'Testlied',
+    'Vorschlaege: Fassungen desselben Songs stehen einmal da, mit dem kurzen Titel (' + G('sugAll.map(s => s.t).join(" / ")') + ')');
+  G("round[active].song = __kurz; round[active].status = 'playing'; round[active].guesses = []");
+  G('pick = __lang; submit()'); await tick(10);
+  assert(G('round[active].status') === 'won', 'Raten: Titel mit Filmzusatz zaehlt fuer denselben Song');
+  G('closeReveal()'); await tick(10);
+  G("round[active].song = { t: 'Testlied', a: 'Andere Band', anl: ['andere band'] }; round[active].status = 'playing'; round[active].guesses = []");
+  G('pick = __lang; submit()'); await tick(10);
+  assert(G('round[active].status') !== 'won' && G('round[active].guesses[0].kind') === 'no',
+    'Raten: gleicher Titel von jemand anderem bleibt daneben');
+  G("DB.songs.pop(); PL.songs.pop(); sugSrc = {};");
   G("round.forEach(r => { r.status = 'playing'; r.guesses = []; r.stage = 0; })");
 
   G("setMode('charts')"); await tick(30);

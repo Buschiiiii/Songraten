@@ -1164,6 +1164,15 @@ normalisierten Künstlernamen (`s.anl`, in `boot()` und `buildPlaylist()`
 gesetzt) – nie über Nummern. Früher stand da `guess.i === target.i`; mit
 gemischten Quellen wäre Song 5 der Playlist gleich Song 5 der Charts gewesen.
 
+**Fassungen zählen als derselbe Song** (`sameSong()`, 7. Oktober): gleicher
+Grundtitel (`Playlist.base()`, ohne angehängte Klammern und „- …") und ein
+gemeinsamer Künstler. Gemeldet im Künstlermodus bei Billie Eilish:
+`songs.json` hat „What Was I Made For? (From The Motion Picture "Barbie")",
+Apples Katalog nur „What Was I Made For?" – zwei Vorschläge, und der lange
+galt als falsch. `suggest()` fasst solche Fassungen jetzt zu einer Zeile
+zusammen (kürzester Titel, Rang vom besten Mitglied). In `songs.json`
+selbst trifft die Regel nur ein Paar (Bad Liar / Bad Liar – Stripped).
+
 ## Spielregeln
 
 - 5 Songs pro Runde, einer je Stufe, jeder mit eigenem Fortschritt.
