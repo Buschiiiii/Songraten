@@ -345,8 +345,16 @@ Instrumental-Filter Schlaflieder wegräumt – die Originale fehlten aber.
   „(Original by 24kGoldn feat. iann dior)" – 24kGoldn fehlte sogar unter
   den IDs, nur iann dior stand da –, `clean_title()` nimmt auch eine nie
   geschlossene Klammer weg, und `apply()` gibt dem echten Künstler eine ID
-  (vorhandene Namen über `names_of()`, sonst neu angehängt). Bis der
-  Workflow durch ist, blendet der Instrumental-Filter sie aus.
+  (vorhandene Namen über `names_of()`, sonst neu angehängt). Der Lauf
+  danach tauschte 12 von 13 (übrig wieder „Loud") – aber „Mood" wurde
+  zu „Mood (Remix)" mit Justin Bieber und J Balvin, weil dessen
+  Künstlerfeld besser passte, und „B.Y.O.B." behielt das Jahr der
+  Cover-Band (2026). Seitdem verliert in `pick()` eine Fassung, die nicht
+  gesucht war (`bewerte()`, `FASSUNG` wie in `add_regional.py`), das Jahr
+  des Originals gewinnt, wenn es älter ist, und `nachbessern()` prüft zu
+  Beginn jedes Laufs die früheren Täusche aus dem Cache – Fassung gegen
+  Original aus den gemerkten Katalogen, Cover-Jahr gegen Original-Jahr,
+  ohne eine Anfrage.
 
 ## Mehr Songs für alte Jahrzehnte
 

@@ -85,6 +85,21 @@ def clean_title(title):
                   r'[^)\]]*([)\]]|$)', '', title or '', flags=re.I).strip() or title
 
 
+# Eine Fassung, die nicht gesucht war, verliert - wie in add_regional.py.
+# Erster Lauf mit „Mood": statt „Mood (feat. iann dior)" kam „Mood (Remix)"
+# mit Justin Bieber und J Balvin, weil dessen Kuenstlerfeld besser passte.
+FASSUNG = re.compile(r'\b(acoustic|live|remix|mix|version|edit|sped up|slowed|remaster(ed)?)\b', re.I)
+FELDER = ('trackName', 'artistName', 'collectionName', 'previewUrl', 'artworkUrl100', 'trackId',
+          'primaryGenreName', 'releaseDate')
+
+
+def bewerte(hit, title, artist):
+    v = score(hit, title, artist)
+    if v and FASSUNG.search(hit.get('trackName') or '') and not FASSUNG.search(title or ''):
+        v -= 3
+    return v
+
+
 def pick(hits, title, echt):
     """Bester Treffer, der kein Cover ist und vom echten Kuenstler stammt."""
     wer = set()
@@ -96,7 +111,7 @@ def pick(hits, title, echt):
             continue
         if not (names(h.get('artistName') or '') & wer):
             continue
-        v = score(h, title, ' & '.join(echt))
+        v = bewerte(h, title, ' & '.join(echt))
         if v > bs:
             best, bs = h, v
     return best if bs >= MIN_SCORE else None
@@ -122,11 +137,13 @@ def katalog(name, cache):
             songs = [t for t in holen({'id': gleich[0]['artistId'], 'entity': 'song', 'limit': 200, 'country': 'DE'},
                                       'lookup')
                      if t.get('wrapperType') == 'track' and t.get('previewUrl')]
-        cache[key] = [{k: t.get(k) for k in ('trackName', 'artistName', 'collectionName', 'previewUrl',
-                                             'artworkUrl100', 'trackId', 'primaryGenreName', 'releaseDate')}
-                      for t in songs]
+        cache[key] = [{k: t.get(k) for k in FELDER} for t in songs]
         time.sleep(PAUSE)
     return cache[key]
+
+
+def jahr_of(hit):
+    return int((hit.get('releaseDate') or '0')[:4] or 0)
 
 
 def apply(s, hit, artists):
@@ -139,8 +156,11 @@ def apply(s, hit, artists):
         s['k'] = hit['trackId']
     if hit.get('primaryGenreName'):
         s['g'] = hit['primaryGenreName']
-    jahr = int((hit.get('releaseDate') or '0')[:4] or 0)
-    if jahr and (not s.get('y') or abs(jahr - s['y']) <= 3):
+    # Das Original ist aelter als sein Cover - das Jahr der Cover-Band
+    # („B.Y.O.B." stand bei 2026) zaehlt nicht. Juenger nur knapp, sonst
+    # ist es meist ein Remaster.
+    jahr = jahr_of(hit)
+    if jahr and (not s.get('y') or jahr - s['y'] <= 3):
         s['y'] = jahr
     s['ar'] = [i for i in s.get('ar') or [] if not (0 <= i < len(artists) and names(artists[i]) & band)]
     # Wer das Original singt, braucht eine ID - bei „Mood" fehlte 24kGoldn,
@@ -154,6 +174,41 @@ def apply(s, hit, artists):
     if not any(anorm(n) in index for n in names_of({'a': s['a']})):
         artists.append(s['a'])
         s['ar'].insert(0, len(artists) - 1)
+
+
+def nachbessern(data, cache, artists):
+    """Fruehere Taeusche mit der heutigen Regel pruefen, ohne Anfrage: eine
+    Fassung gegen das Original aus den gemerkten Katalogen („Mood (Remix)"),
+    und das Jahr des Originals statt des Cover-Jahrs."""
+    nach_p = {}
+    for s in data['songs']:
+        nach_p.setdefault(s.get('p'), s)
+    kataloge = {k: v for k, v in cache.items() if k.startswith('kuenstler:') and v}
+    out = []
+    for key, alt in list(cache.items()):
+        if key.startswith('kuenstler:') or not isinstance(alt, dict):
+            continue
+        s = nach_p.get(alt.get('previewUrl'))
+        if not s:
+            continue
+        titel, hit = key.split('|', 1)[0], alt
+        if FASSUNG.search(alt.get('trackName') or '') and not FASSUNG.search(titel):
+            echt = [n.strip() for n in SPLIT.split(alt.get('artistName') or '') if n.strip()]
+            pool = [t for k, kat in kataloge.items()
+                    if k in {'kuenstler:' + norm(n) for n in echt} or any(t.get('previewUrl') == alt['previewUrl']
+                                                                          for t in kat)
+                    for t in kat]
+            neu = pick(pool, titel, echt)
+            if neu and neu.get('previewUrl') != alt.get('previewUrl') and not FASSUNG.search(neu.get('trackName') or ''):
+                vorher = f'{s["t"]} – {s["a"]}'
+                apply(s, neu, artists)
+                cache[key] = hit = {k: neu.get(k) for k in FELDER}
+                out.append(f'{vorher}  ->  {s["t"]} – {s["a"]}')
+        jahr = jahr_of(hit)
+        if jahr and s.get('y') and jahr < s['y']:
+            out.append(f'{s["t"]} – {s["a"]}: Jahr {s["y"]} -> {jahr}')
+            s['y'] = jahr
+    return out
 
 
 SAMPLE_ARTISTS = ['Twinkle Twinkle Little Rock Star', 'Tyler, The Creator', 'Avril Lavigne']
@@ -208,6 +263,26 @@ def selftest():
     redbone = {'t': 'Redbone', 'a': 'Smooth Jazz All Stars', 'ar': [4, 3],
                'al': 'Smooth Jazz All Stars Cover Childish Gambino'}
     assert is_cover(redbone, arts) == ['Childish Gambino'], is_cover(redbone, arts)
+    remix = {'trackName': 'Mood (Remix)', 'artistName': '24kGoldn, Justin Bieber, J Balvin & iann dior',
+             'collectionName': 'Mood (Remix) - Single', 'previewUrl': 'remix', 'releaseDate': '2020-11-06'}
+    original = {'trackName': 'Mood (feat. iann dior)', 'artistName': '24kGoldn', 'collectionName': 'El Dorado',
+                'previewUrl': 'mood', 'releaseDate': '2020-07-24', 'trackId': 9}
+    assert pick([remix, original], 'Mood', ['24kGoldn', 'iann dior']) is original, 'Original vor Remix'
+    # Ein frueherer Tausch auf die Fassung wird aus dem Cache nachgebessert,
+    # ebenso das Jahr der Cover-Band.
+    arts2 = ['iann dior', '24kGoldn', 'Justin Bieber', 'J Balvin', 'System Of A Down']
+    daten = {'artists': arts2, 'songs': [
+        {'t': 'Mood (Remix)', 'a': remix['artistName'], 'ar': [0, 1, 2, 3], 'p': 'remix', 'y': 2020, 's': 2.2e9},
+        {'t': 'B.Y.O.B.', 'a': 'System Of A Down', 'ar': [4], 'p': 'byob', 'y': 2026}]}
+    zwischen = {'kuenstler:24kgoldn': [remix, original], 'mood|24kgoldn iann dior': remix,
+                'b y o b|system of a down': {'trackName': 'B.Y.O.B.', 'artistName': 'System Of A Down',
+                                             'previewUrl': 'byob', 'releaseDate': '2005-05-17'}}
+    log = nachbessern(daten, zwischen, arts2)
+    mood2, byob = daten['songs']
+    assert mood2['t'] == 'Mood (feat. iann dior)' and mood2['p'] == 'mood' and sorted(mood2['ar']) == [0, 1], (mood2, log)
+    assert zwischen['mood|24kgoldn iann dior']['previewUrl'] == 'mood' and mood2['s'] == 2.2e9
+    assert byob['y'] == 2005, byob
+    assert nachbessern(daten, zwischen, arts2) == [], 'ein zweiter Lauf aendert nichts'
     for t, al in [('Cover Me Up', 'Cover Me Up - Single'), ('OK', 'Uncovered'), ('Piano Man', 'Piano Man'),
                   ('Undercover Angel (Original 45 Version)', 'Undercover Angel - Single')]:
         assert not COVER.search(t + ' ' + al), t
@@ -222,7 +297,7 @@ def main():
     data = json.load(open(SONGS, encoding='utf-8'))
     artists = data.get('artists', [])
     cache = json.load(open(CACHE, encoding='utf-8')) if os.path.exists(CACHE) else {}
-    t0, fixed, missing, asked = time.time(), [], [], 0
+    t0, fixed, missing, asked = time.time(), nachbessern(data, cache, artists), [], 0
     for s in data['songs']:
         echt = is_cover(s, artists)
         if not echt:
@@ -253,9 +328,7 @@ def main():
                     break
             if kaputt:
                 break
-            cache[key] = {k: hit.get(k) for k in ('trackName', 'artistName', 'collectionName', 'previewUrl',
-                                                   'artworkUrl100', 'trackId', 'primaryGenreName',
-                                                   'releaseDate')} if hit else None
+            cache[key] = {k: hit.get(k) for k in FELDER} if hit else None
         if cache[key]:
             alt = f'{s.get("t")} – {s.get("a")}'
             apply(s, cache[key], artists)
