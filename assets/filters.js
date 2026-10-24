@@ -32,8 +32,15 @@ const Filters = (() => {
   const INST_WORDS = /(instrumental|karaoke|backing track|no vocals|ohne gesang|\bscore\b|lullaby (versions?|renditions?|covers?|tribute)|lullabies for bab|\brendition\b|piano (versions?|covers?|renditions?))/i;
   const INST_GENRES = new Set(['instrumental', 'klassik', 'classical', 'klassische musik', 'new age', 'score', 'filmmusik', 'schlaflieder']);
 
+  /* Cover-Fassungen, meist ohne Gesang: „Piano Cover by Lily Morgan",
+     „Piano Dreamers Perform the Music of …", „Smooth Jazz All Stars Cover …"
+     (gemeldet 24. Oktober, „Mood" in „Nur Hits"). Hier zaehlt auch der
+     Kuenstlername - dort steht es oft. Kein nacktes „cover": „Cover Me Up". */
+  const COVER_WORDS = /(piano covers?|\bcovers? by\b|\boriginal(ly)? (performed )?by\b|\b(stars|orchestra|quartet|dreamers) cover\b|\bperform(s|ed)? the (music|songs|hits) of\b|\bin the style of\b|\bmade famous by\b)/i;
+
   const isInstrumental = s =>
-    INST_WORDS.test(s.t || '') || INST_WORDS.test(s.al || '') || INST_GENRES.has(norm(s.g));
+    INST_WORDS.test(s.t || '') || INST_WORDS.test(s.al || '') || INST_GENRES.has(norm(s.g))
+    || COVER_WORDS.test(s.t || '') || COVER_WORDS.test(s.al || '') || COVER_WORDS.test(s.a || '');
 
   const decadeOf = s => (s.y ? Math.floor(s.y / 10) * 10 : 0);
 

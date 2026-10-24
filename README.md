@@ -40,8 +40,10 @@ anmachen. Dann kommen in **jedem** Modus nur noch die bekanntesten Songs dran
 | Künstler | seine größten Hits laut Songliste, sonst Apples Reihenfolge |
 | Eigene Playlist, eigene Musik | was die Songliste als Hit kennt, zuerst |
 
-Es gilt ab der nächsten Runde – *Alle neu würfeln* startet sie sofort. In der
-Statistik bekommt „Nur Hits" eine eigene Zeile.
+Hast du in der Runde noch nichts gehört oder geraten, wird gleich neu
+gewürfelt; sonst fragt ein Dialog, ob du abbrechen oder erst zu Ende spielen
+willst (siehe *Filter*). In der Statistik bekommt „Nur Hits" eine eigene
+Zeile.
 
 ## Schwierigkeit: wie tief die Stufen reichen
 
@@ -294,7 +296,8 @@ nichts committet und die alte Liste bleibt stehen.
 Rechts unter **Songauswahl** legst du fest, woraus gezogen wird — alles per
 Klick, getippt wird nur der Künstlername:
 
-1. **Instrumentals ausblenden** ist ein Schalter und von Haus aus an.
+1. **Instrumentals ausblenden** ist ein Schalter und von Haus aus an. Er
+   räumt auch Klavier-, Orchester- und Jazz-Cover weg („Piano Cover by …").
 2. Darunter wählst du die **Wirkung** – *nur*, *ohne* oder *dazu*.
 3. Dann klappst du **Genres**, **Jahrzehnte** oder **Künstler** auf und setzt
    Häkchen. Neben jedem Eintrag steht, wie viele Songs daran hängen. Künstler
@@ -319,8 +322,12 @@ Unter den Chips steht, wie viele Songs übrig sind. Bei weniger als 30 kommt
 eine Warnung: dann wiederholt sich die Runde schnell und wird vorhersehbar.
 Läuft eine Schwierigkeitsstufe leer, zieht sie Ersatz aus dem Rest.
 
-Filter wirken ab der nächsten Runde – die laufende bleibt stehen. Mit **Alle
-neu würfeln** greifen sie sofort.
+Filter, *Nur Hits*, Spielweise und Stufengrenzen ändern, welche Songs
+gezogen werden. Ist die Runde noch unberührt (nichts gehört, nichts
+geraten), wird sofort neu gewürfelt. Ist sie angefangen, fragt ein Dialog:
+**Neu würfeln** bricht ab und startet mit der neuen Einstellung, **Erst zu
+Ende spielen** lässt die Runde laufen – gefragt wird dann nicht noch einmal,
+und der Würfel oben ist grün umrandet, bis die nächste Runde beginnt.
 
 Im Playlist-Modus gilt dasselbe Panel, aber mit **eigenen Regeln** für die
 Playlist – die Überschrift sagt dir, worauf sie gerade wirken, und die Listen

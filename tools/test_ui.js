@@ -805,13 +805,21 @@ const dummy = n => ({ t: 'Song ' + n, a: 'Kuenstler ' + n, al: 'Album', y: 2020,
     assert(t$('#tierBar').children.length === 5 && t$('#tierBar').children[0].style.width === '15%',
       'Schwierigkeit: der Balken zeigt die Baender');
 
+    const songVor = G('round[0].song');
     t$('#tierPreset [data-v="leicht"]').click(); await tick(10);
     assert(G('tierCuts()').join() === '5,12,22,35,50' && G('byTier.easy.length') === Math.round(nCharts * 0.05),
       'Schwierigkeit: Leicht nimmt nur die obersten 5 % als Easy');
     assert(G('tierInfo.played') === Math.round(nCharts * 0.5) && /davon in den Stufen/.test($('#filterCount').textContent),
       'Schwierigkeit: die untere Haelfte bleibt draussen, die Songauswahl sagt es');
     assert(monotone(G), 'Schwierigkeit: Reihenfolge bleibt nach Streams');
-    assert(G('round')[0].tier.id === 'easy' && G('round').length === 5, 'Schwierigkeit: die laufende Runde bleibt');
+    /* Die Runde ist angefangen (Stufe 1 gehoert) - also fragt die Seite. */
+    assert(!$('#askNew').hidden && /^Die Schwierigkeit gilt erst/.test($('#askText').textContent),
+      'Neu wuerfeln: bei angefangener Runde fragt ein Dialog (' + $('#askText').textContent.slice(0, 40) + ')');
+    $('#askLater').click(); await tick(300);
+    assert($('#askNew').hidden && $('#rerollAll').classList.contains('due'),
+      'Neu wuerfeln: „Erst zu Ende spielen" schliesst, der Wuerfel zeigt, dass etwas wartet');
+    assert(G('round')[0].tier.id === 'easy' && G('round').length === 5 && G('round[0].song') === songVor,
+      'Schwierigkeit: die laufende Runde bleibt');
 
     /* Eine Grenze von Hand: Easy = Top 1 %. */
     inputs()[0].value = '1'; inputs()[0].dispatchEvent(new w.Event('change')); await tick(10);
@@ -821,6 +829,7 @@ const dummy = n => ({ t: 'Song ' + n, a: 'Kuenstler ' + n, al: 'Album', y: 2020,
       'Schwierigkeit: Easy = Top 1 % sind die ganz grossen (' + G('byTier.easy.length') + ' Songs)');
     inputs()[2].value = '5'; inputs()[2].dispatchEvent(new w.Event('change')); await tick(10);
     assert(G('tierCuts()').join() === '1,12,13,35,50', 'Schwierigkeit: eine Grenze unter der vorigen wird hochgezogen');
+    assert($('#askNew').hidden, 'Neu wuerfeln: gefragt wird einmal je Runde, nicht bei jeder Aenderung');
 
     /* Eigene Grenzen nur fuer ein Jahrzehnt. */
     G("setMode('decades')"); await tick(30);
@@ -882,6 +891,52 @@ const dummy = n => ({ t: 'Song ' + n, a: 'Kuenstler ' + n, al: 'Album', y: 2020,
   hitSwitch(false);
   G('newRound()'); await tick(30);
   assert(G('usesTiers()') && G('round')[0].tier.id === 'easy', 'Nur Hits: und wieder aus');
+
+  /* ------------------------------- Einstellung aendert die Auswahl */
+  {
+    /* Unberuehrt: gleich neu, ohne Frage - und die nie gehoerten Songs der
+       verworfenen Runde rutschen nicht als „zuletzt gespielt" nach hinten. */
+    const vorher = G('recent.slice()');
+    hitSwitch(true); await tick(300);
+    assert($('#askNew').hidden && G('round').every(r => r.tier.hit),
+      'Neu wuerfeln: eine unberuehrte Runde wird ohne Frage neu gewuerfelt');
+    assert(JSON.stringify(G('recent').slice(5)) === JSON.stringify(vorher.slice(5)),
+      'Neu wuerfeln: die verworfenen Songs zaehlen nicht als gespielt');
+
+    /* Reinhoeren zaehlt als angefangen. */
+    await G('playCurrent()'); await tick(30);
+    G('Audio2.stop()');
+    assert(G('round[0].heard') && !G('roundFresh()') && G('roundUntouched()'), 'Neu wuerfeln: Reinhoeren gilt als angefangen');
+    hitSwitch(false); await tick(300);
+    assert(!$('#askNew').hidden && /^„Nur Hits“ gilt erst/.test($('#askText').textContent) && G('round[0].tier.hit'),
+      'Neu wuerfeln: nach dem Reinhoeren fragt der Dialog, die Runde bleibt solange');
+    assert(w.document.activeElement === $('#askLater'), 'Neu wuerfeln: der Fokus liegt im Dialog, nicht im Suchfeld');
+    w.document.dispatchEvent(new w.KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); await tick(20);
+    assert($('#askNew').hidden && G('round[0].tier.hit') && $('#rerollAll').classList.contains('due'),
+      'Neu wuerfeln: Escape heisst „erst zu Ende spielen"');
+    $('#drawMode [data-v="random"]').click(); await tick(300);
+    assert($('#askNew').hidden && G('round[0].tier.hit'), 'Neu wuerfeln: in derselben Runde wird nicht noch einmal gefragt');
+    $('#rerollAll').click(); await tick(30);
+    assert(!G('round[0].tier.hit') && G('round[0].tier.mult') === 1 && !$('#rerollAll').classList.contains('due'),
+      'Neu wuerfeln: der Wuerfel startet die Runde mit allem, was gewartet hat');
+
+    /* „Neu wuerfeln" im Dialog: sofort. */
+    await G('playCurrent()'); await tick(30);
+    G('Audio2.stop()');
+    $('#drawMode [data-v="tiers"]').click(); await tick(20);
+    assert(!$('#askNew').hidden && /^Die Spielweise/.test($('#askText').textContent), 'Neu wuerfeln: Spielweise fragt ebenso');
+    $('#askNow').click(); await tick(30);
+    assert($('#askNew').hidden && G('round[0].tier.id') === 'easy' && !G('round[0].heard'),
+      'Neu wuerfeln: „Neu wuerfeln" startet sofort eine Runde mit der neuen Einstellung');
+
+    /* Fertige Runde: nichts zu fragen, die naechste nimmt es ohnehin. */
+    G("round.forEach(r => { r.status = 'won'; })");
+    hitSwitch(true); await tick(300);
+    assert($('#askNew').hidden && G("round.every(r => r.status === 'won')"),
+      'Neu wuerfeln: eine fertige Runde bleibt stehen, ohne Frage');
+    hitSwitch(false);
+    G('newRound()'); await tick(30);
+  }
 
   /* ---------------------------------------------------- Playlist-Modus */
   const csv = 'Track Name,Artist Name(s)\nUnstoppable,Sia\nBlinding Lights,The Weeknd\nLevitating,Dua Lipa\n'
@@ -1827,6 +1882,14 @@ const dummy = n => ({ t: 'Song ' + n, a: 'Kuenstler ' + n, al: 'Album', y: 2020,
     assert(F("Filters.isInstrumental({ t: 'Me Porto Bonito', a: 'Lullaby Rock!', al: 'Lullaby Versions of Bad Bunny Songs', g: 'Schlaflieder' })")
       && !F("Filters.isInstrumental(DB.songs.find(s => s.t === \"Arsonist's Lullabye\"))"),
       'Filter: Schlaflied-Fassungen gelten als Instrumental, Hozier nicht');
+    /* Gemeldet 24. Oktober: „Mood" als Klaviercover in „Nur Hits". */
+    assert(F("Filters.isInstrumental({ t: 'Mood (Original by 24kGoldn', a: 'Piano Cover by Lily Morgan', al: 'Mood (Original by 24kGoldn feat. iann dior) - Single', g: 'Pop' })")
+      && F("Filters.isInstrumental({ t: 'Cry Baby', a: 'Piano Dreamers', al: 'Piano Dreamers Perform the Music of Melanie Martinez', g: 'Rock' })")
+      && F("Filters.isInstrumental({ t: 'Redbone', a: 'Smooth Jazz All Stars', al: 'Smooth Jazz All Stars Cover Childish Gambino', g: 'Jazz' })"),
+      'Filter: Klavier-, Jazz- und Orchester-Cover gelten als Instrumental');
+    assert(!F("Filters.isInstrumental({ t: 'Cover Me Up', a: 'Morgan Wallen', al: 'Cover Me Up - Single', g: 'Country' })")
+      && !F("Filters.isInstrumental({ t: 'Unstoppable', a: 'The Score', al: 'Unstoppable - Single', g: 'Alternative' })"),
+      'Filter: „Cover Me Up" und The Score bleiben gesungene Songs');
     const ohne = F('filtered').length;
     $$('#fLang').checked = false; $$('#fLang').dispatchEvent(new w.Event('change'));
     assert(F('filtered').length > ohne + 500 && drin('Ojitos Lindos') && !F("settings.filters.some(r => r.type === 'speech')")

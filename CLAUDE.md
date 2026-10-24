@@ -335,6 +335,18 @@ Instrumental-Filter Schlaflieder wegräumt – die Originale fehlten aber.
   der selbst kein Cover ist und vom echten Künstler stammt, ersetzt Titel,
   Künstler, Album, Preview, Cover, `k`, Genre; Streams, Stufe und `rc`
   bleiben, die Cover-Band fliegt aus `ar`.
+- **Zweiter Fund (24. Oktober):** „Mood" (2,2 Mrd.) stand in *Nur Hits* als
+  „Mood (Original by 24kGoldn" von „Piano Cover by Lily Morgan" – `COVER`
+  kannte weder „Piano Cover" noch „Original by". Dazu „Without You" (Lily
+  Morgan), „Redbone" (Smooth Jazz All Stars), „B.Y.O.B." (ORKESTRAL), fünf
+  Songs von Piano Dreamers, „Una Noche en Medellín" („Mis Covers"), „Mine"
+  (Vitamin String Quartet). `COVER` erweitert (und von `match_local.py`
+  importiert statt doppelt gepflegt); `credited()` liest den Urheber aus
+  „(Original by 24kGoldn feat. iann dior)" – 24kGoldn fehlte sogar unter
+  den IDs, nur iann dior stand da –, `clean_title()` nimmt auch eine nie
+  geschlossene Klammer weg, und `apply()` gibt dem echten Künstler eine ID
+  (vorhandene Namen über `names_of()`, sonst neu angehängt). Bis der
+  Workflow durch ist, blendet der Instrumental-Filter sie aus.
 
 ## Mehr Songs für alte Jahrzehnte
 
@@ -516,11 +528,18 @@ aktuellen `songs.json` trifft sie genau einen Song. Seit 4. Oktober auch
 „Piano rendition of …“, Genre *Schlaflieder*) – 26 solcher Cover standen
 als spielbare Songs im Pool. Bewusst nicht „lullaby“ allein: Hoziers
 „Arsonist's Lullabye“ und Jack Johnsons „…Lullabies for the Film Curious
-George“ sind gesungen. Wer echte Instrumentals
+George“ sind gesungen. Seit 24. Oktober auch **Cover-Fassungen**
+(`COVER_WORDS`, geprüft an Titel, Album **und Künstler**): „Piano Cover by
+Lily Morgan", „Piano Dreamers Perform the Music of …", „Smooth Jazz All
+Stars Cover …", „Dark Symphonic Orchestra Cover", „(Original by …)". Kein
+nacktes „cover" („Cover Me Up"), und `INST_WORDS` bleibt beim Künstler
+außen vor (`\bscore\b` träfe The Score). Wer echte Instrumentals
 vermisst, erweitert `INST_WORDS`/`INST_GENRES`.
 
-Der Pool wird sofort neu gerechnet, die **laufende Runde aber nicht angefasst**
-— sonst wäre ein Klick auf einen Filter dasselbe wie Aufgeben. Vorschläge im
+Der Pool wird sofort neu gerechnet; was mit der laufenden Runde passiert,
+steht unter *Einstellung ändert die Auswahl* — still verworfen wird eine
+angefangene nie, sonst wäre ein Klick auf einen Filter dasselbe wie
+Aufgeben. Vorschläge im
 Suchfeld kommen weiter aus der ganzen Datei, nicht aus dem Pool: sonst wäre
 die Vorschlagsliste bei kleinen Pools die Lösung.
 
@@ -954,8 +973,8 @@ sie sind keine Lösung mehr, aber tippen können soll man sie dürfen.
 
 `settings.draw` (`'tiers'` oder `'random'`, Panel *Spielweise*) schaltet die
 Stufen global ab: `usesTiers()` liefert dann überall `false`, also fünf
-gleichwertige Plätze aus `shuffled(activePool())`. Wie bei den Filtern bleibt
-die **laufende Runde unangetastet**, es gilt ab der nächsten.
+gleichwertige Plätze aus `shuffled(activePool())`. Wie bei den Filtern:
+unberührte Runde gleich neu, angefangene nur nach Rückfrage (`poolChanged()`).
 
 Ein Nebeneffekt mit Absicht: ohne Stufen zieht der Chartsmodus aus `filtered`
 statt aus `chartFiltered`. Die Songs aus den Jahrescharts haben keine
@@ -976,10 +995,38 @@ Genommen werden die obersten `settings.hitShare` Prozent (Feld im Panel
 `HIT_MIN` (10). In den Charts zählen nur gestreamte Songs (`chartFiltered`) —
 ein Jahressieger von 1962 ist dort kein Hit.
 
-Wie die Spielweise gilt es **ab der nächsten Runde** (Fallstrick 2), die
-Notiz darunter verweist auf *Alle neu würfeln*. Ohne Stufen werden zuletzt
+Wie die Spielweise: unberührte Runde gleich neu, angefangene nach
+Rückfrage (`poolChanged()`, Fallstrick 2). Ohne Stufen werden zuletzt
 gespielte Songs nach hinten gemischt, sonst fiele im kleinen Pool die
 Wiederholung auf.
+
+## Einstellung ändert die Auswahl: neu würfeln oder fragen
+
+Gewünscht (24. Oktober): „Nur Hits" an, und erst *Alle neu würfeln* machte
+es wirksam. Jetzt ruft jede Einstellung, die ändert, **welche Songs gezogen
+werden**, `poolChanged(was)` – Filter (`toggleRule`, `removeFilter`,
+`#fInst`, `#fLang`, `setSpeech`, `#fReset`), *Nur Hits*, Spielweise,
+Stufengrenzen (`writeCuts`, `#tierOwn`, nur wenn gerade Stufen gelten),
+Hit-Anteil (nur mit *Nur Hits*). Nicht dabei: Stufen und Leiter
+(`remapStages()`), Songstart (setzt unberührte Plätze selbst neu),
+Hardmode, Vorschläge, Entfernen in der Songliste.
+
+- **Unberührt** (`roundFresh()`: nichts geraten, nichts übersprungen,
+  **nichts gehört** – `r.heard` setzt `playCurrent()`): nach 250 ms
+  `freshRound()`, gebündelt, wenn mehrere Klicks kommen. Die Songs der
+  verworfenen Runde waren nie zu hören und kommen aus `recent` wieder
+  raus (`recentUndo`, gesetzt in `newRound()`).
+- **Angefangen**: Dialog `#askNew` („Neue Runde?", `#askNow` *Neu würfeln* /
+  `#askLater` *Erst zu Ende spielen*), **einmal je Runde** (`askedRound`).
+  Escape und Klick daneben heißen „zu Ende spielen"; danach trägt der
+  Würfel `.due` (grüner Rand, Tooltip), bis die nächste Runde beginnt. Der
+  Fokus liegt im Dialog – `focusSearch()` wartet, solange er offen ist, sonst
+  schickte Enter einen Tipp ab.
+- **Fertig** (`roundOver()`): nichts, die nächste Runde nimmt es ohnehin.
+
+`playlist`-Import und `plSync()` rufen `poolChanged()` **nicht** – sonst
+käme der Dialog mitten im Spiel, nur weil im Hintergrund Titel gefunden
+werden.
 
 ## Spotify-Anmeldung
 
@@ -1314,9 +1361,11 @@ daraus wurde:
    `.reveal` setzt `display:grid`, was das `hidden`-Attribut aushebelt. Das hat
    die Seite schon einmal komplett blockiert: beide Overlays waren dauerhaft
    sichtbar und kein Klick kam mehr durch.
-2. **Weder Stufen noch Filter dürfen die Runde zurücksetzen.** `remapStages()`
-   rechnet die Position auf die nächste Stufe um, die mindestens so lang ist
-   wie die bisherige. Nie `newRound()` aus einer Einstellung heraus aufrufen.
+2. **Weder Stufen noch Filter dürfen eine angefangene Runde still
+   zurücksetzen.** `remapStages()` rechnet die Position auf die nächste
+   Stufe um, die mindestens so lang ist wie die bisherige. Aus einer
+   Einstellung heraus nie `newRound()` direkt, sondern `poolChanged()` –
+   das würfelt nur eine unberührte Runde neu und fragt sonst.
 3. **`.stage-progress` darf in `render()` nicht mitgelöscht werden.** `render()`
    entfernt gezielt nur `.stage-seg`, sonst reißt die laufende Animation ab.
 4. **Ein Kasten je Stufe, alle gleich breit.** Nach Sekunden geteilt wäre
@@ -1346,7 +1395,15 @@ daraus wurde:
    trotzdem drin und sind rausgeflogen: nach einem Klick auf einen Filter
    liegt der Fokus auf dem Knopf, und wer dann „Sia" tippt, hat mit dem `s`
    übersprungen.
-8. **Die Vorschlagsliste wird häppchenweise gezeichnet** (`SUG_PAGE`), sonst
+8. **Die Vorschlagsliste klappt immer nach unten** (24. Oktober; vorher
+   stand sie über dem Suchfeld, und lag das weit oben, war der beste
+   Treffer hinter der Oberkante, ohne dass man hochscrollen konnte).
+   `fitSuggest()` setzt `top` unter das Feld (auf dem Handy steht der
+   Knopf darunter) und `max-height` nach dem Platz bis zur Unterkante des
+   **visualViewport** (Tastatur!), 150–330 px; reicht der nicht, rückt die
+   Seite nach, nie über das Suchfeld hinaus. Neu bei `resize` des
+   visualViewport.
+   **Sie wird häppchenweise gezeichnet** (`SUG_PAGE`), sonst
    sind bei „billie" zwar 30 Treffer da, aber nur die ersten acht erreichbar.
    Nachgeladen wird beim Scrollen ans Ende, beim Klick auf „n weitere" und
    wenn man mit ↓ unten anstößt; die Auswahl scrollt über `scrollIntoView`

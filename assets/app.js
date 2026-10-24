@@ -481,6 +481,48 @@ function hitPool(list) {
 /* Ist in der laufenden Runde schon etwas passiert? Solange nicht, verliert
    man nichts, wenn sie ersetzt wird. */
 const roundUntouched = () => round.every(r => r.status === 'playing' && !r.guesses.length && r.stage === 0);
+/* Fuer Einstellungen strenger: auch Reinhoeren zaehlt schon als angefangen.
+   Leere Plaetze (zu kleiner Pool) zaehlen nicht. */
+const roundFresh = () => round.every(r => !r.song
+  || (r.status === 'playing' && !r.guesses.length && r.stage === 0 && !r.heard));
+const roundOver = () => round.length > 0 && round.every(r => !r.song || r.status !== 'playing');
+
+/* Einstellungen, die die Auswahl aendern - Filter, Nur Hits, Spielweise,
+   Stufengrenzen -, wirken erst beim Ziehen. Gewuenscht (24. Oktober): ist
+   in der Runde noch nichts passiert, gleich neu wuerfeln; ist sie
+   angefangen, fragen - abbrechen oder erst zu Ende spielen. Gefragt wird
+   einmal je Runde, danach merkt sich der Wuerfelknopf, dass etwas wartet.
+   Still verworfen wird eine angefangene Runde nie (Fallstrick 2). */
+let askedRound = null, freshTimer = 0, recentUndo = null;
+function poolChanged(what) {
+  if (!round.length || roundOver()) return;
+  if (roundFresh()) {
+    clearTimeout(freshTimer);
+    freshTimer = setTimeout(() => { if (round.length && roundFresh()) freshRound(); }, 250);
+    return;
+  }
+  if (askedRound === round) return;
+  askedRound = round;
+  $('#askText').textContent = `${what} gilt erst für neue Runden. Die laufende ist schon angefangen – `
+    + 'abbrechen und mit der neuen Einstellung neu würfeln oder erst zu Ende spielen?';
+  $('#askNew').hidden = false;
+  setTimeout(() => $('#askLater').focus(), 0);
+}
+function closeAsk(neu) {
+  $('#askNew').hidden = true;
+  if (neu) newRound();
+  else {
+    $('#rerollAll').classList.add('due');
+    $('#rerollAll').title = 'Neue Einstellungen warten – würfeln startet die Runde damit';
+    focusSearch();
+  }
+}
+/* Die Songs der verworfenen Runde waren nie zu hoeren - sie sollen nicht als
+   „zuletzt gespielt" nach hinten rutschen. */
+function freshRound() {
+  if (recentUndo) { recent = recentUndo; save('recent', recent); }
+  newRound();
+}
 
 /* Breiten der sichtbaren Kaesten: ein Kasten je Stufe, alle gleich breit.
 
@@ -613,7 +655,7 @@ const INFO = {
     + 'Länder-Charts: nur Songs, die in einem Land in den Spotify-Wochencharts liefen – Deutschland, Österreich, Schweiz, USA, Großbritannien, Frankreich, Spanien, Italien, Niederlande, mit den Pfeilen oben. Die Stufen gehen nach den Streams in diesem Land, und „bekannte Hits“ im Sprachfilter heißt: bekannt dort. Die Zahlen kommen täglich von kworb; was nur in einem Land groß war (deutscher Rap, Schlager), sucht die Seite nach und nach bei Apple dazu.\n'
     + 'Jahrzehnte und Genres: oben in der Mitte wählst du mit den Pfeilen aus; die Stufen gelten dann innerhalb der Auswahl – Easy sind die bekanntesten 80er, nicht die bekanntesten Songs überhaupt. Unter 50 Songs fallen die Stufen weg, dann sind es fünf zufällige.\n'
     + 'Künstler, Eigene Playlist, Eigene Musik: fünf zufällige Songs ohne Stufen aus dem, was du geladen hast. Was noch nichts geladen hat, ist ausgegraut – die Quelle steht in den Panels darunter.',
-  hits: 'Für Erfolgserlebnisse, in jedem Modus: fünf Songs nur aus den bekanntesten des aktuellen Pools, ohne Stufen, Plätze „Hit 1“ bis „Hit 5“. Wie viele das sind, stellst du unter Schwierigkeit → Nur Hits ein (voreingestellt die obersten 20 %, mindestens 10 Songs). Bekanntheit heißt Streamzahl; Songs aus den Jahrescharts ohne Streams werden eingeschätzt. Gilt ab der nächsten Runde – „Alle neu würfeln“ startet sie sofort. Die Statistik zählt Hit-Runden getrennt.',
+  hits: 'Für Erfolgserlebnisse, in jedem Modus: fünf Songs nur aus den bekanntesten des aktuellen Pools, ohne Stufen, Plätze „Hit 1“ bis „Hit 5“. Wie viele das sind, stellst du unter Schwierigkeit → Nur Hits ein (voreingestellt die obersten 20 %, mindestens 10 Songs). Bekanntheit heißt Streamzahl; Songs aus den Jahrescharts ohne Streams werden eingeschätzt. Ist die Runde noch nicht angefangen, wird gleich neu gewürfelt, sonst fragt die Seite. Die Statistik zählt Hit-Runden getrennt.',
   stages: 'Jeder Platz spielt den Ausschnitt so lang, wie die aktive Stufe sagt – erst 0,01 s, nach jedem falschen Tipp oder Überspringen die nächste Stufe. Abgeschaltete Stufen werden übersprungen, kosten aber trotzdem einen Versuch, weil die Zahl der Versuche an den Stufen hängt.\n'
     + 'Punkte hängen an der gehörten Zeit, nicht an der Nummer der Stufe: 1000 bei 0,01 s, 500 bei 2 s, 100 bei 20 s, dazwischen gleichmäßig im Logarithmus – mal dem Faktor der Schwierigkeit (Easy 1,0 … Impossible höher). Unter „Längen anpassen“ geht jede Leiter mit 2 bis 8 Stufen zwischen 0,01 und 20 s; eine laufende Runde bleibt dabei erhalten.',
   tiers: 'Der Pool wird nach Bekanntheit (Streamzahl) sortiert, und jede Stufe reicht bis zu dem Anteil, der daneben steht: Easy sind die obersten 15 %, Medium bis 35 % usw. Unter jedem Feld steht, wie viele Songs das sind und ab welcher Streamzahl. Was unter der letzten Grenze liegt, kommt mit Stufen nicht dran – mit „Fünf zufällige“ oder „Nur Hits“ schon.\n'
@@ -625,8 +667,8 @@ const INFO = {
   local: 'Spielt aus deinen eigenen Musikdateien. Nichts wird hochgeladen – der Browser liest nur Titel, Künstler und Cover aus den Tags (MP3, M4A, FLAC, Ogg, Opus, WAV), notfalls aus dem Dateinamen. In Chrome bleibt der Ordner über das Neuladen hinaus freigegeben, in Safari und Firefox wählst du ihn jedes Mal neu. Gespielt wird ab dem ersten hörbaren Ton, wie im Original.\n'
     + 'Vom eigenen Server: Subsonic (Navidrome, Airsonic), Jellyfin oder Plex – der Server muss über https erreichbar sein und fremde Herkunft erlauben (CORS). Zugangsdaten bleiben in diesem Browser.',
   service: 'Der gewählte Dienst steht bei der Auflösung vorn und hängt an der Ergebnisliste; die übrigen kommen dort auf Klick dazu. Jeder Link ist eine Suche beim Dienst – in deinem Browser bist du dort angemeldet, also einmal klicken und Play. „Alle Dienste“ geht über song.link und landet auf dem Song selbst. Bandcamp, Discogs und der Qobuz-Shop sind Läden, keine Player, deshalb abgeblendet.',
-  play: 'Fünf Songs je Runde: gestuft nach Seltenheit (Easy bis Impossible) oder fünf gleichwertige aus dem ganzen Pool – zufällig spielen dann auch die Songs aus den Jahrescharts mit, die keine Streamzahl haben. Vorschläge: alle bekannten Songs oder nur die Auswahl. Hardmode: der Reihe nach, ein verpasster Song beendet die Runde. Songstart: Anfang der Hörprobe oder eine zufällige Stelle darin. Alles gilt ab der nächsten Runde.',
-  draw: 'Gestuft: je ein Song pro Stufe, Easy bis Impossible, nach Bekanntheit gezogen. Zufällig: fünf gleichwertige Plätze aus dem ganzen Pool, Faktor 1,0 – und zuletzt Gespieltes kommt nach hinten. Gilt ab der nächsten Runde.',
+  play: 'Fünf Songs je Runde: gestuft nach Seltenheit (Easy bis Impossible) oder fünf gleichwertige aus dem ganzen Pool – zufällig spielen dann auch die Songs aus den Jahrescharts mit, die keine Streamzahl haben. Vorschläge: alle bekannten Songs oder nur die Auswahl. Hardmode: der Reihe nach, ein verpasster Song beendet die Runde. Songstart: Anfang der Hörprobe oder eine zufällige Stelle darin. Ändert sich, welche Songs gezogen werden, wird eine unberührte Runde gleich neu gewürfelt – eine angefangene erst nach Rückfrage.',
+  draw: 'Gestuft: je ein Song pro Stufe, Easy bis Impossible, nach Bekanntheit gezogen. Zufällig: fünf gleichwertige Plätze aus dem ganzen Pool, Faktor 1,0 – und zuletzt Gespieltes kommt nach hinten. Ist die Runde noch nicht angefangen, wird gleich neu gewürfelt, sonst fragt die Seite.',
   suggest: 'Alle bekannten Songs: auch der Song von 1955, der aufs Stichwort passt, steht in der Liste – sie verrät nicht, was gerade im Pool ist. Nur aus der Auswahl: kürzer, aber bei kleinen Pools fast die Lösung. Geraten wird über Titel und Künstler, nicht über die Quelle.',
   hard: 'Ein verpasster Song beendet die ganze Runde – die übrigen Plätze fallen mit, gezählt wird nur, was du wirklich gespielt hast. Und es geht strikt der Reihe nach: ein Platz weiter vorn ist gesperrt, solange davor noch einer offen ist.',
   start: 'Apples Hörproben sind 30 Sekunden, meist aus der Songmitte – „ab Songanfang“ wie im Original geht damit nicht. Anfang des Ausschnitts: jeder Platz beginnt am Anfang der Hörprobe. Zufällige Stelle: irgendwo darin, so dass die längste Stufe noch hineinpasst. Eigene Musik spielt immer ab dem ersten hörbaren Ton.',
@@ -636,7 +678,7 @@ const INFO = {
     + 'Unter „Sprachen“ steht die geschätzte Sprache als Liste – zum gezielten „ohne K-Pop“ oder „dazu Französisch“.',
   filter: 'Regeln für den Pool: „nur“ schränkt ein (mehrere Genres: oder; Genre und Jahrzehnt: und), „ohne“ wirft raus, „dazu“ holt dazu und schlägt beides – „nur 2010er, ohne Rap, dazu Billie Eilish“ ergibt die 2010er ohne Rap plus alle Billie-Eilish-Songs. Jeder Modus hat seine eigenen Regeln. Instrumentals (auch Schlaflied- und Klavierfassungen) werden an Titel, Album und Genre erkannt.\n'
     + 'Sprache: siehe das i am Sprachfilter.\n'
-    + 'Unter 30 Songs warnt die Zeile. Filter wirken ab der nächsten Runde – die laufende bleibt. „Songs ansehen“ zeigt genau den Pool, aus dem gezogen wird; dort lässt sich jeder Song reinhören, nachhören und entfernen (gilt dann in jedem Modus).',
+    + 'Unter 30 Songs warnt die Zeile. Ist die Runde noch nicht angefangen (nichts gehört, nichts geraten), wird gleich neu gewürfelt; eine angefangene bleibt, bis du im Dialog „Neu würfeln“ wählst. „Songs ansehen“ zeigt genau den Pool, aus dem gezogen wird; dort lässt sich jeder Song reinhören, nachhören und entfernen (gilt dann in jedem Modus).',
 };
 
 function buildInfo() {
@@ -691,27 +733,29 @@ function buildChrome() {
     b.classList.toggle('on', b.dataset.v === settings.start);
   });
 
-  /* Gestuft oder fuenf zufaellige. Wie bei den Filtern wird die laufende
-     Runde nicht angefasst - sonst waere das Umschalten ein Aufgeben. */
+  /* Gestuft oder fuenf zufaellige. Wie bei den Filtern wird eine
+     angefangene Runde nicht still verworfen - poolChanged() fragt. */
   $('#drawMode').querySelectorAll('button').forEach(b => {
     b.onclick = () => {
       settings.draw = b.dataset.v;
       save('settings', settings);
       $('#drawMode').querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b));
       applyFilters();
+      poolChanged('Die Spielweise');
       focusSearch();
     };
     b.classList.toggle('on', b.dataset.v === (settings.draw || 'tiers'));
   });
 
-  /* Nur Hits: wie die Spielweise ab der naechsten Runde - „Alle neu
-     wuerfeln" startet sie sofort. */
+  /* Nur Hits: wie die Spielweise - unberuehrte Runde gleich neu, sonst
+     fragt poolChanged(). */
   const hits = $('#hitMode');
   hits.checked = !!settings.hits;
   hits.onchange = () => {
     settings.hits = hits.checked;
     save('settings', settings);
     applyFilters();
+    poolChanged('„Nur Hits“');
     renderPanelSums();
     focusSearch();
   };
@@ -748,6 +792,9 @@ function buildChrome() {
 
   $('#playBtn').onclick = playCurrent;
   $('#rerollAll').onclick = () => newRound();
+  $('#askNow').onclick = () => closeAsk(true);
+  $('#askLater').onclick = () => closeAsk(false);
+  $('#askNew').onclick = e => { if (e.target === e.currentTarget) closeAsk(false); };
   $('#actionBtn').onclick = submit;
   $('#clearPick').onclick = clearPick;
   $('#revealNext').onclick = closeReveal;
@@ -789,6 +836,12 @@ function buildChrome() {
   };
 
   document.addEventListener('keydown', e => {
+    /* Der Dialog „neue Runde?": Enter drueckt den Knopf mit Fokus selbst,
+       Escape heisst „erst zu Ende spielen". */
+    if (!$('#askNew').hidden) {
+      if (e.key === 'Escape') closeAsk(false);
+      return;
+    }
     /* Die Songliste hat ein eigenes Suchfeld und eigene Knoepfe - dort darf
        kein Kuerzel des Spielfelds dazwischenfunken. */
     if (!$('#browse').hidden) {
@@ -812,6 +865,10 @@ function buildChrome() {
     if (e.key === ' ') { e.preventDefault(); playCurrent(); }
     else if (/^[1-5]$/.test(e.key)) switchTo(+e.key - 1);
   });
+
+  /* Tastatur auf/zu: die Vorschlagsliste passt ihre Hoehe an. */
+  if (window.visualViewport) visualViewport.addEventListener('resize', fitSuggest);
+  addEventListener('resize', fitSuggest);
 
   document.addEventListener('click', e => {
     /* Ein Klick auf einen Knopf, der sich dabei selbst aus dem DOM nimmt,
@@ -883,7 +940,8 @@ function newOffset() {
 
 function focusSearch() {
   const inp = $('#search');
-  if (!inp.disabled) setTimeout(() => inp.focus(), 0);
+  /* Steht der Dialog „neue Runde?" offen, gehoert ihm der Fokus. */
+  if (!inp.disabled && $('#askNew').hidden) setTimeout(() => { if ($('#askNew').hidden) inp.focus(); }, 0);
 }
 
 function renderChips() {
@@ -1019,6 +1077,7 @@ function buildTierUI() {
     else delete settings.tiers.scopes[k];
     save('settings', settings);
     applyFilters();
+    if (usesTiers()) poolChanged('Die Schwierigkeit');
   };
   const hs = $('#hitShare');
   hs.onchange = () => {
@@ -1026,6 +1085,7 @@ function buildTierUI() {
     hs.value = settings.hitShare;
     save('settings', settings);
     applyFilters();
+    if (settings.hits) poolChanged('Der Anteil für „Nur Hits“');
     renderPanelSums();
   };
   renderTierPanel();
@@ -1040,6 +1100,7 @@ function writeCuts(arr) {
   else settings.tiers.global = cuts;
   save('settings', settings);
   applyFilters();
+  if (usesTiers()) poolChanged('Die Schwierigkeit');
 }
 
 const fmtStreams = n => (n >= 1e9 ? (n / 1e9).toFixed(1).replace('.', ',') + ' Mrd.'
@@ -1107,7 +1168,7 @@ function renderTierPanel() {
     const rest = tierInfo.total - tierInfo.played;
     note.textContent = `${filterScopeName()}: ${tierInfo.total} Songs nach Bekanntheit`
       + (rest ? `, ${rest} unter der letzten Grenze bleiben draußen` : '')
-      + (tierInfo.est ? ' · Streams ohne Zahl sind geschätzt' : '') + '. Gilt ab der nächsten Runde.';
+      + (tierInfo.est ? ' · Streams ohne Zahl sind geschätzt' : '') + '.';
   }
   $('#hitShare').value = settings.hitShare;
 }
@@ -1172,10 +1233,15 @@ function newRound() {
       error: false,
     };
   });
+  recentUndo = null;
   if (mode !== 'playlist' && mode !== 'local') {
+    recentUndo = recent;
     recent = [...round.map(r => r.song && songKey(r.song)).filter(Boolean), ...recent].slice(0, RECENT_MAX);
     save('recent', recent);
   }
+  clearTimeout(freshTimer);
+  $('#rerollAll').classList.remove('due');
+  $('#rerollAll').title = '';
   active = 0;
   renderSlots();
   render();
@@ -1295,6 +1361,7 @@ async function playCurrent(weiter) {
   /* Muss vor jedem await passieren: iOS gibt den Ton nur frei, solange die
      Nutzergeste noch laeuft. Nach dem Warten aufs Laden ist es zu spaet. */
   Audio2.unlock();
+  r.heard = true;
   if (!r.buffer) {
     btn.classList.add('loading');
     await preload(active);
@@ -1428,6 +1495,32 @@ function suggest(q) {
     if (box.scrollTop + box.clientHeight >= box.scrollHeight - 60) growSuggest();
   };
   growSuggest();
+  fitSuggest();
+}
+
+/* Die Liste klappt immer nach unten auf, direkt unter das Suchfeld.
+   Frueher stand sie darueber - und lag das Feld weit oben, war der beste
+   Treffer hinter der Oberkante, ohne dass man hochscrollen konnte
+   (gemeldet 24. Oktober). Die Hoehe richtet sich nach dem Platz bis zur
+   Unterkante des sichtbaren Bereichs; auf dem Handy endet der ueber der
+   Tastatur (visualViewport). Reicht er nicht fuer ein paar Zeilen, rueckt
+   die Seite nach - nie so weit, dass das Suchfeld oben verschwindet. */
+const SUG_MIN = 150, SUG_MAX = 330;
+function fitSuggest() {
+  const box = $('#suggest');
+  if (box.hidden || !box.getBoundingClientRect) return;
+  const feld = $('#search').closest('.search') || $('#search');
+  const row = box.parentElement.getBoundingClientRect();
+  let f = feld.getBoundingClientRect();
+  box.style.top = Math.round(f.bottom - row.top + 6) + 'px';
+  const vv = window.visualViewport;
+  const unten = () => (vv ? vv.offsetTop + vv.height : innerHeight);
+  const fehlt = SUG_MIN - (unten() - f.bottom - 14);
+  if (fehlt > 0 && f.top > 8) {
+    window.scrollBy(0, Math.min(fehlt, f.top - 8));
+    f = feld.getBoundingClientRect();
+  }
+  box.style.maxHeight = Math.max(SUG_MIN, Math.min(SUG_MAX, unten() - f.bottom - 14)) + 'px';
 }
 
 /* Zeichnet die naechste Seite. Gibt zurueck, ob etwas dazugekommen ist. */
@@ -2787,11 +2880,13 @@ function buildFilterUI() {
     if ($('#fInst').checked) list.push({ mode: 'ohne', type: 'instrumental', value: '', text: 'Instrumental' });
     setFilters(list);
     applyFilters();
+    poolChanged('Die Songauswahl');
   };
 
   $('#fReset').onclick = () => {
     setFilters(defaultFilters().map(r => ({ ...r })));
     applyFilters();
+    poolChanged('Die Songauswahl');
   };
 
   /* Sprachfilter: eine Regel je Regelsatz. An setzt den Standard (oder was
@@ -2801,6 +2896,7 @@ function buildFilterUI() {
     if ($('#fLang').checked) list.push({ ...(speechLast || Filters.SPEECH_DEFAULT) });
     setFilters(list);
     applyFilters();
+    poolChanged('Der Sprachfilter');
   };
   Filters.TARGETS.forEach(([v, text]) => {
     const b = el('button', 'chip', text);
@@ -2843,6 +2939,7 @@ function setSpeech(targets, strict, known) {
   speechLast = r;
   setFilters([...activeFilters().filter(x => x.type !== 'speech'), r]);
   applyFilters();
+  poolChanged('Der Sprachfilter');
 }
 /* Regler, Chips und die Zeile darunter: wie viele Songs der Filter bei
    dieser Strenge rauswirft. `vorschau` ist der Reglerwert beim Ziehen. */
@@ -2930,6 +3027,7 @@ function toggleRule(type, o) {
   if (!had || had.mode !== filterMode) list.push({ mode: filterMode, type, value: o.value, text: o.text });
   setFilters(list);
   applyFilters();
+  poolChanged('Die Songauswahl');
 }
 
 function removeFilter(i) {
@@ -2937,6 +3035,7 @@ function removeFilter(i) {
   list.splice(i, 1);
   setFilters(list);
   applyFilters();
+  poolChanged('Die Songauswahl');
 }
 
 /* Haekchen und Farbe der Zeilen an die aktiven Regeln angleichen. */

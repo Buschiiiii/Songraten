@@ -22,10 +22,10 @@ CAP_DECADE = 12
 BAD = re.compile(r"(remix|live|version|edit\b|mix\b|instrumental|karaoke|sped up|slowed|"
                  r"acoustic|demo\b|commentary|remaster|re-recorded|reprise|interlude|"
                  r"extended|club |dub |bonus|a cappella|acapella|cover\b|medley|mashup)", re.I)
-# Bewusst nicht „lullaby" allein: Avril Lavignes Album heisst „Goodbye Lullaby".
-COVER = re.compile(r"(lullaby (versions?|renditions?|tribute)|lullabies for|piano (rendition|tribute|version)|"
-                   r"tribute to|8-bit|originally (performed )?by|karaoke|in the style of|made famous|"
-                   r"twinkle twinkle|rockabye baby)", re.I)
+# Cover-Fassungen erkennt dieselbe Regel wie fix_covers.py (Schlaflied,
+# Klavier, „Piano Cover by …", „Orchestra Cover"). Bewusst nicht „lullaby"
+# allein: Avril Lavignes Album heisst „Goodbye Lullaby".
+from fix_covers import COVER  # noqa: E402
 FEAT = re.compile(r"[\(\[]?\s*(?:feat\.?|featuring|ft\.?|with|mit)\s+([^)\]]+)[\)\]]?", re.I)
 SPLIT = re.compile(r"\s*(?:&|,|\bx\b|\bX\b|\bvs\.?\b|\bwith\b|\band\b|\bund\b|/|\+)\s*")
 NEVER_SPLIT = {"hall & oates", "daryl hall & john oates", "sam & dave", "sonny & cher",

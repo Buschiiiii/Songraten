@@ -31,29 +31,58 @@ import urllib.request
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from add_decades import MIN_SCORE, PAUSE, UA, lookup, norm, score  # noqa: E402
-from fetch_regions import base, names  # noqa: E402
+from artistids import names_of, norm as anorm  # noqa: E402
+from fetch_regions import SPLIT, base, names  # noqa: E402
 
 SONGS = 'data/songs.json'
 # v2: der erste Lauf suchte nur ueber die Suche - die verschweigt seit
 # September 2025 explizite Titel, und das waren 31 der 32.
 CACHE = '.cache/cover_lookup2.json'
-COVER = re.compile(r'(lullaby (versions?|renditions?|tribute)|lullabies for|piano (rendition|tribute|version)|'
-                   r'\btribute\)|8-bit|originally (performed )?by|karaoke|in the style of|made famous)', re.I)
+# Zweiter Fund (24. Oktober, „Nur Hits"): „Mood (Original by 24kGoldn …)" von
+# „Piano Cover by Lily Morgan", Melanie Martinez von „Piano Dreamers Perform
+# the Music of …", „Redbone" von „Smooth Jazz All Stars Cover …". Bewusst
+# kein nacktes „cover": „Cover Me Up" und „Cover Me In Sunshine" sind echt.
+COVER = re.compile(r'(lullaby (versions?|renditions?|tribute)|lullabies for|'
+                   r'piano (rendition|tribute|version|covers?)|\btribute\)|\btribute to\b|8-bit|'
+                   r'\boriginal(ly)? (performed )?by\b|karaoke|in the style of|made famous|'
+                   r'\bcovers? by\b|\b(stars|orchestra|quartet|dreamers) cover\b|\bmis covers\b|'
+                   r'\bperform(s|ed)? the (music|songs|hits) of\b|twinkle twinkle|rockabye baby)', re.I)
+# Wer im Titel oder Album als Urheber steht: „(Original by 24kGoldn feat.
+# iann dior)" - dort fehlte 24kGoldn sogar unter den Kuenstler-IDs.
+CREDIT = re.compile(r'(?:original(?:ly)?(?: performed)? by|made famous by|in the style of|'
+                    r'the (?:music|songs|hits) of|tribute to)\s+([^()\[\]]+?)\s*(?:[)\]]|\s-\s|$)', re.I)
+
+
+def credited(s):
+    """Namen, die Titel oder Album als Urheber nennen, in Originalschreibung."""
+    out = []
+    for text in (s.get('t', ''), s.get('al', '')):
+        for m in CREDIT.findall(text or ''):
+            for teil in SPLIT.split(m):
+                teil = teil.strip(' .-')
+                # „Performs the Hits of 2018" nennt ein Jahr, keinen Namen.
+                if len(teil) > 1 and not teil.isdigit() and teil not in out:
+                    out.append(teil)
+    return out
 
 
 def is_cover(s, artists):
-    """[echte Kuenstlernamen] oder None."""
+    """[echte Kuenstlernamen] oder None - wer im Titel steht, kommt zuerst."""
     if not COVER.search(' '.join([s.get('t', ''), s.get('al', ''), s.get('a', '')])):
         return None
     band = names(s.get('a', ''))
-    echt = [artists[i] for i in s.get('ar') or [] if 0 <= i < len(artists) and not (names(artists[i]) & band)]
+    echt = []
+    for n in credited(s) + [artists[i] for i in s.get('ar') or [] if 0 <= i < len(artists)]:
+        if not (names(n) & band) and not any(names(n) & names(x) for x in echt):
+            echt.append(n)
     return echt or None
 
 
 def clean_title(title):
-    """„Gata Only (Piano rendition of …)" -> „Gata Only"."""
-    return re.sub(r'\s*[(\[][^)\]]*\b(rendition|tribute|8-bit|originally|karaoke|lullaby)\b[^)\]]*[)\]]', '',
-                  title or '', flags=re.I).strip() or title
+    """„Gata Only (Piano rendition of …)" -> „Gata Only", auch wenn die
+    Klammer nie zugeht („Mood (Original by 24kGoldn")."""
+    return re.sub(r'\s*[(\[][^)\]]*\b(rendition|tribute|8-bit|original(ly)?\s+by|karaoke|lullaby|cover)\b'
+                  r'[^)\]]*([)\]]|$)', '', title or '', flags=re.I).strip() or title
 
 
 def pick(hits, title, echt):
@@ -114,13 +143,24 @@ def apply(s, hit, artists):
     if jahr and (not s.get('y') or abs(jahr - s['y']) <= 3):
         s['y'] = jahr
     s['ar'] = [i for i in s.get('ar') or [] if not (0 <= i < len(artists) and names(artists[i]) & band)]
+    # Wer das Original singt, braucht eine ID - bei „Mood" fehlte 24kGoldn,
+    # nur iann dior stand da. Bekannte Namen bekommen ihre ID; kennt die
+    # Liste keinen davon, kommt der Kuenstler als Ganzes neu dazu.
+    index = {anorm(n): i for i, n in enumerate(artists)}
+    for n in names_of(s):
+        i = index.get(anorm(n))
+        if i is not None and i not in s['ar']:
+            s['ar'].append(i)
+    if not any(anorm(n) in index for n in names_of({'a': s['a']})):
+        artists.append(s['a'])
+        s['ar'].insert(0, len(artists) - 1)
 
 
 SAMPLE_ARTISTS = ['Twinkle Twinkle Little Rock Star', 'Tyler, The Creator', 'Avril Lavigne']
 
 
 def selftest():
-    a = SAMPLE_ARTISTS
+    a = list(SAMPLE_ARTISTS)
     cover = {'t': 'See You Again', 'a': 'Twinkle Twinkle Little Rock Star', 'ar': [0, 1],
              'al': 'Lullaby Versions of Tyler, The Creator', 's': 3134000000, 'd': 'easy', 'y': 2017,
              'rc': {'de': 5}, 'p': 'alt'}
@@ -153,6 +193,24 @@ def selftest():
     finally:
         holen = echt_holen
     assert len(kat) == 1 and pick(kat, 'EARFQUAKE', ['Tyler, The Creator'])['previewUrl'] == 'igor', kat
+    # Zweiter Fund: der echte Kuenstler steht nur im Titel, die Klammer geht
+    # nie zu, und unter den IDs fehlt er.
+    arts = ['Piano Cover by Lily Morgan', 'iann dior', 'Morgan Wallen', 'Childish Gambino', 'Smooth Jazz All Stars']
+    mood = {'t': 'Mood (Original by 24kGoldn', 'a': 'Piano Cover by Lily Morgan', 'ar': [0, 1],
+            'al': 'Mood (Original by 24kGoldn feat. iann dior) - Single', 's': 2208390939, 'd': 'easy'}
+    assert is_cover(mood, arts) == ['24kGoldn', 'iann dior'], is_cover(mood, arts)
+    assert clean_title(mood['t']) == 'Mood' and clean_title('Without You (Original by The Kid Laroi)') == 'Without You'
+    treffer = pick([{'trackName': 'Mood (feat. iann dior)', 'artistName': '24kGoldn', 'collectionName': 'El Dorado',
+                     'previewUrl': 'mood', 'trackId': 9}], clean_title(mood['t']), is_cover(mood, arts))
+    assert treffer and treffer['previewUrl'] == 'mood', treffer
+    apply(mood, treffer, arts)
+    assert arts[-1] == '24kGoldn' and sorted(mood['ar']) == [1, len(arts) - 1], (mood['ar'], arts)
+    redbone = {'t': 'Redbone', 'a': 'Smooth Jazz All Stars', 'ar': [4, 3],
+               'al': 'Smooth Jazz All Stars Cover Childish Gambino'}
+    assert is_cover(redbone, arts) == ['Childish Gambino'], is_cover(redbone, arts)
+    for t, al in [('Cover Me Up', 'Cover Me Up - Single'), ('OK', 'Uncovered'), ('Piano Man', 'Piano Man'),
+                  ('Undercover Angel (Original 45 Version)', 'Undercover Angel - Single')]:
+        assert not COVER.search(t + ' ' + al), t
     print('Cover-Erkennung in Ordnung')
 
 
