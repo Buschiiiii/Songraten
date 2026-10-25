@@ -180,7 +180,8 @@ function setFilters(list) {
   else settings.filters = list;
   save('settings', settings);
 }
-let round = [];           /* 5 Songstaende */
+let round = [];           /* 5 Songstaende - im Endlosmodus einer */
+let endlessRun = null;    /* laufender Endlos-Durchgang, sonst null */
 let active = 0;
 let settings = load('settings', {
   stages: [true, true, true, true, true, true], start: 'hook', volume: 0.8, mode: 'charts',
@@ -496,6 +497,16 @@ const roundOver = () => round.length > 0 && round.every(r => !r.song || r.status
 let askedRound = null, freshTimer = 0, recentUndo = null;
 function poolChanged(what) {
   if (!round.length || roundOver()) return;
+  /* Endlos: eine angefangene Runde gibt es nicht abzubrechen - der naechste
+     Song nimmt die Aenderung ohnehin mit. Nur ein unberuehrter wird
+     getauscht. Endlos selbst an- oder abschalten fragt wie sonst. */
+  if (endlessRun && settings.endless && what !== ENDLESS_WHAT) {
+    if (roundFresh()) {
+      clearTimeout(freshTimer);
+      freshTimer = setTimeout(() => { if (endlessRun && round.length && roundFresh()) swapEndless(); }, 250);
+    }
+    return;
+  }
   if (roundFresh()) {
     clearTimeout(freshTimer);
     freshTimer = setTimeout(() => { if (round.length && roundFresh()) freshRound(); }, 250);
@@ -655,6 +666,7 @@ const INFO = {
     + 'Länder-Charts: nur Songs, die in einem Land in den Spotify-Wochencharts liefen – Deutschland, Österreich, Schweiz, USA, Großbritannien, Frankreich, Spanien, Italien, Niederlande, mit den Pfeilen oben. Die Stufen gehen nach den Streams in diesem Land, und „bekannte Hits“ im Sprachfilter heißt: bekannt dort. Die Zahlen kommen täglich von kworb; was nur in einem Land groß war (deutscher Rap, Schlager), sucht die Seite nach und nach bei Apple dazu.\n'
     + 'Jahrzehnte und Genres: oben in der Mitte wählst du mit den Pfeilen aus; die Stufen gelten dann innerhalb der Auswahl – Easy sind die bekanntesten 80er, nicht die bekanntesten Songs überhaupt. Unter 50 Songs fallen die Stufen weg, dann sind es fünf zufällige.\n'
     + 'Künstler, Eigene Playlist, Eigene Musik: fünf zufällige Songs ohne Stufen aus dem, was du geladen hast. Was noch nichts geladen hat, ist ausgegraut – die Quelle steht in den Panels darunter.',
+  endless: 'Ein Song nach dem anderen, ohne Rundenende: nach jeder Auflösung kommt gleich der nächste. Mit Stufen geht es reihum durch die gewählten – Easy → Medium → … → Impossible → wieder Easy; tippst du nur Easy und Medium an, kommen nur leichte, nur Expert und Impossible nur schwere, eine einzelne Stufe immer dieselbe. Ohne Stufen (Nur Hits, fünf zufällige, Playlist, Künstler, eigene Musik) kommen einfach immer neue Songs aus dem Pool, und in einem Durchgang keiner doppelt, solange noch andere übrig sind. Links stehen Punkte, Treffer und Serie des Durchgangs; „Neu starten“ fängt von vorn an. Mit Hardmode endet der Durchgang beim ersten verpassten Song. Filter, Nur Hits und Stufen gelten ab dem nächsten Song.',
   hits: 'Für Erfolgserlebnisse, in jedem Modus: fünf Songs nur aus den bekanntesten des aktuellen Pools, ohne Stufen, Plätze „Hit 1“ bis „Hit 5“. Wie viele das sind, stellst du unter Schwierigkeit → Nur Hits ein (voreingestellt die obersten 20 %, mindestens 10 Songs). Bekanntheit heißt Streamzahl; Songs aus den Jahrescharts ohne Streams werden eingeschätzt. Ist die Runde noch nicht angefangen, wird gleich neu gewürfelt, sonst fragt die Seite. Die Statistik zählt Hit-Runden getrennt.',
   stages: 'Jeder Platz spielt den Ausschnitt so lang, wie die aktive Stufe sagt – erst 0,01 s, nach jedem falschen Tipp oder Überspringen die nächste Stufe. Abgeschaltete Stufen werden übersprungen, kosten aber trotzdem einen Versuch, weil die Zahl der Versuche an den Stufen hängt.\n'
     + 'Punkte hängen an der gehörten Zeit, nicht an der Nummer der Stufe: 1000 bei 0,01 s, 500 bei 2 s, 100 bei 20 s, dazwischen gleichmäßig im Logarithmus – mal dem Faktor der Schwierigkeit (Easy 1,0 … Impossible höher). Unter „Längen anpassen“ geht jede Leiter mit 2 bis 8 Stufen zwischen 0,01 und 20 s; eine laufende Runde bleibt dabei erhalten.',
@@ -756,6 +768,17 @@ function buildChrome() {
     save('settings', settings);
     applyFilters();
     poolChanged('„Nur Hits“');
+    renderPanelSums();
+    focusSearch();
+  };
+
+  const endl = $('#endlessMode');
+  endl.checked = !!settings.endless;
+  endl.onchange = () => {
+    settings.endless = endl.checked;
+    save('settings', settings);
+    renderEndless();
+    poolChanged(ENDLESS_WHAT);
     renderPanelSums();
     focusSearch();
   };
@@ -1204,35 +1227,47 @@ function shuffled(list) {
   return src;
 }
 
+const slotOf = (tier, song) => ({
+  tier, song, offset: newOffset(), stage: 0, guesses: [], status: 'playing', points: 0, buffer: null, error: false,
+});
+
+/* Eine neue Runde - im Endlosmodus ein neuer Durchgang. */
 function newRound() {
+  endlessRun = settings.endless
+    ? { n: 0, won: 0, streak: 0, best: 0, points: 0, step: 0, seen: new Set(), hist: [], next: null } : null;
+  deal();
+}
+
+function deal() {
   Audio2.stop();
   audioNote('');
   clearTimeout(sweepTimer);
   cancelAnimationFrame(sweepRaf);
-  /* Ohne Stufen: gemischt, zuletzt Gespieltes nach hinten - gerade bei
-     „Nur Hits" ist der Pool klein genug, dass es sonst auffaellt. */
-  let picked = null;
-  if (!usesTiers()) {
-    const zuletzt = new Set(recent), frisch = [], alt = [];
-    shuffled(activePool()).forEach(x => (zuletzt.has(songKey(x)) ? alt : frisch).push(x));
-    picked = [...frisch, ...alt];
+  if (endlessRun) {
+    /* Endlos: ein Platz, die Stufe reihum. Vorgezogen ist meist schon einer
+       (prefetchEndless) - der gilt nur, solange er noch zum Pool passt. */
+    const e = endlessRun, t = endlessSlot(e.step), vor = e.next;
+    let song = vor && vor.step === e.step && vor.tier === t.id && activePool().includes(vor.song) ? vor.song : null;
+    if (!song) song = drawEndless(t, round.map(r => r.song));
+    e.next = null;
+    if (song) e.seen.add(songKey(song));
+    round = [slotOf(t, song)];
+  } else {
+    /* Ohne Stufen: gemischt, zuletzt Gespieltes nach hinten - gerade bei
+       „Nur Hits" ist der Pool klein genug, dass es sonst auffaellt. */
+    let picked = null;
+    if (!usesTiers()) {
+      const zuletzt = new Set(recent), frisch = [], alt = [];
+      shuffled(activePool()).forEach(x => (zuletzt.has(songKey(x)) ? alt : frisch).push(x));
+      picked = [...frisch, ...alt];
+    }
+    const used = new Set();
+    round = slots().map((t, idx) => {
+      const song = picked ? (picked[idx] || null) : drawSong(t.id, used);
+      if (song) used.add(song.i);
+      return slotOf(t, song);
+    });
   }
-  const used = new Set();
-  round = slots().map((t, idx) => {
-    const song = picked ? (picked[idx] || null) : drawSong(t.id, used);
-    if (song) used.add(song.i);
-    return {
-      tier: t,
-      song,
-      offset: newOffset(),
-      stage: 0,
-      guesses: [],
-      status: 'playing',
-      points: 0,
-      buffer: null,
-      error: false,
-    };
-  });
   recentUndo = null;
   if (mode !== 'playlist' && mode !== 'local') {
     recentUndo = recent;
@@ -1253,9 +1288,114 @@ function newRound() {
     const meins = ++roundToken;
     (async () => { for (let i = 0; i < round.length; i++) { if (meins !== roundToken) return; await preload(i); } })();
   } else round.forEach((r, i) => preload(i));
+  if (endlessRun) prefetchEndless();
 }
 
 let roundToken = 0;
+
+/* ------------------------------------------------------------ Endlos */
+
+/* Gewuenscht (25. Oktober): nach jedem Song gleich der naechste, ohne
+   Rundenende. Mit Stufen reihum durch die gewaehlten (settings.endlessTiers,
+   Easy -> ... -> Impossible -> Easy), ohne Stufen - Nur Hits, fuenf
+   zufaellige, Playlist, Kuenstler, eigene Musik - einfach immer neue Songs
+   aus dem Pool. `endlessRun` haelt den Durchgang: Zaehler, Serie, Punkte,
+   was schon dran war (`seen`) und den vorgezogenen naechsten Song. */
+const ENDLESS_WHAT = '„Endlos“';
+const endlessIds = () => {
+  const ids = (settings.endlessTiers || []).filter(id => TIERS.some(t => t.id === id));
+  return ids.length ? ids : TIERS.map(t => t.id);
+};
+function endlessSlot(step) {
+  if (usesTiers()) {
+    const ids = endlessIds();
+    return TIERS.find(t => t.id === ids[step % ids.length]);
+  }
+  const base = (settings.hits ? HIT_SLOTS : FLAT_SLOTS)[step % FLAT_SLOTS.length];
+  return { ...base, label: (settings.hits ? 'Hit ' : 'Song ') + (step + 1), short: String(step + 1) };
+}
+
+/* Bevorzugt, was in diesem Durchgang noch nicht dran war und auch sonst
+   nicht zuletzt lief; ist alles durch, faengt der Pool von vorn an. */
+function drawEndless(t, ohne) {
+  const raus = new Set((ohne || []).filter(Boolean));
+  let pool = usesTiers() ? (byTier[t.id] || []).filter(s => !raus.has(s)) : [];
+  if (!pool.length) pool = activePool().filter(s => !raus.has(s));
+  if (!pool.length) return null;
+  const zuletzt = new Set(recent), seen = endlessRun.seen;
+  const neu = pool.filter(s => !seen.has(songKey(s)));
+  const frisch = neu.filter(s => !zuletzt.has(songKey(s)));
+  const arr = frisch.length ? frisch : neu.length ? neu : pool;
+  return arr[Math.floor(Math.random() * arr.length)];
+}
+
+/* Den naechsten Song schon ziehen und seine Hoerprobe laden, waehrend der
+   aktuelle laeuft - sonst wartet man nach jedem „Weiter" aufs Netz. */
+function prefetchEndless() {
+  const e = endlessRun, step = e.step + 1, t = endlessSlot(step);
+  const song = drawEndless(t, round.map(r => r.song));
+  e.next = song ? { step, tier: t.id, song } : null;
+  if (song && song.p && !song.file && !song.full) Audio2.warm(song.p);
+}
+
+function nextEndless() {
+  endlessRun.step++;
+  deal();
+}
+
+/* Unberuehrter Song, Einstellung geaendert: derselbe Schritt, ein anderer
+   Song. Der alte war nie zu hoeren und zaehlt nicht als gespielt. */
+function swapEndless() {
+  if (recentUndo) { recent = recentUndo; save('recent', recent); }
+  if (round[0] && round[0].song) endlessRun.seen.delete(songKey(round[0].song));
+  endlessRun.next = null;
+  deal();
+}
+
+function renderEndless() {
+  const body = $('#endlessBody');
+  body.hidden = !settings.endless;
+  if (body.hidden) return;
+  const box = $('#endlessTiers');
+  if (!box.children.length) {
+    TIERS.forEach(t => {
+      const b = el('button', 'chip', t.label);
+      b.type = 'button';
+      b.dataset.v = t.id;
+      b.style.setProperty('--tc', `var(--t-${t.id})`);
+      b.onclick = () => {
+        const ids = endlessIds();
+        const neu = ids.includes(t.id) ? ids.filter(x => x !== t.id)
+          : TIERS.map(x => x.id).filter(x => ids.includes(x) || x === t.id);
+        if (!neu.length) return;                  /* eine bleibt immer */
+        settings.endlessTiers = neu;
+        save('settings', settings);
+        if (endlessRun) endlessRun.next = null;
+        renderEndless();
+        poolChanged('Die Stufenauswahl');
+        render();
+      };
+      box.appendChild(b);
+    });
+  }
+  const ids = endlessIds(), stufen = usesTiers();
+  box.querySelectorAll('.chip').forEach(b => b.classList.toggle('on', ids.includes(b.dataset.v)));
+  box.classList.toggle('off', !stufen);
+  $('#endlessNote').textContent = !stufen
+    ? 'Hier gibt es keine Stufen – es kommen einfach immer neue Songs aus dem Pool.'
+    : ids.length === 1 ? `Immer ${TIERS.find(t => t.id === ids[0]).label}.`
+    : 'Reihum: ' + ids.map(id => TIERS.find(t => t.id === id).label).join(' → ') + ' → wieder von vorn.';
+}
+
+function showEndlessSummary() {
+  const e = endlessRun;
+  fillSummary('Durchgang vorbei', e.hist.slice(-40).map(h => ({ ...h, status: h.won ? 'won' : 'lost' })),
+    `${e.won} von ${e.n} erraten · längste Serie ${e.best}`, e.points,
+    settings.endless ? 'Neuer Durchgang' : 'Neue Runde');
+  save('stats', stats);
+  renderStats();
+  $('#summary').hidden = false;
+}
 
 async function preload(i) {
   const r = round[i];
@@ -1300,7 +1440,7 @@ async function preload(i) {
 const locked = i => settings.hard && round.slice(0, i).some(r => r.status === 'playing');
 
 function switchTo(i) {
-  if (i === active || locked(i)) return;
+  if (i === active || locked(i) || !round[i]) return;
   Audio2.stop();
   audioNote('');
   resetBar();
@@ -1679,6 +1819,15 @@ function finish(r, won) {
   const bt = stats.byTier[key] || { p: 0, w: 0 };
   bt.p++; if (won) bt.w++;
   stats.byTier[key] = bt;
+  if (endlessRun) {
+    const e = endlessRun;
+    e.n++;
+    e.points += r.points;
+    if (won) { e.won++; e.streak++; e.best = Math.max(e.best, e.streak); } else e.streak = 0;
+    e.hist.push({ song: r.song, tier: r.tier, points: r.points, won });
+    if (e.hist.length > 200) e.hist.shift();
+    if (e.points > (stats.endlessBest || 0)) stats.endlessBest = e.points;
+  }
   save('stats', stats);
   renderStats();
   render();
@@ -1915,6 +2064,15 @@ function closeReveal() {
   $('#revealPlayer').innerHTML = '';
   $('#revealPlayer').hidden = true;
   $('#reveal').hidden = true;
+  /* Endlos: gleich der naechste - ausser Hardmode hat den Durchgang beendet
+     oder Endlos wurde unterwegs abgeschaltet („erst zu Ende spielen"). */
+  if (endlessRun) {
+    const aus = round[0] && round[0].status === 'lost' && settings.hard;
+    if (settings.endless && !aus) nextEndless();
+    else showEndlessSummary();
+    focusSearch();
+    return;
+  }
   const next = round.findIndex(r => r.status === 'playing');
   if (next >= 0) switchTo(next);
   else showSummary();
@@ -1922,12 +2080,24 @@ function closeReveal() {
 }
 
 function showSummary() {
+  const total = round.reduce((a, r) => a + r.points, 0);
+  const geraten = round.filter(r => r.status === 'won').length;
+  fillSummary('Runde vorbei', round, `${geraten} von ${round.filter(r => r.song).length} erraten`, total);
+  stats.rounds++;
+  if (total > stats.best) stats.best = total;
+  save('stats', stats);
+  renderStats();
+  $('#summary').hidden = false;
+}
+
+/* Zeilen der Abrechnung - fuer die Runde wie fuer einen Endlos-Durchgang. */
+function fillSummary(titel, rows, hits, total, weiter = 'Neue Runde') {
   Audio2.stop();
+  $('#summaryTitle').textContent = titel;
+  $('#summaryNext').textContent = weiter;
   const list = $('#summaryList');
   list.innerHTML = '';
-  let total = 0;
-  round.forEach(r => {
-    total += r.points;
+  rows.forEach(r => {
     const row = el('li', 'summary-row' + (r.status === 'won' ? ' won' : ''));
     const dot = el('span', 'tierdot');
     dot.style.background = `var(--t-${r.tier.id})`;
@@ -1944,14 +2114,8 @@ function showSummary() {
     row.appendChild(el('span', 's-pts', r.status === 'won' ? '+' + r.points : '—'));
     list.appendChild(row);
   });
-  const geraten = round.filter(r => r.status === 'won').length;
-  $('#summaryHits').textContent = `${geraten} von ${round.filter(r => r.song).length} erraten`;
+  $('#summaryHits').textContent = hits;
   $('#summaryScore').textContent = total;
-  stats.rounds++;
-  if (total > stats.best) stats.best = total;
-  save('stats', stats);
-  renderStats();
-  $('#summary').hidden = false;
 }
 
 /* --------------------------------------------------------- Songliste */
@@ -2643,7 +2807,16 @@ function render() {
     : mode === 'local' ? 'Song aus deiner Musik suchen …'
     : mode === 'artist' && currentPick() ? `Song von ${currentPick().text} suchen …`
     : 'Song suchen …';
-  $('#roundScore').textContent = round.reduce((a, b) => a + b.points, 0);
+  const e = endlessRun;
+  $('#roundLabel').textContent = e ? 'Endlos' : 'Runde';
+  $('#roundScore').textContent = e ? e.points : round.reduce((a, b) => a + b.points, 0);
+  $('#roundMeta').hidden = !e;
+  if (e) {
+    const dann = usesTiers() && endlessIds().length > 1 ? ` · dann ${endlessSlot(e.step + 1).label}` : '';
+    $('#roundMeta').textContent = `${e.won}/${e.n} erraten · Serie ${e.streak}${dann}`;
+  }
+  $('#rerollTxt').textContent = e ? 'Neu starten' : 'Alle neu würfeln';
+  renderEndless();
   setAction();
   renderPanelSums();
 }
@@ -2679,6 +2852,7 @@ function renderStats() {
   const rows = [['Runden', stats.rounds], ['Songs erraten', `${stats.solved}/${stats.played}`],
     ['Quote', rate + ' %'], ['Serie', `${stats.streak || 0} (best ${stats.bestStreak || 0})`],
     ['Bestes Ergebnis', stats.best]];
+  if (stats.endlessBest) rows.push(['Endlos-Rekord', stats.endlessBest]);
   const groups = statGroups();
   if (groups.length > 1) rows.push(...groups.map(([label, p, w]) => [label, `${w}/${p}`]));
   rows.forEach(([k, v]) => { d.appendChild(el('dt', null, k)); d.appendChild(el('dd', null, v)); });

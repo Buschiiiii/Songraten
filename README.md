@@ -45,6 +45,25 @@ gewürfelt; sonst fragt ein Dialog, ob du abbrechen oder erst zu Ende spielen
 willst (siehe *Filter*). In der Statistik bekommt „Nur Hits" eine eigene
 Zeile.
 
+## Endlos spielen
+
+Der Schalter **Endlos** im Panel *Modus* macht aus der Runde einen
+Durchgang ohne Ende: nach jeder Auflösung kommt gleich der nächste Song.
+Er lässt sich mit jedem Modus und mit *Nur Hits* kombinieren.
+
+- **Mit Stufen** geht es reihum: Easy → Medium → Hard → Expert →
+  Impossible → wieder Easy. Unter dem Schalter wählst du, welche Stufen
+  mitmachen – nur Easy und Medium für leichte, nur Expert und Impossible für
+  schwere, eine einzelne für immer dieselbe.
+- **Ohne Stufen** (*Nur Hits*, fünf zufällige, Playlist, Künstler, eigene
+  Musik) kommen einfach immer neue Songs, im selben Durchgang keiner doppelt.
+
+Links stehen die Punkte des Durchgangs, wie viele du erraten hast, die
+aktuelle Serie und die nächste Stufe. **Neu starten** fängt von vorn an.
+Mit **Hardmode** endet der Durchgang beim ersten verpassten Song und zeigt
+eine Abrechnung. Filter und *Nur Hits* gelten ab dem nächsten Song. Der
+beste Durchgang steht als *Endlos-Rekord* in der Statistik.
+
 ## Schwierigkeit: wie tief die Stufen reichen
 
 Links unter **Schwierigkeit** legst du fest, welcher Anteil der bekanntesten

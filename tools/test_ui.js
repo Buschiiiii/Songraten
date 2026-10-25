@@ -938,6 +938,85 @@ const dummy = n => ({ t: 'Song ' + n, a: 'Kuenstler ' + n, al: 'Album', y: 2020,
     G('newRound()'); await tick(30);
   }
 
+  /* ------------------------------------------------------------- Endlos */
+  {
+    const endSwitch = on => { $('#endlessMode').checked = on; $('#endlessMode').dispatchEvent(new w.Event('change')); };
+    const chip = id => $('#endlessTiers').querySelector(`[data-v="${id}"]`);
+    const verpasst = async () => { G('round[0].stage = enabledStages().length - 1; clearPick(); submit()'); await tick(10); };
+    endSwitch(true); await tick(300);
+    assert(G('endlessRun') && G('round.length') === 1 && G('round[0].tier.id') === 'easy' && !$('#endlessBody').hidden,
+      'Endlos: die unberuehrte Runde wird zum Durchgang - ein Platz, Easy zuerst');
+    assert($('#roundLabel').textContent === 'Endlos' && $('#rerollTxt').textContent === 'Neu starten'
+      && /^0\/0 erraten · Serie 0 · dann Medium$/.test($('#roundMeta').textContent),
+      'Endlos: links Punkte, Treffer, Serie und die naechste Stufe (' + $('#roundMeta').textContent + ')');
+    assert(G('endlessRun.next.tier') === 'medium' && G('endlessRun.next.song') !== G('round[0].song'),
+      'Endlos: der naechste Song ist schon gezogen');
+    const vorgezogen = G('endlessRun.next.song');
+    G('choose(round[0].song); submit()'); await tick(10);
+    assert(G('endlessRun.n') === 1 && G('endlessRun.won') === 1 && G('endlessRun.streak') === 1 && G('endlessRun.points') > 0,
+      'Endlos: ein Treffer zaehlt im Durchgang');
+    G('closeReveal()'); await tick(20);
+    assert($('#summary').hidden && G('round.length') === 1 && G('round[0].tier.id') === 'medium' && G('round[0].song') === vorgezogen,
+      'Endlos: nach der Aufloesung kommt gleich der naechste - der vorgezogene');
+    await verpasst();
+    assert(G('endlessRun.streak') === 0 && G('endlessRun.n') === 2, 'Endlos: verpasst setzt die Serie zurueck');
+    G('closeReveal()'); await tick(20);
+    assert(G('round[0].tier.id') === 'hard' && $('#summary').hidden, 'Endlos: ohne Hardmode geht es weiter, jetzt Hard');
+    w.document.dispatchEvent(new w.KeyboardEvent('keydown', { key: '3', bubbles: true }));
+    assert(G('active') === 0 && !$('#search').disabled, 'Endlos: Ziffern springen nicht ins Leere');
+
+    /* Nur die leichten. */
+    ['hard', 'expert', 'impossible'].forEach(id => chip(id).click()); await tick(300);
+    assert(G('settings.endlessTiers').join() === 'easy,medium' && /^Reihum: Easy → Medium/.test($('#endlessNote').textContent),
+      'Endlos: nur Easy und Medium gewaehlt');
+    assert(['easy', 'medium'].includes(G('round[0].tier.id')),
+      'Endlos: der unberuehrte Song wird gegen einen aus den gewaehlten Stufen getauscht (' + G('round[0].tier.id') + ')');
+    const folge = [];
+    for (let k = 0; k < 4; k++) { folge.push(G('round[0].tier.id')); await verpasst(); G('closeReveal()'); await tick(10); }
+    assert(folge.every(id => id === 'easy' || id === 'medium') && folge[0] !== folge[1] && folge[1] !== folge[2],
+      'Endlos: reihum zwischen Easy und Medium (' + folge.join(', ') + ')');
+    chip('medium').click(); chip('easy').click(); await tick(20);
+    assert(G('settings.endlessTiers').join() === 'easy' && /^Immer Easy/.test($('#endlessNote').textContent),
+      'Endlos: eine Stufe bleibt immer gewaehlt');
+    ['medium', 'hard', 'expert', 'impossible'].forEach(id => chip(id).click()); await tick(300);
+    const keys = G('endlessRun.hist.map(h => songKey(h.song))');
+    assert(new Set(keys).size === keys.length && keys.length >= 6, 'Endlos: im Durchgang kommt kein Song doppelt');
+
+    /* Ohne Stufen: einfach neue Songs. */
+    hitSwitch(true); await tick(300);
+    assert(G('round[0].tier.hit') && /keine Stufen/.test($('#endlessNote').textContent) && $('#endlessTiers').classList.contains('off'),
+      'Endlos: mit Nur Hits ohne Stufen, einfach immer neue Hits');
+    G('choose(round[0].song); submit()'); await tick(10); G('closeReveal()'); await tick(20);
+    assert(G('round[0].tier.hit') && G('activePool().includes(round[0].song)'), 'Endlos: auch der naechste ist ein Hit');
+    hitSwitch(false); await tick(300);
+    assert(!G('round[0].tier.hit'), 'Endlos: Nur Hits aus tauscht den unberuehrten Song gleich');
+
+    /* Hardmode: der erste verpasste beendet den Durchgang. */
+    G('settings.hard = true');
+    const nVor = G('endlessRun.n');
+    await verpasst(); G('closeReveal()'); await tick(20);
+    assert(!$('#summary').hidden && $('#summaryTitle').textContent === 'Durchgang vorbei'
+      && $('#summaryList').children.length === Math.min(40, nVor + 1),
+      'Endlos: mit Hardmode endet der Durchgang beim ersten verpassten Song, die Abrechnung zeigt alle');
+    assert(G('stats.endlessBest') >= G('endlessRun.points') && G('stats.endlessBest') > 0 && /Endlos-Rekord/.test($('#stats').textContent),
+      'Endlos: der Rekord steht in der Statistik');
+    $('#summaryNext').click(); await tick(30);
+    assert(G('endlessRun.n') === 0 && G('round.length') === 1 && $('#summary').hidden, 'Endlos: „Neue Runde" startet einen neuen Durchgang');
+    G('settings.hard = false');
+
+    /* Abschalten mitten im Song: erst zu Ende, dann die Abrechnung. */
+    await G('playCurrent()'); await tick(30); G('Audio2.stop()');
+    endSwitch(false); await tick(300);
+    assert(!$('#askNew').hidden && /^„Endlos“ gilt erst/.test($('#askText').textContent), 'Endlos: Abschalten mitten im Song fragt');
+    $('#askLater').click(); await tick(20);
+    G('choose(round[0].song); submit()'); await tick(10); G('closeReveal()'); await tick(20);
+    assert(!$('#summary').hidden && $('#summaryTitle').textContent === 'Durchgang vorbei', 'Endlos: danach die Abrechnung des Durchgangs');
+    $('#summaryNext').click(); await tick(30);
+    assert(!G('endlessRun') && G('round.length') === 5 && $('#roundLabel').textContent === 'Runde' && $('#roundMeta').hidden
+      && $('#endlessBody').hidden && $('#rerollTxt').textContent === 'Alle neu würfeln',
+      'Endlos: danach wieder fuenf Songs je Runde');
+  }
+
   /* ---------------------------------------------------- Playlist-Modus */
   const csv = 'Track Name,Artist Name(s)\nUnstoppable,Sia\nBlinding Lights,The Weeknd\nLevitating,Dua Lipa\n'
             + 'Hello,Adele\nBad Guy,Billie Eilish\nStronger,Britney Spears\nGibtsNicht,Niemand';

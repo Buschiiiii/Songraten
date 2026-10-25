@@ -1036,6 +1036,46 @@ Hardmode, Vorschläge, Entfernen in der Songliste.
 käme der Dialog mitten im Spiel, nur weil im Hintergrund Titel gefunden
 werden.
 
+## Endlos (`settings.endless`)
+
+Gewünscht (25. Oktober): „nach jedem Song kommt ein neuer", mit Stufen
+reihum von leicht bis sehr schwer, umschaltbar auf nur leichte oder nur
+schwere. Schalter im Panel *Modus* unter *Nur Hits*, kombinierbar mit
+jedem Modus; darunter `#endlessBody` mit fünf Stufen-Chips
+(`settings.endlessTiers`, eine bleibt immer, `endlessIds()`).
+
+- **Ein Platz statt fünf.** `newRound()` legt `endlessRun` an (`n`, `won`,
+  `streak`, `best`, `points`, `step`, `seen`, `hist`, `next`) und ruft
+  `deal()` – das frühere Innere von `newRound()`, das im Endlosfall
+  `round = [slotOf(endlessSlot(step), song)]` baut. `closeReveal()` ruft
+  danach `nextEndless()` (step + 1) statt der Abrechnung.
+- **Stufe**: mit Stufen `endlessIds()[step % n]` – reihum; ohne Stufen
+  (Nur Hits, fünf zufällige, Playlist, Künstler, eigene Musik, kleine
+  Pools) Platz „Song 13"/„Hit 13" aus `FLAT_SLOTS`/`HIT_SLOTS`, die
+  Chips abgeblendet.
+- **Ziehen** (`drawEndless()`): zuerst, was im Durchgang noch nicht dran war
+  (`seen`, auch in Playlist und eigener Musik, wo `recent` nicht greift)
+  und nicht in `recent` steht; ist alles durch, wiederholt sich der Pool.
+  **Vorgezogen**: `prefetchEndless()` zieht den nächsten Song gleich mit
+  und lädt seine Hörprobe (`Audio2.warm`); `deal()` nimmt ihn, wenn Schritt,
+  Stufe und Pool noch passen.
+- **Einstellungen** (`poolChanged()`): im Durchgang gibt es keine Runde
+  abzubrechen – ein unberührter Song wird getauscht (`swapEndless()`, gleicher
+  Schritt, aus `recent` und `seen` wieder raus), ein angefangener bleibt, der
+  nächste nimmt die Änderung mit. Nur *Endlos* selbst an/aus fragt wie sonst
+  (`ENDLESS_WHAT`); abgeschaltet mit „erst zu Ende spielen" endet der
+  Durchgang nach dem Song mit seiner Abrechnung.
+- **Anzeige**: links `#roundLabel` „Endlos", Punkte des Durchgangs,
+  `#roundMeta` „9/12 erraten · Serie 5 · dann Expert", der Würfel heißt
+  „Neu starten" (`#rerollTxt`, startet einen neuen Durchgang).
+- **Hardmode**: der erste verpasste Song beendet den Durchgang,
+  `showEndlessSummary()` zeigt die letzten 40 (`fillSummary()`, geteilt mit
+  `showSummary()`), Knopf „Neuer Durchgang". Ohne Hardmode endet nichts.
+- **Statistik**: jeder Song zählt wie sonst (`finish()`), dazu
+  `stats.endlessBest` (Punkte des besten Durchgangs, „Endlos-Rekord");
+  `stats.rounds` und „Bestes Ergebnis" bleiben bei Fünfer-Runden.
+- `switchTo()` prüft `round[i]` – die Ziffern 2–5 zeigten sonst ins Leere.
+
 ## Spotify-Anmeldung
 
 `assets/spotify.js`, Panel *Eigene Playlist → Von Spotify*. Ausdrücklich
@@ -1270,9 +1310,9 @@ Frontend hält ein fehlendes Feld zusätzlich aus.
 
 ## Aufbau der Seite
 
-Links Kopfzeile (Marke, Stufenliste, Neuwürfeln, Rundenpunkte) und darunter
-*Stufen*, *Schwierigkeit* und *Statistik*; in der Mitte das Spielfeld; rechts *Modus* (sieben Modi, mit dem
-Schalter *Nur Hits*), *Eigene Playlist* (mit *Von Spotify*), *Künstler*, *Eigene Musik*, *Nachhören bei*, *Spielweise* und ganz
+Links Kopfzeile (Marke, Stufenliste, Neuwürfeln, Rundenpunkte bzw. Endlos-Stand) und darunter
+*Stufen*, *Schwierigkeit* und *Statistik*; in der Mitte das Spielfeld; rechts *Modus* (sieben Modi, mit den
+Schaltern *Nur Hits* und *Endlos*), *Eigene Playlist* (mit *Von Spotify*), *Künstler*, *Eigene Musik*, *Nachhören bei*, *Spielweise* und ganz
 unten die *Songauswahl*. *Songs ansehen* öffnet von zwei Stellen aus
 (`.js-browse`) die Songliste.
 

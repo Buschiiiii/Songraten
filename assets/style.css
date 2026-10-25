@@ -90,6 +90,9 @@ main{
 .round-score{margin-top:22px;padding:14px 16px;border-radius:var(--r);background:var(--panel);display:flex;justify-content:space-between;align-items:baseline}
 .round-score .label{color:var(--muted);font-size:13px}
 .round-score strong{font-family:var(--mono);font-size:19px;color:var(--green)}
+/* Endlos: unter Punkten Treffer, Serie und die naechste Stufe. */
+.round-score{flex-wrap:wrap;row-gap:3px}
+.round-score .rmeta{flex-basis:100%;color:var(--muted);font-size:12px}
 
 /* ---------- Tabs ---------- */
 .tabs{display:flex;gap:6px;flex-wrap:wrap;justify-content:center}
@@ -497,6 +500,12 @@ body.dragging::after{
 .imp-hit .bplay{flex:none;width:28px;height:28px;border-radius:8px;color:var(--muted)}
 .imp-hit .bplay:hover{background:var(--panel);color:var(--text)}
 .hit-switch{margin-top:12px}
+.endless{margin-top:8px;padding-left:2px}
+.endless .fhead{margin-top:4px}
+.endless .chip{font-family:inherit;font-size:12px;padding:5px 10px}
+.endless .chip.on{background:var(--tc,var(--green))}
+.endless .chips.off .chip{opacity:.4;pointer-events:none}
+.endless .note{margin-top:7px}
 .boot.failed .boot-pulse{animation:none;opacity:.25}
 .boot.failed p{color:var(--yellow);max-width:320px;text-align:center;padding:0 16px}
 
